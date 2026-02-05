@@ -2,24 +2,58 @@
 
 Uma GUI simples em Tkinter para visualizar commits, diffs, status e executar ações básicas de Git.
 
-## Como executar
+## Como executar (dev)
 
 ```bash
-python3 tools/viewer/main.py --repo /caminho/do/repo --limit 100
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 main.py --repo /caminho/do/repo --limit 100
 ```
 
 Parâmetros:
 - `--repo`: caminho do repositório (default: diretório atual).
 - `--limit`: quantidade inicial de commits a carregar.
 
+No Windows:
+
+```bash
+py -3 -m venv .venv
+.venv\\Scripts\\activate
+pip install -r requirements.txt
+py -3 main.py --repo C:\\caminho\\do\\repo --limit 100
+```
+
+## Build (PyInstaller)
+
+O script `compile.py` cria `.venv`, instala dependências (incluindo PyInstaller) e gera o executável.
+
+```bash
+python3 compile.py
+```
+
+No Windows:
+
+```bash
+py -3 compile.py
+```
+
+Saída:
+- Linux/macOS: `dist/git_viewer`
+- Windows: `dist\\git_viewer.exe`
+
+Opcional: `python3 compile.py --console` para manter a janela de console (útil para debug).
+
 ## Estrutura
 
 ```text
-tools/viewer/
-  app.py        # aplicação principal (GUI e lógica)
-  main.py       # entrypoint
+.
+  app.py               # aplicação principal (GUI e lógica)
+  compile.py           # build via PyInstaller
+  main.py              # entrypoint
+  requirements.txt     # dependências de runtime
+  requirements-dev.txt # dependências de build
   README.md
-  AGENTS.global.md
 ```
 
 ## Notas
