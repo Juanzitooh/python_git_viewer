@@ -4,7 +4,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 
 ## [Unreleased]
 
-- Nenhuma mudanca registrada ainda.
+- Filtro de commits por texto, autor, arquivo e intervalo de datas na aba Historico.
 
 ## [0.1.0] - 2026-02-05
 

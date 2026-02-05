@@ -13,7 +13,7 @@ Legenda
 
 ## M1 - Uso Diario
 
-- [ ] R1.1 Busca global de commits por autor, mensagem, arquivo e data
+- [x] R1.1 Busca global de commits por autor, mensagem, arquivo e data (2026-02-05)
 - [ ] R1.2 Filtro rapido por branch, tag e status do repo
 - [ ] R1.3 Diff por palavra com realce de mudancas pequenas
 - [ ] R1.4 Stage/unstage por hunk e por linha
