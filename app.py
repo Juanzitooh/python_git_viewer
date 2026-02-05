@@ -36,6 +36,18 @@ class CommitSummary:
     subject: str
 
 
+@dataclasses.dataclass
+class CommitFilters:
+    text: str = ""
+    author: str = ""
+    path: str = ""
+    since: str = ""
+    until: str = ""
+
+    def is_active(self) -> bool:
+        return any([self.text, self.author, self.path, self.since, self.until])
+
+
 FIELD_SEP = "\x1f"
 RECORD_SEP = "\x1e"
 
@@ -95,16 +107,43 @@ def parse_numstat(output: str) -> tuple[tuple[FileStat, ...], int, int]:
 LARGE_PATCH_THRESHOLD = 1000
 
 
-def load_commit_summaries(repo_path: str, limit: int, skip: int = 0) -> list[CommitSummary]:
-    log_output = run_git(
-        repo_path,
-        [
-            "log",
-            f"--max-count={limit}",
-            f"--skip={skip}",
-            f"--pretty=format:%H{FIELD_SEP}%s{RECORD_SEP}",
-        ],
-    )
+def build_log_args(limit: int, skip: int, filters: CommitFilters | None) -> list[str]:
+    args = [
+        "log",
+        f"--max-count={limit}",
+        f"--skip={skip}",
+        f"--pretty=format:%H{FIELD_SEP}%s{RECORD_SEP}",
+    ]
+    if not filters:
+        return args
+    pattern_count = 0
+    if filters.text:
+        pattern_count += 1
+    if filters.author:
+        pattern_count += 1
+    if pattern_count > 1:
+        args.append("--all-match")
+    if filters.text:
+        args.append("--fixed-strings")
+        args.append(f"--grep={filters.text}")
+    if filters.author:
+        args.append(f"--author={filters.author}")
+    if filters.since:
+        args.append(f"--since={filters.since}")
+    if filters.until:
+        args.append(f"--until={filters.until}")
+    if filters.path:
+        args.extend(["--", filters.path])
+    return args
+
+
+def load_commit_summaries(
+    repo_path: str,
+    limit: int,
+    skip: int = 0,
+    filters: CommitFilters | None = None,
+) -> list[CommitSummary]:
+    log_output = run_git(repo_path, build_log_args(limit, skip, filters))
     summaries: list[CommitSummary] = []
     for record in log_output.split(RECORD_SEP):
         record = record.strip("\n")
@@ -156,6 +195,7 @@ class CommitsViewer(tk.Tk):
         self.commit_limit = commit_limit
         self.fetch_interval_sec = 60
         self.status_interval_sec = 15
+        self.commit_filters = CommitFilters()
         self.title("Git Commits Viewer")
         self.geometry("1200x700")
 
@@ -311,6 +351,64 @@ class CommitsViewer(tk.Tk):
         self.branch_action_status.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.branch_action_status.bind("<Enter>", self._show_action_hint)
         self.branch_action_status.bind("<Leave>", self._hide_action_hint)
+
+        filter_frame = ttk.LabelFrame(top_bar, text="Filtro de commits")
+        filter_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        filter_frame.grid_columnconfigure(1, weight=1)
+        filter_frame.grid_columnconfigure(3, weight=1)
+        filter_frame.grid_columnconfigure(5, weight=1)
+        filter_frame.grid_columnconfigure(7, weight=0)
+        filter_frame.grid_columnconfigure(9, weight=0)
+
+        ttk.Label(filter_frame, text="Texto:").grid(row=0, column=0, sticky="w", padx=(6, 2), pady=4)
+        self.filter_text_var = tk.StringVar()
+        filter_text_entry = ttk.Entry(filter_frame, textvariable=self.filter_text_var, width=22)
+        filter_text_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=4)
+
+        ttk.Label(filter_frame, text="Autor:").grid(row=0, column=2, sticky="w", padx=(0, 2), pady=4)
+        self.filter_author_var = tk.StringVar()
+        filter_author_entry = ttk.Entry(filter_frame, textvariable=self.filter_author_var, width=18)
+        filter_author_entry.grid(row=0, column=3, sticky="ew", padx=(0, 8), pady=4)
+
+        ttk.Label(filter_frame, text="Arquivo:").grid(row=0, column=4, sticky="w", padx=(0, 2), pady=4)
+        self.filter_path_var = tk.StringVar()
+        filter_path_entry = ttk.Entry(filter_frame, textvariable=self.filter_path_var, width=24)
+        filter_path_entry.grid(row=0, column=5, sticky="ew", padx=(0, 8), pady=4)
+
+        ttk.Label(filter_frame, text="Desde:").grid(row=0, column=6, sticky="w", padx=(0, 2), pady=4)
+        self.filter_since_var = tk.StringVar()
+        filter_since_entry = ttk.Entry(filter_frame, textvariable=self.filter_since_var, width=12)
+        filter_since_entry.grid(row=0, column=7, sticky="w", padx=(0, 8), pady=4)
+
+        ttk.Label(filter_frame, text="Ate:").grid(row=0, column=8, sticky="w", padx=(0, 2), pady=4)
+        self.filter_until_var = tk.StringVar()
+        filter_until_entry = ttk.Entry(filter_frame, textvariable=self.filter_until_var, width=12)
+        filter_until_entry.grid(row=0, column=9, sticky="w", padx=(0, 8), pady=4)
+
+        filter_actions = ttk.Frame(filter_frame)
+        filter_actions.grid(row=1, column=8, columnspan=2, sticky="e", padx=(0, 8), pady=(0, 6))
+        ttk.Button(filter_actions, text="Aplicar", command=self._apply_commit_filters).grid(
+            row=0,
+            column=0,
+            padx=(0, 6),
+        )
+        ttk.Button(filter_actions, text="Limpar", command=self._clear_commit_filters).grid(
+            row=0,
+            column=1,
+        )
+
+        self.filter_status_var = tk.StringVar(value="Sem filtro ativo.")
+        self.filter_status_label = ttk.Label(filter_frame, textvariable=self.filter_status_var)
+        self.filter_status_label.grid(row=1, column=0, columnspan=8, sticky="w", padx=6, pady=(0, 6))
+
+        for entry in (
+            filter_text_entry,
+            filter_author_entry,
+            filter_path_entry,
+            filter_since_entry,
+            filter_until_entry,
+        ):
+            entry.bind("<Return>", lambda _e: self._apply_commit_filters())
 
         self.left_frame = ttk.Frame(self.history_tab)
         self.left_frame.grid(row=1, column=0, sticky="nsew")
@@ -581,6 +679,74 @@ class CommitsViewer(tk.Tk):
             self._schedule_auto_fetch()
             self._schedule_auto_status()
 
+    def _get_filters_from_ui(self) -> CommitFilters:
+        if not hasattr(self, "filter_text_var"):
+            return CommitFilters()
+        return CommitFilters(
+            text=self.filter_text_var.get().strip(),
+            author=self.filter_author_var.get().strip(),
+            path=self.filter_path_var.get().strip(),
+            since=self.filter_since_var.get().strip(),
+            until=self.filter_until_var.get().strip(),
+        )
+
+    @staticmethod
+    def _shorten_filter_value(value: str, limit: int = 24) -> str:
+        if len(value) <= limit:
+            return value
+        return value[: limit - 3] + "..."
+
+    def _update_filter_status(self) -> None:
+        if not hasattr(self, "filter_status_var"):
+            return
+        if not self.repo_ready:
+            self.filter_status_var.set("Sem repositorio selecionado.")
+            return
+        if not self.commit_filters.is_active():
+            self.filter_status_var.set("Sem filtro ativo.")
+            return
+        parts: list[str] = []
+        if self.commit_filters.text:
+            parts.append(f"texto='{self._shorten_filter_value(self.commit_filters.text)}'")
+        if self.commit_filters.author:
+            parts.append(f"autor='{self._shorten_filter_value(self.commit_filters.author)}'")
+        if self.commit_filters.path:
+            parts.append(f"arquivo='{self._shorten_filter_value(self.commit_filters.path)}'")
+        if self.commit_filters.since:
+            parts.append(f"desde='{self._shorten_filter_value(self.commit_filters.since, 16)}'")
+        if self.commit_filters.until:
+            parts.append(f"ate='{self._shorten_filter_value(self.commit_filters.until, 16)}'")
+        summary = ", ".join(parts)
+        self.filter_status_var.set(f"Filtro ativo: {summary}. {len(self.commit_summaries)} commits.")
+
+    def _apply_commit_filters(self) -> None:
+        self.commit_filters = self._get_filters_from_ui()
+        if self.repo_ready:
+            self._reload_commits()
+        else:
+            self._update_filter_status()
+
+    def _clear_commit_filters(self) -> None:
+        if hasattr(self, "filter_text_var"):
+            self.filter_text_var.set("")
+            self.filter_author_var.set("")
+            self.filter_path_var.set("")
+            self.filter_since_var.set("")
+            self.filter_until_var.set("")
+        self.commit_filters = CommitFilters()
+        if self.repo_ready:
+            self._reload_commits()
+        else:
+            self._update_filter_status()
+
+    def _load_commit_summaries(self, skip: int = 0) -> list[CommitSummary]:
+        return load_commit_summaries(
+            self.repo_path,
+            self.commit_limit,
+            skip=skip,
+            filters=self.commit_filters,
+        )
+
     def _populate_commit_list(self) -> None:
         self.commit_listbox.delete(0, tk.END)
         for summary in self.commit_summaries:
@@ -608,7 +774,7 @@ class CommitsViewer(tk.Tk):
         if not self.repo_ready or self.loading_more or self.no_more_commits:
             return
         self.loading_more = True
-        more = load_commit_summaries(self.repo_path, self.commit_limit, skip=self.commit_offset)
+        more = self._load_commit_summaries(skip=self.commit_offset)
         self._append_commit_summaries(more)
         self.loading_more = False
 
@@ -1509,12 +1675,18 @@ class CommitsViewer(tk.Tk):
         return result["choice"]
 
     def _reload_commits(self) -> None:
-        self.commit_summaries = load_commit_summaries(self.repo_path, self.commit_limit)
+        try:
+            self.commit_summaries = self._load_commit_summaries()
+        except RuntimeError as exc:
+            messagebox.showerror("Erro", str(exc))
+            self._update_filter_status()
+            return
         self.commit_details_cache.clear()
         self.current_commit_hash = None
         self.no_more_commits = False
         self.loading_more = False
         self._populate_commit_list()
+        self._update_filter_status()
 
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)
@@ -1684,15 +1856,10 @@ class CommitsViewer(tk.Tk):
         self.repo_ready = True
         self.repo_var.set(repo_path)
 
-        self.commit_summaries = load_commit_summaries(self.repo_path, self.commit_limit)
-        self.commit_details_cache.clear()
-        self.current_commit_hash = None
         self.patch_cache.clear()
         self.full_patch_cache.clear()
         self.selected_file_by_commit.clear()
-        self.no_more_commits = False
-        self.loading_more = False
-        self._populate_commit_list()
+        self._reload_commits()
 
         self.branch_combo.configure(state="readonly")
         self._set_action_visibility(self.fetch_button, True)
@@ -1734,6 +1901,7 @@ class CommitsViewer(tk.Tk):
         self.branch_combo.configure(values=[], state="disabled")
         if hasattr(self, "branch_dest_var"):
             self.branch_dest_var.set("")
+        self._update_filter_status()
         self._set_action_visibility(self.fetch_button, False)
         self._set_action_visibility(self.pull_button, False)
         self._set_action_visibility(self.push_button, False)
