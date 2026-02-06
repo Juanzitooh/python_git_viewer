@@ -21,6 +21,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Aba de repositorios para abrir e favoritar rapidamente.
 - Painel de status do repositorio com upstream e ahead/behind.
 - Fluxo guiado de merge/rebase/squash com resumo e alertas.
+- Panes redimensionaveis nas abas Historico e Commit.
 
 ## [0.1.0] - 2026-02-05
 

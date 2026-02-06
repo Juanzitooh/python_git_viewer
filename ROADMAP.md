@@ -32,7 +32,7 @@ Legenda
 ## M3 - Visual e UX
 
 - [ ] R3.1 Tema claro e escuro com fontes configuraveis
-- [ ] R3.2 Layout responsivo com panes redimensionaveis
+- [x] R3.2 Layout responsivo com panes redimensionaveis (2026-02-06)
 - [ ] R3.3 Modo de leitura para diffs grandes
 - [ ] R3.4 Indicadores de performance para operacoes longas
 
