@@ -27,11 +27,11 @@ class GlobalBarMixin:
         ttk.Button(self.global_bar, text="Abrir repo", command=self._open_repo_dialog).grid(
             row=0, column=2, padx=(6, 0)
         )
-        ttk.Button(self.global_bar, text="Usar caminho", command=self._apply_repo_from_entry).grid(
+        ttk.Button(self.global_bar, text="Copiar caminho", command=self._copy_repo_path).grid(
             row=0, column=3, padx=(6, 0)
         )
 
-        ttk.Button(self.global_bar, text="VS Code", command=self._open_repo_in_vscode).grid(
+        ttk.Button(self.global_bar, text="Abrir no VS Code", command=self._open_repo_in_vscode).grid(
             row=0, column=4, padx=(6, 0)
         )
 
@@ -162,6 +162,8 @@ class GlobalBarMixin:
             self.branch_var.set(current)
         elif branches:
             self.branch_var.set(branches[0])
+        if hasattr(self, "_update_window_title"):
+            self._update_window_title()
         if hasattr(self, "branch_dest_var"):
             if not self.branch_dest_var.get() or self.branch_dest_var.get() not in branches:
                 self.branch_dest_var.set(current)
@@ -269,6 +271,8 @@ class GlobalBarMixin:
             return False
         self.branch_var.set(target)
         self._set_status(f"Checkout para {target}.")
+        if hasattr(self, "_update_window_title"):
+            self._update_window_title()
         if hasattr(self, "_bump_repo_state"):
             self._bump_repo_state()
         self._reload_commits()
@@ -319,6 +323,14 @@ class GlobalBarMixin:
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)
 
+    def _copy_repo_path(self) -> None:
+        if not self.repo_path:
+            messagebox.showinfo("Repo", "Selecione um repositório antes de copiar o caminho.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(self.repo_path)
+        self.update()
+
     def _apply_repo_from_entry(self) -> None:
         path = self.repo_var.get().strip()
         if not path:
@@ -347,6 +359,8 @@ class GlobalBarMixin:
             self._register_recent_repo(repo_path)
         if hasattr(self, "_bump_repo_state"):
             self._bump_repo_state()
+        if hasattr(self, "_update_window_title"):
+            self._update_window_title()
 
         self.patch_cache.clear()
         self.full_patch_cache.clear()
@@ -421,6 +435,8 @@ class GlobalBarMixin:
             self._refresh_repo_status_panel()
         if hasattr(self, "_bump_repo_state"):
             self._bump_repo_state()
+        if hasattr(self, "_update_window_title"):
+            self._update_window_title()
         self.upstream_var.set("")
         self._set_status("Selecione um repositório.")
         if hasattr(self, "branch_origin_combo"):

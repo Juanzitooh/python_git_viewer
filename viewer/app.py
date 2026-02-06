@@ -56,7 +56,7 @@ class CommitsViewer(
         self.worktree_diff_data: DiffData | None = None
         self.worktree_line_map: dict[int, DiffLineInfo] = {}
         self.worktree_diff_scope: str = ""
-        self.title("Git Commits Viewer")
+        self.title("Git Viewer")
         self.geometry("1200x700")
         self._maximize_window()
 
@@ -105,6 +105,7 @@ class CommitsViewer(
         self._apply_theme_settings()
         self._bind_shortcuts()
         self._populate_commit_list()
+        self._update_window_title()
         if self.repo_path and is_git_repo(self.repo_path):
             self._set_repo_path(self.repo_path, initial=True)
         else:
@@ -240,6 +241,21 @@ class CommitsViewer(
             return
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         self.perf_var.set(f"{label}: {elapsed_ms:.0f} ms")
+
+    def _update_window_title(self) -> None:
+        base_title = "Git Viewer"
+        if not getattr(self, "repo_ready", False) or not self.repo_path:
+            self.title(f"{base_title} (padrão)")
+            return
+        repo_path = self.repo_path.rstrip(os.sep)
+        repo_name = os.path.basename(repo_path) or repo_path
+        branch = ""
+        if hasattr(self, "branch_var"):
+            branch = self.branch_var.get().strip()
+        if branch:
+            self.title(f"{base_title} {repo_name} - {branch}")
+        else:
+            self.title(f"{base_title} {repo_name}")
 
     def _maximize_window(self) -> None:
         try:
