@@ -8,8 +8,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
 
+from diff_utils import build_line_map, build_patch_for_hunk, build_patch_for_line, parse_diff_data, render_patch_to_widget
 from git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
-from models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffHunk, DiffLineInfo, FileStat
+from models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffLineInfo, FileStat
 
 
 LARGE_PATCH_THRESHOLD = 1000
@@ -1336,7 +1337,7 @@ class CommitsViewer(tk.Tk):
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
-            self._render_patch_to_widget(
+            render_patch_to_widget(
                 stash_diff_text,
                 diff,
                 read_only=True,
@@ -1431,7 +1432,7 @@ class CommitsViewer(tk.Tk):
         text_widget.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
 
         if render_patch:
-            self._render_patch_to_widget(
+            render_patch_to_widget(
                 text_widget,
                 content,
                 read_only=False,
@@ -1591,7 +1592,7 @@ class CommitsViewer(tk.Tk):
             self.worktree_line_map.clear()
             self._update_worktree_diff_actions()
             return
-        self.worktree_diff_data = self._parse_diff_data(diff_raw)
+        self.worktree_diff_data = parse_diff_data(diff_raw)
         self.worktree_diff_scope = scope
         self.worktree_line_map.clear()
         self._render_worktree_diff(diff_view, self._word_diff_enabled())
@@ -1635,76 +1636,8 @@ class CommitsViewer(tk.Tk):
         args.extend(["--", path])
         return run_git(self.repo_path, args)
 
-    def _parse_diff_data(self, diff_text: str) -> DiffData:
-        header_lines: list[str] = []
-        hunks: list[DiffHunk] = []
-        current: DiffHunk | None = None
-        old_line = 0
-        new_line = 0
-
-        for line in diff_text.splitlines():
-            if line.startswith("diff --git") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
-                header_lines.append(line)
-                continue
-            if line.startswith("@@"):
-                old_start, old_count, new_start, new_count = self._parse_hunk_header_full(line)
-                current = DiffHunk(
-                    header=line,
-                    old_start=old_start,
-                    old_count=old_count,
-                    new_start=new_start,
-                    new_count=new_count,
-                    lines=[],
-                    raw_lines=[line],
-                )
-                hunks.append(current)
-                old_line = old_start
-                new_line = new_start
-                continue
-            if not current:
-                continue
-            if line.startswith("\\ No newline at end of file"):
-                continue
-            if line.startswith("-"):
-                info = DiffLineInfo(
-                    hunk_index=len(hunks) - 1,
-                    line_type="removed",
-                    old_line=old_line,
-                    new_line=new_line,
-                    content=line[1:],
-                    raw=line,
-                )
-                old_line += 1
-            elif line.startswith("+"):
-                info = DiffLineInfo(
-                    hunk_index=len(hunks) - 1,
-                    line_type="added",
-                    old_line=old_line,
-                    new_line=new_line,
-                    content=line[1:],
-                    raw=line,
-                )
-                new_line += 1
-            elif line.startswith(" "):
-                info = DiffLineInfo(
-                    hunk_index=len(hunks) - 1,
-                    line_type="context",
-                    old_line=old_line,
-                    new_line=new_line,
-                    content=line[1:],
-                    raw=line,
-                )
-                old_line += 1
-                new_line += 1
-            else:
-                continue
-            current.lines.append(info)
-            current.raw_lines.append(line)
-
-        return DiffData(header_lines=header_lines, hunks=hunks)
-
     def _render_worktree_diff(self, diff_text: str, word_diff: bool) -> None:
-        self._render_patch_to_widget(
+        render_patch_to_widget(
             self.worktree_diff_text,
             diff_text,
             read_only=True,
@@ -1714,36 +1647,7 @@ class CommitsViewer(tk.Tk):
         if word_diff or not self.worktree_diff_data:
             self.worktree_line_map.clear()
             return
-        self.worktree_line_map = self._build_line_map(self.worktree_diff_data)
-
-    @staticmethod
-    def _build_line_map(diff_data: DiffData) -> dict[int, DiffLineInfo]:
-        line_map: dict[int, DiffLineInfo] = {}
-        line_index = 1
-        for hunk in diff_data.hunks:
-            for info in hunk.lines:
-                line_map[line_index] = info
-                line_index += 1
-        return line_map
-
-    @staticmethod
-    def _parse_hunk_header_full(header: str) -> tuple[int, int, int, int]:
-        parts = header.split()
-        if len(parts) < 3:
-            return 0, 0, 0, 0
-
-        def parse_range(value: str) -> tuple[int, int]:
-            if "," in value:
-                start, count = value.split(",", 1)
-                return int(start), int(count)
-            return int(value), 1
-
-        try:
-            old_start, old_count = parse_range(parts[1].lstrip("-"))
-            new_start, new_count = parse_range(parts[2].lstrip("+"))
-        except ValueError:
-            return 0, 0, 0, 0
-        return old_start, old_count, new_start, new_count
+        self.worktree_line_map = build_line_map(self.worktree_diff_data)
 
     def _get_selected_diff_line(self) -> DiffLineInfo | None:
         if not self.worktree_line_map:
@@ -1757,36 +1661,6 @@ class CommitsViewer(tk.Tk):
         except ValueError:
             return None
         return self.worktree_line_map.get(line_no)
-
-    def _build_patch_for_hunk(self, hunk_index: int) -> str | None:
-        if not self.worktree_diff_data:
-            return None
-        if hunk_index < 0 or hunk_index >= len(self.worktree_diff_data.hunks):
-            return None
-        hunk = self.worktree_diff_data.hunks[hunk_index]
-        lines = [*self.worktree_diff_data.header_lines, *hunk.raw_lines]
-        return "\n".join(lines) + "\n"
-
-    def _build_patch_for_line(self, line_info: DiffLineInfo) -> str | None:
-        if not self.worktree_diff_data:
-            return None
-        if line_info.line_type not in ("added", "removed"):
-            return None
-        if line_info.line_type == "added":
-            old_start = line_info.old_line
-            new_start = line_info.new_line
-            old_count = 0
-            new_count = 1
-            line = f"+{line_info.content}"
-        else:
-            old_start = line_info.old_line
-            new_start = line_info.new_line
-            old_count = 1
-            new_count = 0
-            line = f"-{line_info.content}"
-        header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@"
-        lines = [*self.worktree_diff_data.header_lines, header, line]
-        return "\n".join(lines) + "\n"
 
     def _apply_patch(self, patch: str, reverse: bool) -> None:
         cmd = ["git", "-C", self.repo_path, "apply", "--recount", "--unidiff-zero", "--cached"]
@@ -1810,7 +1684,9 @@ class CommitsViewer(tk.Tk):
         if not line_info:
             messagebox.showinfo("Stage", "Selecione uma linha do diff.")
             return
-        patch = self._build_patch_for_hunk(line_info.hunk_index)
+        if not self.worktree_diff_data:
+            return
+        patch = build_patch_for_hunk(self.worktree_diff_data, line_info.hunk_index)
         if not patch:
             return
         try:
@@ -1829,7 +1705,9 @@ class CommitsViewer(tk.Tk):
         if not line_info:
             messagebox.showinfo("Unstage", "Selecione uma linha do diff.")
             return
-        patch = self._build_patch_for_hunk(line_info.hunk_index)
+        if not self.worktree_diff_data:
+            return
+        patch = build_patch_for_hunk(self.worktree_diff_data, line_info.hunk_index)
         if not patch:
             return
         try:
@@ -1848,7 +1726,9 @@ class CommitsViewer(tk.Tk):
         if not line_info:
             messagebox.showinfo("Stage", "Selecione uma linha do diff.")
             return
-        patch = self._build_patch_for_line(line_info)
+        if not self.worktree_diff_data:
+            return
+        patch = build_patch_for_line(self.worktree_diff_data, line_info)
         if not patch:
             messagebox.showinfo("Stage", "A linha selecionada nao e uma alteracao.")
             return
@@ -1868,7 +1748,9 @@ class CommitsViewer(tk.Tk):
         if not line_info:
             messagebox.showinfo("Unstage", "Selecione uma linha do diff.")
             return
-        patch = self._build_patch_for_line(line_info)
+        if not self.worktree_diff_data:
+            return
+        patch = build_patch_for_line(self.worktree_diff_data, line_info)
         if not patch:
             messagebox.showinfo("Unstage", "A linha selecionada nao e uma alteracao.")
             return
@@ -2555,186 +2437,13 @@ class CommitsViewer(tk.Tk):
         return bool(self.word_diff_var.get())
 
     def _render_patch(self, patch: str) -> None:
-        self._render_patch_to_widget(
+        render_patch_to_widget(
             self.patch_text,
             patch,
             read_only=True,
             show_file_headers=False,
             word_diff=self._word_diff_enabled(),
         )
-
-    def _render_patch_to_widget(
-        self,
-        widget: tk.Text,
-        patch: str,
-        read_only: bool,
-        show_file_headers: bool,
-        word_diff: bool,
-    ) -> None:
-        widget.configure(state="normal")
-        widget.delete("1.0", tk.END)
-
-        if not patch.strip():
-            widget.insert(tk.END, "(sem diff)")
-            if read_only:
-                widget.configure(state="disabled")
-            return
-
-        old_line = 0
-        new_line = 0
-        in_hunk = False
-
-        for raw_line in patch.splitlines():
-            if raw_line.startswith("diff --git"):
-                in_hunk = False
-                if show_file_headers:
-                    try:
-                        parts = raw_line.split()
-                        path = parts[2][2:]
-                    except IndexError:
-                        path = raw_line
-                    widget.insert(tk.END, f"\n=== {path} ===\n", "meta")
-                continue
-            if raw_line.startswith("index ") or raw_line.startswith("---") or raw_line.startswith("+++"):
-                continue
-            if raw_line.startswith("@@"):
-                old_line, new_line = self._parse_hunk_header(raw_line)
-                in_hunk = True
-                continue
-            if raw_line.startswith("\\ No newline at end of file"):
-                continue
-
-            if raw_line.startswith("-"):
-                content = raw_line[1:]
-                self._insert_line_with_word_diff(
-                    widget,
-                    f"{old_line:>6} - ",
-                    content,
-                    base_tag="removed",
-                    word_diff=word_diff,
-                )
-                old_line += 1
-                continue
-            if raw_line.startswith("+"):
-                content = raw_line[1:]
-                self._insert_line_with_word_diff(
-                    widget,
-                    f"{new_line:>6} + ",
-                    content,
-                    base_tag="added",
-                    word_diff=word_diff,
-                )
-                new_line += 1
-                continue
-            if raw_line.startswith(" "):
-                content = raw_line[1:]
-                self._insert_line_with_word_diff(
-                    widget,
-                    f"{old_line:>6}   ",
-                    content,
-                    base_tag="",
-                    word_diff=word_diff,
-                )
-                old_line += 1
-                new_line += 1
-                continue
-
-            if word_diff and in_hunk and self._line_has_word_markers(raw_line):
-                self._insert_line_with_word_diff(
-                    widget,
-                    f"{old_line:>6}   ",
-                    raw_line,
-                    base_tag="",
-                    word_diff=True,
-                )
-                old_line += 1
-                new_line += 1
-                continue
-
-            widget.insert(tk.END, raw_line + "\n")
-
-        if read_only:
-            widget.configure(state="disabled")
-
-    @staticmethod
-    def _line_has_word_markers(line: str) -> bool:
-        return "{+" in line or "+}" in line or "[-" in line or "-]" in line or "{-" in line or "-}" in line
-
-    def _insert_line_with_word_diff(
-        self,
-        widget: tk.Text,
-        prefix: str,
-        content: str,
-        base_tag: str,
-        word_diff: bool,
-    ) -> None:
-        if not word_diff:
-            if base_tag:
-                widget.insert(tk.END, f"{prefix}{content}\n", base_tag)
-            else:
-                widget.insert(tk.END, f"{prefix}{content}\n")
-            return
-        if base_tag:
-            widget.insert(tk.END, prefix, base_tag)
-        else:
-            widget.insert(tk.END, prefix)
-        self._insert_word_diff_content(widget, content, base_tag)
-        widget.insert(tk.END, "\n")
-
-    def _insert_word_diff_content(self, widget: tk.Text, content: str, base_tag: str) -> None:
-        markers = [
-            ("{+", "+}", "added_word"),
-            ("[-", "-]", "removed_word"),
-            ("{-", "-}", "removed_word"),
-        ]
-        index = 0
-        while index < len(content):
-            next_marker = None
-            for opener, closer, tag in markers:
-                pos = content.find(opener, index)
-                if pos == -1:
-                    continue
-                if next_marker is None or pos < next_marker[0]:
-                    next_marker = (pos, opener, closer, tag)
-            if next_marker is None:
-                text = content[index:]
-                if text:
-                    if base_tag:
-                        widget.insert(tk.END, text, base_tag)
-                    else:
-                        widget.insert(tk.END, text)
-                break
-            pos, opener, closer, tag = next_marker
-            if pos > index:
-                if base_tag:
-                    widget.insert(tk.END, content[index:pos], base_tag)
-                else:
-                    widget.insert(tk.END, content[index:pos])
-            end = content.find(closer, pos + len(opener))
-            if end == -1:
-                if base_tag:
-                    widget.insert(tk.END, content[pos:], base_tag)
-                else:
-                    widget.insert(tk.END, content[pos:])
-                break
-            word = content[pos + len(opener) : end]
-            tags = (tag, base_tag) if base_tag else (tag,)
-            widget.insert(tk.END, word, tags)
-            index = end + len(closer)
-
-    @staticmethod
-    def _parse_hunk_header(header: str) -> tuple[int, int]:
-        # Example: @@ -77,4 +77,4 @@
-        try:
-            parts = header.split()
-            old_part = parts[1]
-            new_part = parts[2]
-            old_line = int(old_part.split(",")[0].lstrip("-"))
-            new_line = int(new_part.split(",")[0].lstrip("+"))
-            return old_line, new_line
-        except (IndexError, ValueError):
-            return 0, 0
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualiza commits do Git em uma interface Tkinter.")
