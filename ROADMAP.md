@@ -21,7 +21,7 @@ Legenda
 
 ## M2 - Produtividade
 
-- [ ] R2.1 Atalhos de teclado para navegacao, commit e refresh
+- [x] R2.1 Atalhos de teclado para navegacao, commit e refresh (2026-02-06)
 - [ ] R2.2 Comparacao de branches lado a lado
 - [ ] R2.3 Fluxo guiado de merge e rebase com alertas
 - [ ] R2.4 Historico de repositorios recentes
