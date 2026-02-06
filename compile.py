@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 DEFAULT_ENTRY = "main.py"
 DEFAULT_NAME = "git_viewer"
+DEFAULT_ICON = "assets/icon.ico"
+DEFAULT_VERSION_FILE = "assets/version_info.txt"
 
 
 def run(cmd: list[str]) -> None:
@@ -51,7 +53,14 @@ def install_requirements(python_path: Path, requirements_file: Path) -> None:
     run([str(python_path), "-m", "pip", "install", "-r", str(requirements_file)])
 
 
-def build_pyinstaller(python_path: Path, entry: Path, name: str, console: bool) -> None:
+def build_pyinstaller(
+    python_path: Path,
+    entry: Path,
+    name: str,
+    console: bool,
+    icon_path: Path | None,
+    version_file: Path | None,
+) -> None:
     cmd = [
         str(python_path),
         "-m",
@@ -64,6 +73,10 @@ def build_pyinstaller(python_path: Path, entry: Path, name: str, console: bool) 
     ]
     if not console:
         cmd.append("--windowed")
+    if icon_path and icon_path.exists():
+        cmd.extend(["--icon", str(icon_path)])
+    if version_file and version_file.exists() and os.name == "nt":
+        cmd.extend(["--version-file", str(version_file)])
     cmd.append(str(entry))
     run(cmd)
 
@@ -72,6 +85,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Builda o executavel via PyInstaller.")
     parser.add_argument("--name", default=DEFAULT_NAME, help="Nome do executavel")
     parser.add_argument("--entry", default=DEFAULT_ENTRY, help="Arquivo de entrada")
+    parser.add_argument("--icon", default=DEFAULT_ICON, help="Icone do executavel")
+    parser.add_argument(
+        "--version-file",
+        default=DEFAULT_VERSION_FILE,
+        help="Arquivo de metadata de versao (Windows)",
+    )
     parser.add_argument(
         "--console",
         action="store_true",
@@ -92,7 +111,9 @@ def main() -> int:
     run([str(python_path), "-m", "pip", "install", "--upgrade", "pip"])
     install_requirements(python_path, ROOT_DIR / "requirements.txt")
     install_requirements(python_path, ROOT_DIR / "requirements-dev.txt")
-    build_pyinstaller(python_path, entry_path, args.name, args.console)
+    icon_path = (ROOT_DIR / args.icon).resolve() if args.icon else None
+    version_file = (ROOT_DIR / args.version_file).resolve() if args.version_file else None
+    build_pyinstaller(python_path, entry_path, args.name, args.console, icon_path, version_file)
     return 0
 
 
