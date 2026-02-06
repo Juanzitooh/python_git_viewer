@@ -385,12 +385,26 @@ class HistoryTabMixin:
             self.no_more_commits = True
 
     def _load_more_commits(self) -> None:
-        if not self.repo_ready or self.loading_more or self.no_more_commits:
+        if not self.repo_ready or self.loading_commits or self.loading_more or self.no_more_commits:
             return
         self.loading_more = True
-        more = self._load_commit_summaries(skip=self.commit_offset)
-        self._append_commit_summaries(more)
-        self.loading_more = False
+        epoch = self.commit_list_epoch
+        skip = self.commit_offset
+
+        def task() -> list[CommitSummary]:
+            return self._load_commit_summaries(skip=skip)
+
+        def success(more: object) -> None:
+            self.loading_more = False
+            if epoch != self.commit_list_epoch:
+                return
+            self._append_commit_summaries(list(more))  # type: ignore[list-item]
+
+        def error(exc: Exception) -> None:
+            self.loading_more = False
+            messagebox.showerror("Erro", str(exc))
+
+        self._run_async("commit_more", "Carregar mais", task, success, error)
 
     def _maybe_load_more(self) -> None:
         if self.loading_more or self.no_more_commits:
@@ -439,11 +453,17 @@ class HistoryTabMixin:
     def _show_commit(self, index: int) -> None:
         summary = self.commit_summaries[index]
         self.current_commit_hash = summary.commit_hash
-        commit = self._get_commit_details(summary.commit_hash)
-        self._set_text(self.commit_info, self._format_commit_info(commit))
-        self._populate_files_list(commit)
-        self.load_patch_button.configure(state="normal")
+        cached = self.commit_details_cache.get(summary.commit_hash)
+        if cached is not None:
+            self._render_commit_details(cached)
+            return
+        self._set_text(self.commit_info, "Carregando detalhes do commit...")
+        self.files_listbox.delete(0, tk.END)
+        self.file_stats_by_index.clear()
+        self._set_text(self.patch_text, "")
+        self.load_patch_button.configure(state="disabled")
         self.load_patch_button.grid_remove()
+        self._request_commit_details(summary.commit_hash)
 
     def _format_commit_info(self, commit: CommitInfo) -> str:
         return (
@@ -454,6 +474,12 @@ class HistoryTabMixin:
             f"Descrição:\n{commit.body or '(sem descrição)'}\n"
             f"Total linhas: +{commit.total_added} -{commit.total_deleted}"
         )
+
+    def _render_commit_details(self, commit: CommitInfo) -> None:
+        self._set_text(self.commit_info, self._format_commit_info(commit))
+        self._populate_files_list(commit)
+        self.load_patch_button.configure(state="normal")
+        self.load_patch_button.grid_remove()
 
     def _populate_files_list(self, commit: CommitInfo) -> None:
         self.files_listbox.delete(0, tk.END)
@@ -541,13 +567,37 @@ class HistoryTabMixin:
             return None
         return self.commit_summaries[selection[0]].commit_hash
 
-    def _get_commit_details(self, commit_hash: str) -> CommitInfo:
+    def _get_commit_details(self, commit_hash: str) -> CommitInfo | None:
         cached = self.commit_details_cache.get(commit_hash)
         if cached is not None:
             return cached
-        details = load_commit_details(self.repo_path, commit_hash)
-        self.commit_details_cache[commit_hash] = details
-        return details
+        self._request_commit_details(commit_hash)
+        return None
+
+    def _request_commit_details(self, commit_hash: str) -> None:
+        if commit_hash in self.commit_details_cache:
+            return
+        if commit_hash in self.commit_details_pending:
+            return
+        self.commit_details_pending.add(commit_hash)
+        expected = commit_hash
+
+        def task() -> CommitInfo:
+            return load_commit_details(self.repo_path, expected)
+
+        def success(details: object) -> None:
+            self.commit_details_pending.discard(expected)
+            commit = details  # type: ignore[assignment]
+            self.commit_details_cache[expected] = commit  # type: ignore[arg-type]
+            if self.current_commit_hash == expected:
+                self._render_commit_details(commit)  # type: ignore[arg-type]
+
+        def error(exc: Exception) -> None:
+            self.commit_details_pending.discard(expected)
+            if self.current_commit_hash == expected:
+                messagebox.showerror("Erro", str(exc))
+
+        self._run_async(f"commit_detail:{expected}", "Detalhes commit", task, success, error)
 
     def _get_selected_commit(self) -> CommitInfo | None:
         commit_hash = self._get_selected_commit_hash()
@@ -710,6 +760,8 @@ class HistoryTabMixin:
                     break
                 applied.append(commit.commit_hash)
             if applied:
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
                 self._reload_commits()
                 self._refresh_status()
                 self._update_pull_push_labels()
@@ -722,6 +774,8 @@ class HistoryTabMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Cherry-pick", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             self._set_status("Cherry-pick abortado.")
             self._refresh_status()
             self._update_pull_push_labels()
@@ -732,6 +786,8 @@ class HistoryTabMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Cherry-pick", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             self._set_status("Cherry-pick continuado.")
             self._reload_commits()
             self._refresh_status()
@@ -892,6 +948,8 @@ class HistoryTabMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Cherry-pick", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             self._set_status("Cherry-pick abortado.")
             self._refresh_status()
             self._update_pull_push_labels()
@@ -902,6 +960,8 @@ class HistoryTabMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Cherry-pick", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             self._set_status("Cherry-pick continuado.")
             self._reload_commits()
             self._refresh_status()
@@ -938,21 +998,35 @@ class HistoryTabMixin:
             self.filter_repo_status_combo.configure(state="readonly")
 
     def _reload_commits(self) -> None:
-        start = self._perf_start("Recarregar commits")
-        try:
-            self.commit_summaries = self._load_commit_summaries()
-        except RuntimeError as exc:
+        if not self.repo_ready:
+            return
+        self.commit_list_epoch += 1
+        epoch = self.commit_list_epoch
+        self.loading_commits = True
+        self.loading_more = False
+        self.no_more_commits = False
+        self.commit_listbox.delete(0, tk.END)
+        self.commit_listbox.insert(tk.END, "(carregando commits...)")
+
+        def task() -> list[CommitSummary]:
+            return self._load_commit_summaries()
+
+        def success(summaries: object) -> None:
+            self.loading_commits = False
+            if epoch != self.commit_list_epoch:
+                return
+            self.commit_summaries = list(summaries)  # type: ignore[list-item]
+            self.commit_details_cache.clear()
+            self.current_commit_hash = None
+            self._populate_commit_list()
+            self._update_filter_status()
+
+        def error(exc: Exception) -> None:
+            self.loading_commits = False
             messagebox.showerror("Erro", str(exc))
             self._update_filter_status()
-            self._perf_end("Recarregar commits", start)
-            return
-        self.commit_details_cache.clear()
-        self.current_commit_hash = None
-        self.no_more_commits = False
-        self.loading_more = False
-        self._populate_commit_list()
-        self._update_filter_status()
-        self._perf_end("Recarregar commits", start)
+
+        self._run_async("commit_list", "Recarregar commits", task, success, error)
 
     def _refresh_history_patch_view(self) -> None:
         selection = self.files_listbox.curselection()

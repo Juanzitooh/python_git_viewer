@@ -343,11 +343,19 @@ class BranchesTabMixin:
             args.append("--word-diff=plain")
         args.append(f"{dest}...{origin}")
         args.extend(["--", path])
-        try:
-            diff_output = run_git(self.repo_path, args)
-        except RuntimeError as exc:
-            messagebox.showerror("Comparar", str(exc))
-            return
+        cache = getattr(self, "compare_diff_cache", None)
+        token = getattr(self, "repo_state_token", 0)
+        cache_key = (token, origin, dest, path, self._word_diff_enabled())
+        if cache is not None and cache_key in cache:
+            diff_output = cache[cache_key]
+        else:
+            try:
+                diff_output = run_git(self.repo_path, args)
+            except RuntimeError as exc:
+                messagebox.showerror("Comparar", str(exc))
+                return
+            if cache is not None:
+                cache[cache_key] = diff_output
         display_diff, truncated, shown, total = self._apply_read_mode_to_diff(diff_output)
         render_patch_to_widget(
             self.compare_diff_text,
@@ -458,6 +466,8 @@ class BranchesTabMixin:
             messagebox.showerror("Ação", str(exc))
             self._show_conflicts_window()
             return
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
         self._reload_commits()
         self._refresh_status()
         self._refresh_branches()

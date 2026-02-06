@@ -81,42 +81,81 @@ class GlobalBarMixin:
         self.perf_label.grid(row=0, column=16, sticky="w")
 
     def _fetch_repo(self) -> None:
-        self._fetch_repo_internal(show_errors=True)
+        if not self.repo_ready:
+            return
+
+        def task() -> None:
+            run_git(self.repo_path, ["fetch", "--all", "--prune"])
+
+        def success(_result: object) -> None:
+            self._set_status("Fetch concluído.")
+            self._update_pull_push_labels()
+
+        def error(exc: Exception) -> None:
+            messagebox.showerror("Erro", str(exc))
+
+        self._run_async("fetch", "Fetch", task, success, error)
 
     def _pull_repo(self) -> None:
         if not self.repo_ready:
             return
-        try:
+
+        def task() -> None:
             run_git(self.repo_path, ["pull", "--ff-only"])
-        except RuntimeError as exc:
+
+        def success(_result: object) -> None:
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
+            self._set_status("Pull concluído.")
+            self._reload_commits()
+            self._refresh_status()
+            self._refresh_branches()
+            self._update_pull_push_labels()
+
+        def error(exc: Exception) -> None:
             messagebox.showerror("Erro", str(exc))
-            return
-        self._set_status("Pull concluído.")
-        self._reload_commits()
-        self._refresh_status()
-        self._refresh_branches()
-        self._update_pull_push_labels()
+
+        self._run_async("pull", "Pull", task, success, error)
 
     def _push_repo(self) -> None:
         if not self.repo_ready:
             return
-        try:
+
+        def task() -> None:
             run_git(self.repo_path, ["push"])
-        except RuntimeError as exc:
+
+        def success(_result: object) -> None:
+            self._set_status("Push concluído.")
+            self._update_pull_push_labels()
+            self._refresh_status()
+            if self._is_dirty():
+                self._set_status("Push concluído, mas ainda há alterações locais.")
+
+        def error(exc: Exception) -> None:
             messagebox.showerror("Erro", str(exc))
-            return
-        self._set_status("Push concluído.")
-        self._update_pull_push_labels()
-        self._refresh_status()
-        if self._is_dirty():
-            self._set_status("Push concluído, mas ainda há alterações locais.")
+
+        self._run_async("push", "Push", task, success, error)
 
     def _refresh_branches(self) -> None:
-        if not self.repo_ready:
+        if not self.repo_ready or self.branches_loading:
             return
-        start = self._perf_start("Atualizar branches")
-        branches = self._get_branches()
-        current = self._get_current_branch()
+        self.branches_loading = True
+
+        def task() -> tuple[list[str], str]:
+            return self._get_branches(), self._get_current_branch()
+
+        def success(result: object) -> None:
+            self.branches_loading = False
+            branches, current = result  # type: ignore[misc]
+            self._render_branches(branches, current)
+
+        def error(exc: Exception) -> None:
+            self.branches_loading = False
+            messagebox.showerror("Erro", str(exc))
+
+        self._run_async("branches", "Atualizar branches", task, success, error)
+
+    def _render_branches(self, branches: list[str], current: str) -> None:
         self.branch_list = branches
         self.branch_combo["values"] = branches
         if current and current in branches:
@@ -131,7 +170,6 @@ class GlobalBarMixin:
         self._update_branch_action_branches()
         self._update_operation_preview()
         self._refresh_filter_refs()
-        self._perf_end("Atualizar branches", start)
 
     def _get_branches(self) -> list[str]:
         output = run_git(self.repo_path, ["branch", "--format=%(refname:short)"])
@@ -231,6 +269,8 @@ class GlobalBarMixin:
             return False
         self.branch_var.set(target)
         self._set_status(f"Checkout para {target}.")
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
         self._reload_commits()
         self._refresh_status()
         self._refresh_branches()
@@ -305,6 +345,8 @@ class GlobalBarMixin:
         self.repo_var.set(repo_path)
         if hasattr(self, "_register_recent_repo"):
             self._register_recent_repo(repo_path)
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
 
         self.patch_cache.clear()
         self.full_patch_cache.clear()
@@ -338,6 +380,8 @@ class GlobalBarMixin:
         self.commit_summaries = []
         self.commit_details_cache.clear()
         self.current_commit_hash = None
+        if hasattr(self, "status_signature"):
+            self.status_signature = ""
         self.commit_listbox.delete(0, tk.END)
         self._set_text(self.commit_info, "(nenhum repositório selecionado)")
         self._set_text(self.patch_text, "")
@@ -375,6 +419,8 @@ class GlobalBarMixin:
             self._clear_branch_comparison("Selecione um repositório.")
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
         self.upstream_var.set("")
         self._set_status("Selecione um repositório.")
         if hasattr(self, "branch_origin_combo"):

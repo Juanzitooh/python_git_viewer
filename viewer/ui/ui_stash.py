@@ -43,6 +43,8 @@ class StashMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             stash_message_var.set("")
             self._refresh_status()
             refresh_list()
@@ -150,6 +152,8 @@ class StashMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             self._refresh_status()
             self._reload_commits()
             refresh_list()
@@ -164,6 +168,8 @@ class StashMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
             refresh_list()
 
         ttk.Button(actions, text="Aplicar", command=lambda: apply_stash(pop=False)).grid(row=0, column=0, padx=(0, 6))

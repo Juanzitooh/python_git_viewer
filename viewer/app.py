@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import threading
 import time
+from typing import Any, Callable
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox
@@ -74,6 +76,16 @@ class CommitsViewer(
         self.loading_more = False
         self.no_more_commits = False
         self.repo_ready = False
+        self.repo_state_token = 0
+        self.worktree_diff_cache: dict[tuple[object, ...], str] = {}
+        self.compare_diff_cache: dict[tuple[object, ...], str] = {}
+        self._async_tokens: dict[str, int] = {}
+        self.commit_list_epoch = 0
+        self.loading_commits = False
+        self.status_loading = False
+        self.branches_loading = False
+        self.commit_details_pending: set[str] = set()
+        self.status_signature = ""
         self.settings_path = get_settings_path()
         self.settings_data: dict[str, object] = {}
         self.recent_repos: list[str] = []
@@ -227,6 +239,59 @@ class CommitsViewer(
             return
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         self.perf_var.set(f"{label}: {elapsed_ms:.0f} ms")
+
+    def _run_async(
+        self,
+        key: str,
+        label: str,
+        func: Callable[[], Any],
+        on_success: Callable[[Any], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> int:
+        token = self._async_tokens.get(key, 0) + 1
+        self._async_tokens[key] = token
+        start = self._perf_start(label) if label else 0.0
+
+        def finish_success(result: object) -> None:
+            if self._async_tokens.get(key) != token:
+                return
+            if on_success:
+                on_success(result)
+            if label:
+                self._perf_end(label, start)
+
+        def finish_error(exc: Exception) -> None:
+            if self._async_tokens.get(key) != token:
+                return
+            if on_error:
+                on_error(exc)
+            else:
+                messagebox.showerror("Erro", str(exc))
+            if label:
+                self._perf_end(label, start)
+
+        def worker() -> None:
+            try:
+                result = func()
+            except Exception as exc:
+                self.after(0, lambda: finish_error(exc))
+                return
+            self.after(0, lambda: finish_success(result))
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        return token
+
+    def _bump_repo_state(self) -> None:
+        self.repo_state_token += 1
+        if hasattr(self, "worktree_diff_cache"):
+            self.worktree_diff_cache.clear()
+        if hasattr(self, "compare_diff_cache"):
+            self.compare_diff_cache.clear()
+        if hasattr(self, "patch_cache"):
+            self.patch_cache.clear()
+        if hasattr(self, "full_patch_cache"):
+            self.full_patch_cache.clear()
 
     def _load_settings(self) -> None:
         self.settings_data = load_settings(self.settings_path)

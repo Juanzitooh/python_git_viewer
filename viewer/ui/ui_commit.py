@@ -148,19 +148,36 @@ class CommitTabMixin:
         self._refresh_status()
 
     def _refresh_status(self) -> None:
-        if not self.repo_ready:
+        if not self.repo_ready or self.status_loading:
             return
-        start = self._perf_start("Atualizar status")
+        self.status_loading = True
+
+        def task() -> list[dict[str, str | bool]]:
+            return self._get_status_entries()
+
+        def success(entries: object) -> None:
+            self.status_loading = False
+            self._render_status_entries(list(entries))  # type: ignore[list-item]
+
+        def error(exc: Exception) -> None:
+            self.status_loading = False
+            messagebox.showerror("Erro", str(exc))
+
+        self._run_async("status", "Atualizar status", task, success, error)
+
+    def _render_status_entries(self, entries: list[dict[str, str | bool]]) -> None:
         self.status_listbox.delete(0, tk.END)
         self.status_items.clear()
-        self.status_headers: set[int] = set()
-
-        try:
-            entries = self._get_status_entries()
-        except RuntimeError as exc:
-            messagebox.showerror("Erro", str(exc))
-            self._perf_end("Atualizar status", start)
-            return
+        self.status_headers = set()
+        signature = "|".join(
+            f"{entry.get('status')}:{entry.get('path_for_git')}:{'1' if entry.get('staged') else '0'}"
+            for entry in entries
+        )
+        if hasattr(self, "status_signature"):
+            if signature != self.status_signature:
+                self.status_signature = signature
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
 
         grouped: dict[str, list[dict[str, str | bool]]] = {}
         for entry in entries:
@@ -200,7 +217,6 @@ class CommitTabMixin:
         self._update_operation_preview()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
-        self._perf_end("Atualizar status", start)
 
     def _sync_selection_to_staged(self) -> None:
         if self.suspend_stage_sync:
@@ -292,6 +308,8 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Erro", str(exc))
             return
+        if (add_paths or reset_paths) and hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
         self._refresh_status()
 
     def _update_worktree_diff_from_selection(self) -> None:
@@ -364,13 +382,21 @@ class CommitTabMixin:
     def _get_diff_for_scope(self, scope: str, path: str, word_diff: bool) -> str:
         if scope == "untracked":
             return self._get_untracked_diff(path, word_diff)
+        cache = getattr(self, "worktree_diff_cache", None)
+        token = getattr(self, "repo_state_token", 0)
+        cache_key = (token, scope, path, word_diff)
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
         args = ["diff", "--unified=0"]
         if word_diff:
             args.append("--word-diff=plain")
         if scope == "staged":
             args.append("--cached")
         args.extend(["--", path])
-        return run_git(self.repo_path, args)
+        diff = run_git(self.repo_path, args)
+        if cache is not None:
+            cache[cache_key] = diff
+        return diff
 
     def _render_worktree_diff(self, diff_text: str, word_diff: bool) -> None:
         render_patch_to_widget(
@@ -605,6 +631,8 @@ class CommitTabMixin:
             return False
         self.commit_title_var.set("")
         self.commit_body_text.delete("1.0", tk.END)
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
         self._set_status("Commit criado.")
         self._refresh_status()
         self._reload_commits()
