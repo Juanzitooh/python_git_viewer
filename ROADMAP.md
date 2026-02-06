@@ -22,7 +22,7 @@ Legenda
 ## M2 - Produtividade
 
 - [x] R2.1 Atalhos de teclado para navegacao, commit e refresh (2026-02-06)
-- [ ] R2.2 Comparacao de branches lado a lado
+- [x] R2.2 Comparacao de branches lado a lado (2026-02-06)
 - [ ] R2.3 Fluxo guiado de merge e rebase com alertas
 - [ ] R2.4 Historico de repositorios recentes
 - [ ] R2.5 Painel de status com ahead/behind e upstream
