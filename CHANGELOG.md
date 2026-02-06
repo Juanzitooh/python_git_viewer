@@ -17,6 +17,8 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Abertura de arquivos no VS Code por duplo clique e atalho para abrir o repositorio.
 - Atalhos de teclado para navegacao, refresh e commit.
 - Aba de comparacao de branches com resumo e diffs por arquivo.
+- Persistencia de configuracoes, favoritos e repositorios recentes via JSON.
+- Aba de repositorios para abrir e favoritar rapidamente.
 
 ## [0.1.0] - 2026-02-05
 

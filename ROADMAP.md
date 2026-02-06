@@ -24,9 +24,10 @@ Legenda
 - [x] R2.1 Atalhos de teclado para navegacao, commit e refresh (2026-02-06)
 - [x] R2.2 Comparacao de branches lado a lado (2026-02-06)
 - [ ] R2.3 Fluxo guiado de merge e rebase com alertas
-- [ ] R2.4 Historico de repositorios recentes
+- [x] R2.4 Historico de repositorios recentes (2026-02-06)
 - [ ] R2.5 Painel de status com ahead/behind e upstream
 - [x] R2.6 Abrir arquivos e repositorio no VS Code (2026-02-06)
+- [x] R2.7 Favoritos e aba de repositorios (2026-02-06)
 
 ## M3 - Visual e UX
 
