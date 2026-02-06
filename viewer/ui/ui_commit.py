@@ -15,14 +15,10 @@ class CommitTabMixin:
         self.branch_tab.grid_columnconfigure(0, weight=1)
         self.branch_tab.grid_rowconfigure(0, weight=1)
 
-        content_frame = ttk.Frame(self.branch_tab)
-        content_frame.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 0))
-        content_frame.grid_columnconfigure(0, weight=2)
-        content_frame.grid_columnconfigure(1, weight=4)
-        content_frame.grid_rowconfigure(0, weight=1)
+        paned = ttk.PanedWindow(self.branch_tab, orient="horizontal")
+        paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 0))
 
-        left_column = ttk.Frame(content_frame)
-        left_column.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left_column = ttk.Frame(paned)
         left_column.grid_columnconfigure(0, weight=1)
         left_column.grid_rowconfigure(0, weight=3)
         left_column.grid_rowconfigure(1, weight=1)
@@ -78,8 +74,7 @@ class CommitTabMixin:
         ttk.Button(commit_buttons, text="Commit + Push", command=self._commit_and_push).grid(row=0, column=1)
         ttk.Button(commit_buttons, text="Stash", command=self._open_stash_window).grid(row=0, column=2, padx=(6, 0))
 
-        diff_frame = ttk.Frame(content_frame)
-        diff_frame.grid(row=0, column=1, sticky="nsew")
+        diff_frame = ttk.Frame(paned)
         diff_frame.grid_columnconfigure(0, weight=1)
         diff_frame.grid_rowconfigure(1, weight=1)
 
@@ -140,6 +135,9 @@ class CommitTabMixin:
             row=0,
             column=3,
         )
+
+        paned.add(left_column, weight=1)
+        paned.add(diff_frame, weight=2)
 
         self.status_var = tk.StringVar(value="")
         self.status_label = ttk.Label(self.branch_tab, textvariable=self.status_var)

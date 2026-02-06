@@ -16,11 +16,10 @@ LARGE_PATCH_THRESHOLD = 1000
 class HistoryTabMixin:
     def _build_history_tab(self) -> None:
         self.history_tab.grid_columnconfigure(0, weight=1)
-        self.history_tab.grid_columnconfigure(1, weight=3)
         self.history_tab.grid_rowconfigure(1, weight=1)
 
         top_bar = ttk.Frame(self.history_tab)
-        top_bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         top_bar.grid_columnconfigure(0, weight=1)
 
         history_actions = ttk.Frame(top_bar)
@@ -131,8 +130,11 @@ class HistoryTabMixin:
         ):
             entry.bind("<Return>", lambda _e: self._apply_commit_filters())
 
-        self.left_frame = ttk.Frame(self.history_tab)
-        self.left_frame.grid(row=1, column=0, sticky="nsew")
+        paned = ttk.PanedWindow(self.history_tab, orient="horizontal")
+        paned.grid(row=1, column=0, sticky="nsew")
+        self._history_paned = paned
+
+        self.left_frame = ttk.Frame(paned)
         self.left_frame.grid_rowconfigure(0, weight=1)
         self.left_frame.grid_columnconfigure(0, weight=1)
         self.left_frame.grid_columnconfigure(1, weight=0)
@@ -154,10 +156,12 @@ class HistoryTabMixin:
         self.commit_listbox.configure(yscrollcommand=self._on_history_yscroll)
 
         self._build_right_panel()
+        paned.add(self.left_frame, weight=1)
+        paned.add(self.right_frame, weight=3)
 
     def _build_right_panel(self) -> None:
-        self.right_frame = ttk.Frame(self.history_tab)
-        self.right_frame.grid(row=1, column=1, sticky="nsew")
+        parent = getattr(self, "_history_paned", self.history_tab)
+        self.right_frame = ttk.Frame(parent)
         self.right_frame.grid_rowconfigure(3, weight=1)
         self.right_frame.grid_columnconfigure(0, weight=1)
 
