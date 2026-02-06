@@ -20,6 +20,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Persistencia de configuracoes, favoritos e repositorios recentes via JSON.
 - Aba de repositorios para abrir e favoritar rapidamente.
 - Painel de status do repositorio com upstream e ahead/behind.
+- Fluxo guiado de merge/rebase/squash com resumo e alertas.
 
 ## [0.1.0] - 2026-02-05
 
