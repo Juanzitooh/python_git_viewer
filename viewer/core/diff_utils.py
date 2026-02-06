@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from models import DiffData, DiffHunk, DiffLineInfo
+from .models import DiffData, DiffHunk, DiffLineInfo
 
 
 def parse_hunk_header(header: str) -> tuple[int, int]:

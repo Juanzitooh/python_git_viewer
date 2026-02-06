@@ -6,9 +6,9 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from diff_utils import render_patch_to_widget
-from git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
-from models import CommitFilters, CommitInfo, CommitSummary, FileStat
+from ..core.diff_utils import render_patch_to_widget
+from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
+from ..core.models import CommitFilters, CommitInfo, CommitSummary, FileStat
 
 
 LARGE_PATCH_THRESHOLD = 1000

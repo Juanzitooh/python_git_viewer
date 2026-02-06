@@ -5,9 +5,9 @@ import subprocess
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from diff_utils import build_line_map, build_patch_for_hunk, build_patch_for_line, parse_diff_data, render_patch_to_widget
-from git_client import run_git
-from models import DiffData, DiffLineInfo
+from ..core.diff_utils import build_line_map, build_patch_for_hunk, build_patch_for_line, parse_diff_data, render_patch_to_widget
+from ..core.git_client import run_git
+from ..core.models import DiffData, DiffLineInfo
 
 
 class CommitTabMixin:
@@ -589,4 +589,3 @@ class CommitTabMixin:
             return
         if self._commit_changes():
             self._push_repo()
-

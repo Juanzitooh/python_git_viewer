@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import subprocess
 
-from models import CommitFilters, CommitInfo, CommitSummary, FileStat
+from .models import CommitFilters, CommitInfo, CommitSummary, FileStat
 
 FIELD_SEP = "\x1f"
 RECORD_SEP = "\x1e"

@@ -5,7 +5,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from git_client import is_git_repo, run_git
+from ..core.git_client import is_git_repo, run_git
 
 
 class GlobalBarMixin:

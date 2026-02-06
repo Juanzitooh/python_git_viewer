@@ -7,13 +7,13 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
 
-from git_client import is_git_repo, load_commit_summaries
-from models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffLineInfo
-from ui_commit import CommitTabMixin
-from ui_global import GlobalBarMixin
-from ui_history import HistoryTabMixin
-from ui_settings import SettingsTabMixin
-from ui_stash import StashMixin
+from .core.git_client import is_git_repo, load_commit_summaries
+from .core.models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffLineInfo
+from .ui.ui_commit import CommitTabMixin
+from .ui.ui_global import GlobalBarMixin
+from .ui.ui_history import HistoryTabMixin
+from .ui.ui_settings import SettingsTabMixin
+from .ui.ui_stash import StashMixin
 
 
 class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTabMixin, StashMixin, tk.Tk):

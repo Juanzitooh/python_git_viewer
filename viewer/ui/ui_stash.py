@@ -4,8 +4,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from diff_utils import render_patch_to_widget
-from git_client import run_git
+from ..core.diff_utils import render_patch_to_widget
+from ..core.git_client import run_git
 
 
 class StashMixin:
@@ -164,4 +164,3 @@ class StashMixin:
 
         stash_listbox.bind("<<ListboxSelect>>", lambda _e: show_selected_stash())
         refresh_list()
-
