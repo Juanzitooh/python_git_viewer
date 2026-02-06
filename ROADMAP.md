@@ -54,6 +54,16 @@ Legenda
 - [x] R5.2 Releases com checksums e notas de versao (2026-02-06)
 - [x] R5.3 Icone e metadata do executavel (2026-02-06)
 
+## M6 - UX e Interface
+
+- [x] R6.1 Barra global com titulo dinamico e acoes de copiar caminho/VS Code (2026-02-06)
+- [ ] R6.2 Barra global simplificada (remover campo de caminho e seletores redundantes)
+- [ ] R6.3 Aba Repositorios com status no topo e abrir recente com fetch + Historico
+- [ ] R6.4 Aba Historico: importar commits vira fluxo dedicado
+- [ ] R6.5 Aba Historico: filtro modal, tooltip de data/hora e copiar hash
+- [ ] R6.6 Aba Comparar: acao no fim, squash condicional e feedback com link para Commit
+- [ ] R6.7 Aba Commit: stage/unstage via selecao direta sem botoes extras
+
 ## Regras de Manutencao
 
 - Toda entrega deve marcar o item correspondente como concluido com data.

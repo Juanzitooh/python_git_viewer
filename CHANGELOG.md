@@ -34,6 +34,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Icone e metadata do executavel via PyInstaller.
 - Corrigido entrypoint do app e import ausente na aba de commit.
 - Janela principal abre maximizada e painel de patch no Historico fica redimensionavel com abertura em janela.
+- Barra global com titulo dinamico e acao de copiar caminho/abrir no VS Code.
 
 ## [0.1.0] - 2026-02-05
 
