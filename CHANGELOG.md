@@ -9,6 +9,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Diff por palavra com realce de mudancas pequenas.
 - Stage/unstage por hunk e por linha direto no diff do arquivo.
 - Stash manager com criar, aplicar e descartar stashes.
+- Modularizacao inicial: modelos e funcoes Git em modulos dedicados.
 
 ## [0.1.0] - 2026-02-05
 

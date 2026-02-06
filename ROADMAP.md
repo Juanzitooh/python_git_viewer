@@ -40,6 +40,8 @@ Legenda
 - [ ] R4.2 Cache de diffs com invalidacao segura
 - [ ] R4.3 Suporte a repositorios grandes com paginacao robusta
 - [ ] R4.4 Suite de testes para parsing de diff e numstat
+- [x] R4.5 Modularizacao inicial (models e git_client) (2026-02-06)
+- [ ] R4.6 Modularizar UI em modulos (historico, commit, stash, diff)
 
 ## M5 - Distribuicao
 
