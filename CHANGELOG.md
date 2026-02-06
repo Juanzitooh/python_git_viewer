@@ -11,6 +11,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Stash manager com criar, aplicar e descartar stashes.
 - Modularizacao inicial: modelos e funcoes Git em modulos dedicados.
 - Extracao de utilitarios de diff para `diff_utils.py`.
+- Modularizacao da UI em modulos por aba.
 
 ## [0.1.0] - 2026-02-05
 
