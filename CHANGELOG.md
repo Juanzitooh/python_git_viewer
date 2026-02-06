@@ -12,6 +12,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Modularizacao inicial: modelos e funcoes Git em modulos dedicados.
 - Extracao de utilitarios de diff para `diff_utils.py`.
 - Modularizacao da UI em modulos por aba.
+- Modularizacao da barra global e fluxos de repositorio em `ui_global.py`.
 
 ## [0.1.0] - 2026-02-05
 

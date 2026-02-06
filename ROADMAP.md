@@ -43,6 +43,7 @@ Legenda
 - [x] R4.5 Modularizacao inicial (models e git_client) (2026-02-06)
 - [x] R4.6 Modularizar UI em modulos (historico, commit, stash, diff) (2026-02-06)
 - [x] R4.7 Extrair utilitarios de diff (diff_utils) (2026-02-06)
+- [x] R4.8 Modularizar barra global e fluxos de repo (2026-02-06)
 
 ## M5 - Distribuicao
 
