@@ -19,6 +19,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Aba de comparacao de branches com resumo e diffs por arquivo.
 - Persistencia de configuracoes, favoritos e repositorios recentes via JSON.
 - Aba de repositorios para abrir e favoritar rapidamente.
+- Painel de status do repositorio com upstream e ahead/behind.
 
 ## [0.1.0] - 2026-02-05
 
