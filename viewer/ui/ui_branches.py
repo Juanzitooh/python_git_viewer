@@ -407,8 +407,6 @@ class BranchesTabMixin:
         if origin == dest:
             messagebox.showwarning("Ação", "Origem e destino devem ser diferentes.")
             return
-        if not self._checkout_to_branch(dest):
-            return
         if self._is_dirty():
             messagebox.showwarning("Ação", "Working tree sujo. Faça stash/commit antes.")
             return
@@ -418,6 +416,10 @@ class BranchesTabMixin:
             if not message:
                 messagebox.showwarning("Squash", "Mensagem obrigatória para squash.")
                 return
+        if not self._confirm_branch_action(origin, dest, action):
+            return
+        if not self._checkout_to_branch(dest):
+            return
         try:
             if action == "Merge":
                 run_git(self.repo_path, ["merge", origin])
@@ -435,6 +437,86 @@ class BranchesTabMixin:
         self._refresh_branches()
         self._update_pull_push_labels()
         self._refresh_branch_comparison()
+
+    def _confirm_branch_action(self, origin: str, dest: str, action: str) -> bool:
+        commits = self._load_compare_commits(origin, dest)
+        stats, totals = self._load_compare_file_stats(origin, dest)
+        behind, ahead = self._get_ahead_behind_between(origin, dest)
+        conflict = self._has_potential_conflict(origin, dest)
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Confirmar ação")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(3, weight=1)
+
+        header = ttk.Frame(dialog)
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        header.grid_columnconfigure(0, weight=1)
+        ttk.Label(header, text=f"Ação: {action}").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text=f"Origem: {origin}").grid(row=1, column=0, sticky="w")
+        ttk.Label(header, text=f"Destino: {dest}").grid(row=2, column=0, sticky="w")
+
+        summary_lines = [
+            f"Commits da origem: {behind}",
+            f"Commits locais: {ahead}",
+            f"Arquivos: {totals['files']} | +{totals['added']}/-{totals['deleted']}",
+        ]
+        if totals["binary"]:
+            summary_lines.append(f"Binários: {totals['binary']}")
+        summary_text = " | ".join(summary_lines)
+        ttk.Label(dialog, text=summary_text).grid(row=1, column=0, sticky="w", padx=12)
+
+        warnings: list[str] = []
+        if behind == 0 and not commits:
+            warnings.append("Nenhuma mudança da origem para aplicar.")
+        if conflict:
+            warnings.append("Conflito potencial detectado.")
+        if action == "Rebase" and ahead > 0:
+            warnings.append(f"Rebase vai reescrever {ahead} commit(s) locais.")
+        if action == "Merge" and ahead > 0:
+            warnings.append("Merge criará commit de merge (há commits locais).")
+        if action == "Squash merge" and behind > 0:
+            warnings.append("Squash irá agrupar commits em um único commit.")
+
+        if warnings:
+            warn_text = "\n".join(f"- {item}" for item in warnings)
+            warn_label = ttk.Label(dialog, text=warn_text, foreground="#b42318", justify="left")
+            warn_label.grid(row=2, column=0, sticky="w", padx=12, pady=(6, 0))
+
+        list_frame = ttk.Frame(dialog)
+        list_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(8, 0))
+        list_frame.grid_rowconfigure(1, weight=1)
+        list_frame.grid_columnconfigure(0, weight=1)
+        ttk.Label(list_frame, text="Commits a incorporar:").grid(row=0, column=0, sticky="w")
+        commit_text = tk.Text(list_frame, height=10, wrap="none")
+        commit_text.grid(row=1, column=0, sticky="nsew")
+        commit_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=commit_text.yview)
+        commit_scroll.grid(row=1, column=1, sticky="ns")
+        commit_text.configure(yscrollcommand=commit_scroll.set)
+        if commits:
+            commit_text.insert(tk.END, "\n".join(commits))
+        else:
+            commit_text.insert(tk.END, "(nenhum)")
+        commit_text.configure(state="disabled")
+
+        result = {"confirmed": False}
+
+        def confirm() -> None:
+            result["confirmed"] = True
+            dialog.destroy()
+
+        def cancel() -> None:
+            dialog.destroy()
+
+        actions = ttk.Frame(dialog)
+        actions.grid(row=4, column=0, sticky="e", padx=12, pady=12)
+        ttk.Button(actions, text="Cancelar", command=cancel).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(actions, text="Continuar", command=confirm).grid(row=0, column=1)
+
+        dialog.wait_window()
+        return bool(result["confirmed"])
 
     def _show_action_hint(self, event: tk.Event) -> None:
         if not self.repo_ready:
