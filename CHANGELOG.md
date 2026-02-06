@@ -25,6 +25,10 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Tema claro/escuro e fontes configuraveis persistidas.
 - Modo de leitura para diffs grandes (Historico, Comparar e Stash).
 - Indicadores de performance no topo (tempo de operacoes principais).
+- Operacoes Git em background para evitar travamentos da UI.
+- Cache de diffs com invalidacao segura ao mudar estado do repo.
+- Paginacao de commits com carregamento assíncrono.
+- Testes para parsing de diff e numstat.
 
 ## [0.1.0] - 2026-02-05
 

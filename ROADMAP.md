@@ -38,10 +38,10 @@ Legenda
 
 ## M4 - Confiabilidade e Performance
 
-- [ ] R4.1 Operacoes de Git assincronas sem travar UI
-- [ ] R4.2 Cache de diffs com invalidacao segura
-- [ ] R4.3 Suporte a repositorios grandes com paginacao robusta
-- [ ] R4.4 Suite de testes para parsing de diff e numstat
+- [x] R4.1 Operacoes de Git assincronas sem travar UI (2026-02-06)
+- [x] R4.2 Cache de diffs com invalidacao segura (2026-02-06)
+- [x] R4.3 Suporte a repositorios grandes com paginacao robusta (2026-02-06)
+- [x] R4.4 Suite de testes para parsing de diff e numstat (2026-02-06)
 - [x] R4.5 Modularizacao inicial (models e git_client) (2026-02-06)
 - [x] R4.6 Modularizar UI em modulos (historico, commit, stash, diff) (2026-02-06)
 - [x] R4.7 Extrair utilitarios de diff (diff_utils) (2026-02-06)
