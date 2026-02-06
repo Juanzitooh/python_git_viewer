@@ -68,7 +68,42 @@ class ReposTabMixin:
             row=0, column=1
         )
 
+        status_frame = ttk.LabelFrame(self.repos_tab, text="Status do repositório")
+        status_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        status_frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(status_frame, text="Repo:").grid(row=0, column=0, sticky="w", padx=8, pady=(6, 2))
+        self.repo_status_path_var = tk.StringVar(value="(nenhum)")
+        ttk.Label(status_frame, textvariable=self.repo_status_path_var).grid(
+            row=0, column=1, sticky="w", padx=8, pady=(6, 2)
+        )
+
+        ttk.Label(status_frame, text="Branch:").grid(row=1, column=0, sticky="w", padx=8, pady=2)
+        self.repo_status_branch_var = tk.StringVar(value="(nenhum)")
+        ttk.Label(status_frame, textvariable=self.repo_status_branch_var).grid(
+            row=1, column=1, sticky="w", padx=8, pady=2
+        )
+
+        ttk.Label(status_frame, text="Upstream:").grid(row=2, column=0, sticky="w", padx=8, pady=2)
+        self.repo_status_upstream_var = tk.StringVar(value="(não configurado)")
+        ttk.Label(status_frame, textvariable=self.repo_status_upstream_var).grid(
+            row=2, column=1, sticky="w", padx=8, pady=2
+        )
+
+        ttk.Label(status_frame, text="Ahead/Behind:").grid(row=3, column=0, sticky="w", padx=8, pady=2)
+        self.repo_status_ahead_behind_var = tk.StringVar(value="0/0")
+        ttk.Label(status_frame, textvariable=self.repo_status_ahead_behind_var).grid(
+            row=3, column=1, sticky="w", padx=8, pady=2
+        )
+
+        ttk.Label(status_frame, text="Working tree:").grid(row=4, column=0, sticky="w", padx=8, pady=(2, 6))
+        self.repo_status_dirty_var = tk.StringVar(value="Limpo")
+        ttk.Label(status_frame, textvariable=self.repo_status_dirty_var).grid(
+            row=4, column=1, sticky="w", padx=8, pady=(2, 6)
+        )
+
         self._refresh_repo_lists()
+        self._refresh_repo_status_panel()
 
     def _refresh_repo_lists(self) -> None:
         if not hasattr(self, "favorite_listbox"):
@@ -128,6 +163,38 @@ class ReposTabMixin:
             messagebox.showinfo("Recentes", "Selecione um recente para remover.")
             return
         self._remove_recent_repo(path)
+
+    def _refresh_repo_status_panel(self) -> None:
+        if not hasattr(self, "repo_status_path_var"):
+            return
+        if not self.repo_ready:
+            self.repo_status_path_var.set("(nenhum)")
+            self.repo_status_branch_var.set("(nenhum)")
+            self.repo_status_upstream_var.set("(não configurado)")
+            self.repo_status_ahead_behind_var.set("0/0")
+            self.repo_status_dirty_var.set("Limpo")
+            return
+        self.repo_status_path_var.set(self.repo_path)
+        try:
+            branch = self._get_current_branch()
+        except RuntimeError:
+            branch = ""
+        self.repo_status_branch_var.set(branch or "(desconhecido)")
+
+        upstream = self._get_upstream()
+        self.repo_status_upstream_var.set(upstream or "(não configurado)")
+
+        try:
+            behind, ahead = self._get_ahead_behind()
+        except RuntimeError:
+            behind, ahead = 0, 0
+        self.repo_status_ahead_behind_var.set(f"{ahead}/{behind}")
+
+        try:
+            dirty = self._is_dirty()
+        except RuntimeError:
+            dirty = False
+        self.repo_status_dirty_var.set("Sujo" if dirty else "Limpo")
 
     @staticmethod
     def _get_selected_repo(listbox: tk.Listbox, data: list[str]) -> str | None:

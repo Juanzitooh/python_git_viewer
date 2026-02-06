@@ -364,6 +364,8 @@ class GlobalBarMixin:
         self._set_action_visibility(self.push_button, False)
         if hasattr(self, "_clear_branch_comparison"):
             self._clear_branch_comparison("Selecione um repositório.")
+        if hasattr(self, "_refresh_repo_status_panel"):
+            self._refresh_repo_status_panel()
         self.upstream_var.set("")
         self._set_status("Selecione um repositório.")
         if hasattr(self, "branch_origin_combo"):

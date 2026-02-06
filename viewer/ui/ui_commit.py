@@ -198,6 +198,8 @@ class CommitTabMixin:
         self._sync_selection_to_staged()
         self._update_worktree_diff_from_selection()
         self._update_operation_preview()
+        if hasattr(self, "_refresh_repo_status_panel"):
+            self._refresh_repo_status_panel()
 
     def _sync_selection_to_staged(self) -> None:
         if self.suspend_stage_sync:
