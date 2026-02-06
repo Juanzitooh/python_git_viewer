@@ -548,3 +548,41 @@ class CommitsViewer(
         widget.tag_configure("meta", foreground=palette["diff_meta"])
         widget.tag_configure("added_word", foreground=palette["diff_added"], background=palette["diff_added_bg"])
         widget.tag_configure("removed_word", foreground=palette["diff_removed"], background=palette["diff_removed_bg"])
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Visualiza commits do Git em uma interface Tkinter.")
+    parser.add_argument(
+        "--repo",
+        default=os.getcwd(),
+        help="Caminho do repositório Git (default: diretório atual)",
+    )
+    parser.add_argument("--limit", type=int, default=100, help="Quantidade de commits (default: 100)")
+    parser.add_argument(
+        "--patch-limit",
+        type=int,
+        default=0,
+        help="(ignorado) mantido por compatibilidade",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    repo_path = os.path.abspath(args.repo)
+    commits: list[CommitSummary] = []
+    if os.path.isdir(repo_path) and is_git_repo(repo_path):
+        try:
+            commits = load_commit_summaries(repo_path, args.limit)
+        except RuntimeError as exc:
+            messagebox.showerror("Erro", str(exc))
+            repo_path = ""
+    else:
+        repo_path = ""
+    app = CommitsViewer(repo_path, commits, args.patch_limit, args.limit)
+    app.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
