@@ -14,6 +14,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Modularizacao da UI em modulos por aba.
 - Modularizacao da barra global e fluxos de repositorio em `ui_global.py`.
 - Estrutura organizada em pacote `viewer/` com subpastas `core/` e `ui/`.
+- Abertura de arquivos no VS Code por duplo clique e atalho para abrir o repositorio.
 
 ## [0.1.0] - 2026-02-05
 
