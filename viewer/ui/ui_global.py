@@ -16,6 +16,7 @@ class GlobalBarMixin:
         self.global_bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         self.global_bar.grid_columnconfigure(1, weight=1)
         self.global_bar.grid_columnconfigure(6, weight=1)
+        self.global_bar.grid_columnconfigure(15, weight=1)
 
         ttk.Label(self.global_bar, text="Repo:").grid(row=0, column=0, sticky="w")
         self.repo_var = tk.StringVar(value=self.repo_path)
@@ -73,6 +74,12 @@ class GlobalBarMixin:
         self.upstream_label = ttk.Label(self.global_bar, textvariable=self.upstream_var)
         self.upstream_label.grid(row=0, column=14, sticky="w", padx=(12, 0))
 
+        if not hasattr(self, "perf_var"):
+            self.perf_var = tk.StringVar(value="")
+        ttk.Label(self.global_bar, text="Perf:").grid(row=0, column=15, sticky="w", padx=(12, 0))
+        self.perf_label = ttk.Label(self.global_bar, textvariable=self.perf_var)
+        self.perf_label.grid(row=0, column=16, sticky="w")
+
     def _fetch_repo(self) -> None:
         self._fetch_repo_internal(show_errors=True)
 
@@ -107,6 +114,7 @@ class GlobalBarMixin:
     def _refresh_branches(self) -> None:
         if not self.repo_ready:
             return
+        start = self._perf_start("Atualizar branches")
         branches = self._get_branches()
         current = self._get_current_branch()
         self.branch_list = branches
@@ -123,6 +131,7 @@ class GlobalBarMixin:
         self._update_branch_action_branches()
         self._update_operation_preview()
         self._refresh_filter_refs()
+        self._perf_end("Atualizar branches", start)
 
     def _get_branches(self) -> list[str]:
         output = run_git(self.repo_path, ["branch", "--format=%(refname:short)"])

@@ -212,6 +212,23 @@ def insert_word_diff_content(widget: tk.Text, content: str, base_tag: str) -> No
         index = end + len(closer)
 
 
+def build_read_mode_diff(diff_text: str, *, threshold: int, max_lines: int) -> tuple[str, bool]:
+    lines = diff_text.splitlines()
+    total = len(lines)
+    if total <= threshold:
+        return diff_text, False
+    if max_lines <= 0:
+        return diff_text, False
+    head = max_lines // 2
+    tail = max_lines - head
+    if head + tail >= total:
+        return diff_text, False
+    omitted = total - head - tail
+    marker = f"... ({omitted} linhas omitidas no modo leitura) ..."
+    preview = lines[:head] + [marker] + lines[-tail:]
+    return "\n".join(preview) + "\n", True
+
+
 def render_patch_to_widget(
     widget: tk.Text,
     patch: str,

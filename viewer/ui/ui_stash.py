@@ -50,6 +50,11 @@ class StashMixin:
         ttk.Button(top_bar, text="Criar stash", command=create_stash).grid(row=0, column=2, padx=(0, 6))
         ttk.Button(top_bar, text="Atualizar", command=lambda: refresh_list()).grid(row=0, column=3)
 
+        stash_read_mode_var = tk.StringVar(value="")
+        ttk.Label(top_bar, textvariable=stash_read_mode_var).grid(
+            row=1, column=0, columnspan=4, sticky="w", pady=(4, 0)
+        )
+
         list_frame = ttk.Frame(container)
         list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
         list_frame.grid_rowconfigure(0, weight=1)
@@ -96,19 +101,25 @@ class StashMixin:
             ref = selected_ref()
             if not ref:
                 self._set_text(stash_diff_text, "(sem stash selecionado)")
+                stash_read_mode_var.set("")
                 return
             try:
                 diff = run_git(self.repo_path, ["stash", "show", "-p", ref])
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
+            display_diff, truncated, shown, total = self._apply_read_mode_to_diff(diff)
             render_patch_to_widget(
                 stash_diff_text,
-                diff,
+                display_diff,
                 read_only=True,
                 show_file_headers=True,
                 word_diff=self._word_diff_enabled(),
             )
+            if truncated:
+                stash_read_mode_var.set(f"Modo leitura: {shown}/{total} linhas")
+            else:
+                stash_read_mode_var.set("")
 
         def refresh_list() -> None:
             stash_listbox.delete(0, tk.END)

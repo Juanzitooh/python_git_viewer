@@ -150,6 +150,7 @@ class CommitTabMixin:
     def _refresh_status(self) -> None:
         if not self.repo_ready:
             return
+        start = self._perf_start("Atualizar status")
         self.status_listbox.delete(0, tk.END)
         self.status_items.clear()
         self.status_headers: set[int] = set()
@@ -158,6 +159,7 @@ class CommitTabMixin:
             entries = self._get_status_entries()
         except RuntimeError as exc:
             messagebox.showerror("Erro", str(exc))
+            self._perf_end("Atualizar status", start)
             return
 
         grouped: dict[str, list[dict[str, str | bool]]] = {}
@@ -198,6 +200,7 @@ class CommitTabMixin:
         self._update_operation_preview()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
+        self._perf_end("Atualizar status", start)
 
     def _sync_selection_to_staged(self) -> None:
         if self.suspend_stage_sync:

@@ -118,6 +118,16 @@ class BranchesTabMixin:
             variable=self.word_diff_var,
             command=self._toggle_word_diff,
         ).grid(row=0, column=1, sticky="e")
+        ttk.Checkbutton(
+            files_header,
+            text="Modo leitura",
+            variable=self.read_mode_var,
+            command=self._toggle_read_mode,
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self.compare_read_mode_var = tk.StringVar(value="")
+        ttk.Label(files_header, textvariable=self.compare_read_mode_var).grid(
+            row=0, column=3, sticky="e", padx=(8, 0)
+        )
 
         self.compare_files_listbox = tk.Listbox(diff_frame, height=8, activestyle="dotbox")
         self.compare_files_listbox.grid(row=1, column=0, sticky="nsew")
@@ -132,13 +142,14 @@ class BranchesTabMixin:
         diff_scroll = ttk.Scrollbar(diff_frame, orient="vertical", command=self.compare_diff_text.yview)
         diff_scroll.grid(row=2, column=1, sticky="ns")
         self.compare_diff_text.configure(yscrollcommand=diff_scroll.set)
-        self.compare_diff_text.tag_configure("added", foreground="#1a7f37")
-        self.compare_diff_text.tag_configure("removed", foreground="#d1242f")
-        self.compare_diff_text.tag_configure("meta", foreground="#57606a")
-        self.compare_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
-        self.compare_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
         self.compare_diff_text.configure(font="TkFixedFont")
         self.compare_diff_text.configure(state="disabled")
+        palette = getattr(self, "theme_palette", None)
+        if palette and hasattr(self, "_apply_text_widget_theme"):
+            self._apply_text_widget_theme(self.compare_diff_text, palette)
+            self._apply_diff_tags(self.compare_diff_text, palette)
+        if palette and hasattr(self, "_apply_listbox_theme"):
+            self._apply_listbox_theme(self.compare_files_listbox, palette)
         paned.add(diff_frame, weight=2)
 
         self.compare_file_stats_by_index: dict[int, dict[str, object]] = {}
@@ -173,16 +184,20 @@ class BranchesTabMixin:
     def _refresh_branch_comparison(self) -> None:
         if not hasattr(self, "compare_commits_listbox"):
             return
+        start = self._perf_start("Comparar branches")
         if not self.repo_ready:
             self._clear_branch_comparison("Selecione um repositório.")
+            self._perf_end("Comparar branches", start)
             return
         origin = self.branch_origin_var.get().strip()
         dest = self.branch_dest_var.get().strip()
         if not origin or not dest:
             self._clear_branch_comparison("Selecione origem e destino.")
+            self._perf_end("Comparar branches", start)
             return
         if origin == dest:
             self._clear_branch_comparison("Origem e destino devem ser diferentes.")
+            self._perf_end("Comparar branches", start)
             return
 
         commits = self._load_compare_commits(origin, dest)
@@ -191,6 +206,7 @@ class BranchesTabMixin:
         self._render_compare_files(stats)
         self._update_compare_status(origin, dest, commits, totals)
         self._update_operation_preview()
+        self._perf_end("Comparar branches", start)
 
     def _clear_branch_comparison(self, message: str) -> None:
         if hasattr(self, "compare_commits_listbox"):
@@ -309,11 +325,15 @@ class BranchesTabMixin:
             return
         if entry.get("binary"):
             self._set_text(self.compare_diff_text, "Arquivo binário: sem diff disponível.")
+            if hasattr(self, "compare_read_mode_var"):
+                self.compare_read_mode_var.set("")
             return
         origin = self.branch_origin_var.get().strip()
         dest = self.branch_dest_var.get().strip()
         if not origin or not dest:
             self._set_text(self.compare_diff_text, "Selecione origem e destino.")
+            if hasattr(self, "compare_read_mode_var"):
+                self.compare_read_mode_var.set("")
             return
         path = str(entry.get("path", "")).strip()
         if not path:
@@ -328,13 +348,19 @@ class BranchesTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Comparar", str(exc))
             return
+        display_diff, truncated, shown, total = self._apply_read_mode_to_diff(diff_output)
         render_patch_to_widget(
             self.compare_diff_text,
-            diff_output,
+            display_diff,
             read_only=True,
             show_file_headers=False,
             word_diff=self._word_diff_enabled(),
         )
+        if hasattr(self, "compare_read_mode_var"):
+            if truncated:
+                self.compare_read_mode_var.set(f"Modo leitura: {shown}/{total} linhas")
+            else:
+                self.compare_read_mode_var.set("")
 
     def _refresh_compare_diff(self) -> None:
         if not hasattr(self, "compare_files_listbox"):

@@ -227,6 +227,16 @@ class HistoryTabMixin:
             variable=self.word_diff_var,
             command=self._toggle_word_diff,
         ).grid(row=0, column=1, sticky="e")
+        ttk.Checkbutton(
+            patch_header,
+            text="Modo leitura",
+            variable=self.read_mode_var,
+            command=self._toggle_read_mode,
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self.patch_read_mode_var = tk.StringVar(value="")
+        ttk.Label(patch_header, textvariable=self.patch_read_mode_var).grid(
+            row=0, column=3, sticky="e", padx=(8, 0)
+        )
 
         self.patch_text = tk.Text(patch_frame, wrap="none")
         self.patch_text.grid(row=1, column=0, sticky="nsew")
@@ -465,6 +475,8 @@ class HistoryTabMixin:
             self._set_text(self.patch_text, "(nenhum arquivo alterado)")
             self.load_patch_button.configure(state="disabled")
             self.load_patch_button.grid_remove()
+            if hasattr(self, "patch_read_mode_var"):
+                self.patch_read_mode_var.set("")
 
     def _get_patch(self, commit_hash: str, path: str | None = None, word_diff: bool | None = None) -> str:
         if word_diff is None:
@@ -504,6 +516,8 @@ class HistoryTabMixin:
             self._set_text(self.patch_text, "Arquivo binário: sem diff disponível.")
             self.load_patch_button.configure(state="disabled")
             self.load_patch_button.grid_remove()
+            if hasattr(self, "patch_read_mode_var"):
+                self.patch_read_mode_var.set("")
             return
         total_lines = stat.added + stat.deleted
         cache_key = (commit.commit_hash, stat.path)
@@ -924,11 +938,13 @@ class HistoryTabMixin:
             self.filter_repo_status_combo.configure(state="readonly")
 
     def _reload_commits(self) -> None:
+        start = self._perf_start("Recarregar commits")
         try:
             self.commit_summaries = self._load_commit_summaries()
         except RuntimeError as exc:
             messagebox.showerror("Erro", str(exc))
             self._update_filter_status()
+            self._perf_end("Recarregar commits", start)
             return
         self.commit_details_cache.clear()
         self.current_commit_hash = None
@@ -936,6 +952,12 @@ class HistoryTabMixin:
         self.loading_more = False
         self._populate_commit_list()
         self._update_filter_status()
+        self._perf_end("Recarregar commits", start)
+
+    def _refresh_history_patch_view(self) -> None:
+        selection = self.files_listbox.curselection()
+        if selection:
+            self._show_file_patch(selection[0])
 
     def _open_text_window(
         self,
@@ -989,13 +1011,19 @@ class HistoryTabMixin:
         ttk.Button(actions, text="Copiar tudo", command=copy_all).pack(side="right")
 
     def _render_patch(self, patch: str) -> None:
+        display_patch, truncated, shown, total = self._apply_read_mode_to_diff(patch)
         render_patch_to_widget(
             self.patch_text,
-            patch,
+            display_patch,
             read_only=True,
             show_file_headers=False,
             word_diff=self._word_diff_enabled(),
         )
+        if hasattr(self, "patch_read_mode_var"):
+            if truncated:
+                self.patch_read_mode_var.set(f"Modo leitura: {shown}/{total} linhas")
+            else:
+                self.patch_read_mode_var.set("")
 
 
 def parse_args() -> argparse.Namespace:

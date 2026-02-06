@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox
 from tkinter import ttk
 
+from .core.diff_utils import build_read_mode_diff
 from .core.git_client import is_git_repo, load_commit_summaries
 from .core.models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffLineInfo
 from .core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
@@ -22,6 +24,8 @@ from .ui.ui_stash import StashMixin
 
 RECENT_REPOS_LIMIT = 20
 FAVORITE_REPOS_LIMIT = 50
+READ_MODE_THRESHOLD = 1200
+READ_MODE_MAX_LINES = 400
 
 
 class CommitsViewer(
@@ -45,6 +49,7 @@ class CommitsViewer(
         self.commit_filters = CommitFilters()
         self.tag_list: list[str] = []
         self.word_diff_var = tk.BooleanVar(value=False)
+        self.read_mode_var = tk.BooleanVar(value=True)
         self.diff_scope_var = tk.StringVar(value="Unstaged")
         self.worktree_diff_data: DiffData | None = None
         self.worktree_line_map: dict[int, DiffLineInfo] = {}
@@ -79,6 +84,7 @@ class CommitsViewer(
         self.mono_font_family = ""
         self.mono_font_size = 0
         self.theme_palette: dict[str, str] = {}
+        self.perf_var = tk.StringVar(value="")
         self._load_settings()
 
         self._build_global_bar()
@@ -184,6 +190,43 @@ class CommitsViewer(
             messagebox.showinfo("Commit", "Selecione um repositório válido antes de commitar.")
             return
         self._commit_and_push()
+
+    def _read_mode_enabled(self) -> bool:
+        return bool(self.read_mode_var.get()) if hasattr(self, "read_mode_var") else False
+
+    def _apply_read_mode_to_diff(self, diff_text: str) -> tuple[str, bool, int, int]:
+        total = len(diff_text.splitlines())
+        if not self._read_mode_enabled():
+            return diff_text, False, total, total
+        preview, truncated = build_read_mode_diff(
+            diff_text,
+            threshold=READ_MODE_THRESHOLD,
+            max_lines=READ_MODE_MAX_LINES,
+        )
+        shown = len(preview.splitlines())
+        return preview, truncated, shown, total
+
+    def _toggle_read_mode(self) -> None:
+        if hasattr(self, "_refresh_history_patch_view"):
+            self._refresh_history_patch_view()
+        if hasattr(self, "_refresh_compare_diff"):
+            self._refresh_compare_diff()
+
+    def _perf_start(self, label: str) -> float:
+        if not hasattr(self, "perf_var"):
+            return 0.0
+        self.perf_var.set(f"{label}...")
+        try:
+            self.update_idletasks()
+        except tk.TclError:
+            pass
+        return time.perf_counter()
+
+    def _perf_end(self, label: str, start: float) -> None:
+        if not start or not hasattr(self, "perf_var"):
+            return
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        self.perf_var.set(f"{label}: {elapsed_ms:.0f} ms")
 
     def _load_settings(self) -> None:
         self.settings_data = load_settings(self.settings_path)
