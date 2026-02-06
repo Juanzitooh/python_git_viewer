@@ -56,6 +56,7 @@ class CommitTabMixin:
         status_scroll.grid(row=1, column=1, sticky="ns")
         self.status_listbox.configure(yscrollcommand=status_scroll.set)
         self.status_listbox.bind("<<ListboxSelect>>", self._on_status_select)
+        self.status_listbox.bind("<Double-Button-1>", self._open_status_file_in_vscode)
 
         commit_frame = ttk.Frame(left_column)
         commit_frame.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
@@ -229,6 +230,20 @@ class CommitTabMixin:
             except tk.TclError:
                 pass
         self.stage_sync_job = self.after(50, self._apply_stage_from_selection)
+
+    def _open_status_file_in_vscode(self, event: tk.Event) -> None:
+        if self.status_listbox.size() == 0:
+            return
+        index = self.status_listbox.nearest(event.y)
+        if index >= self.status_listbox.size():
+            return
+        entry = self.status_items.get(index)
+        if not entry:
+            return
+        path = str(entry.get("path_for_git") or entry.get("path") or "").strip()
+        if not path:
+            return
+        self._open_repo_file_in_vscode(path)
 
     def _apply_stage_from_selection(self) -> None:
         self.stage_sync_job = None

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -231,6 +230,7 @@ class HistoryTabMixin:
         self.files_listbox = tk.Listbox(files_frame, height=6, activestyle="dotbox")
         self.files_listbox.grid(row=1, column=0, sticky="nsew")
         self.files_listbox.bind("<<ListboxSelect>>", self._on_file_select)
+        self.files_listbox.bind("<Double-Button-1>", self._open_selected_file_in_vscode)
 
         files_scroll = ttk.Scrollbar(files_frame, orient="vertical", command=self.files_listbox.yview)
         files_scroll.grid(row=1, column=1, sticky="ns")
@@ -490,6 +490,17 @@ class HistoryTabMixin:
         if not selection:
             return
         self._show_file_patch(selection[0])
+
+    def _open_selected_file_in_vscode(self, event: tk.Event) -> None:
+        if self.files_listbox.size() == 0:
+            return
+        index = self.files_listbox.nearest(event.y)
+        if index >= self.files_listbox.size():
+            return
+        stat = self.file_stats_by_index.get(index)
+        if not stat:
+            return
+        self._open_repo_file_in_vscode(stat.path)
 
     def _show_file_patch(self, file_index: int) -> None:
         commit = self._get_selected_commit()
@@ -866,8 +877,8 @@ class HistoryTabMixin:
                 return
             for index in selection:
                 path = listbox.get(index)
-                abs_path = os.path.join(self.repo_path, path)
-                subprocess.run(["code", "-g", abs_path], check=False)
+                if not self._open_repo_file_in_vscode(path):
+                    return
 
         def abort_cherry_pick() -> None:
             try:

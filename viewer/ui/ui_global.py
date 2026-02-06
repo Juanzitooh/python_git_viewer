@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -13,7 +15,7 @@ class GlobalBarMixin:
         self.global_bar = ttk.Frame(self)
         self.global_bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         self.global_bar.grid_columnconfigure(1, weight=1)
-        self.global_bar.grid_columnconfigure(5, weight=1)
+        self.global_bar.grid_columnconfigure(6, weight=1)
 
         ttk.Label(self.global_bar, text="Repo:").grid(row=0, column=0, sticky="w")
         self.repo_var = tk.StringVar(value=self.repo_path)
@@ -28,7 +30,11 @@ class GlobalBarMixin:
             row=0, column=3, padx=(6, 0)
         )
 
-        ttk.Label(self.global_bar, text="Branch:").grid(row=0, column=4, sticky="w", padx=(12, 0))
+        ttk.Button(self.global_bar, text="VS Code", command=self._open_repo_in_vscode).grid(
+            row=0, column=4, padx=(6, 0)
+        )
+
+        ttk.Label(self.global_bar, text="Branch:").grid(row=0, column=5, sticky="w", padx=(12, 0))
 
         self.branch_var = tk.StringVar()
         self.branch_combo = ttk.Combobox(
@@ -37,10 +43,10 @@ class GlobalBarMixin:
             state="readonly",
             width=24,
         )
-        self.branch_combo.grid(row=0, column=5, sticky="w")
+        self.branch_combo.grid(row=0, column=6, sticky="w")
         self.branch_combo.bind("<<ComboboxSelected>>", self._on_branch_selected)
 
-        ttk.Label(self.global_bar, text="Origem:").grid(row=0, column=6, sticky="w", padx=(12, 0))
+        ttk.Label(self.global_bar, text="Origem:").grid(row=0, column=7, sticky="w", padx=(12, 0))
         self.branch_origin_var = tk.StringVar()
         self.branch_origin_combo = ttk.Combobox(
             self.global_bar,
@@ -48,24 +54,24 @@ class GlobalBarMixin:
             state="readonly",
             width=18,
         )
-        self.branch_origin_combo.grid(row=0, column=7, sticky="w")
+        self.branch_origin_combo.grid(row=0, column=8, sticky="w")
         self.branch_origin_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_operation_preview())
 
-        ttk.Label(self.global_bar, text="Destino:").grid(row=0, column=8, sticky="w", padx=(12, 0))
+        ttk.Label(self.global_bar, text="Destino:").grid(row=0, column=9, sticky="w", padx=(12, 0))
         self.branch_dest_var = tk.StringVar(value="")
         self.branch_dest_label = ttk.Label(self.global_bar, textvariable=self.branch_dest_var)
-        self.branch_dest_label.grid(row=0, column=9, sticky="w")
+        self.branch_dest_label.grid(row=0, column=10, sticky="w")
 
         self.fetch_button = ttk.Button(self.global_bar, text="Fetch", command=self._fetch_repo)
-        self.fetch_button.grid(row=0, column=10, padx=(12, 0))
+        self.fetch_button.grid(row=0, column=11, padx=(12, 0))
         self.pull_button = ttk.Button(self.global_bar, text="Pull", command=self._pull_repo)
-        self.pull_button.grid(row=0, column=11, padx=(6, 0))
+        self.pull_button.grid(row=0, column=12, padx=(6, 0))
         self.push_button = ttk.Button(self.global_bar, text="Push", command=self._push_repo)
-        self.push_button.grid(row=0, column=12, padx=(6, 0))
+        self.push_button.grid(row=0, column=13, padx=(6, 0))
 
         self.upstream_var = tk.StringVar(value="")
         self.upstream_label = ttk.Label(self.global_bar, textvariable=self.upstream_var)
-        self.upstream_label.grid(row=0, column=13, sticky="w", padx=(12, 0))
+        self.upstream_label.grid(row=0, column=14, sticky="w", padx=(12, 0))
 
     def _fetch_repo(self) -> None:
         self._fetch_repo_internal(show_errors=True)
@@ -138,6 +144,58 @@ class GlobalBarMixin:
         run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
         self._set_status("Stash criado.")
         self._refresh_status()
+
+    def _get_vscode_command(self) -> list[str] | None:
+        for candidate in ("code", "code-insiders", "codium"):
+            resolved = shutil.which(candidate)
+            if resolved:
+                return [resolved]
+        return None
+
+    def _open_path_in_vscode(self, path: str, *, use_goto: bool) -> bool:
+        command = self._get_vscode_command()
+        if not command:
+            messagebox.showwarning(
+                "VS Code",
+                "Comando `code` não encontrado. Verifique se o VS Code está instalado e no PATH.",
+            )
+            return False
+        if use_goto:
+            command += ["-g", path]
+        else:
+            command.append(path)
+        try:
+            subprocess.Popen(command)
+        except OSError as exc:
+            messagebox.showerror("VS Code", f"Falha ao abrir no VS Code: {exc}")
+            return False
+        return True
+
+    def _open_repo_in_vscode(self) -> None:
+        if not self.repo_ready or not self.repo_path:
+            messagebox.showinfo("VS Code", "Selecione um repositório válido antes de abrir.")
+            return
+        if not os.path.isdir(self.repo_path):
+            messagebox.showwarning("VS Code", "Caminho do repositório inválido.")
+            return
+        self._open_path_in_vscode(self.repo_path, use_goto=False)
+
+    def _open_repo_file_in_vscode(self, repo_relative_path: str) -> bool:
+        if not self.repo_ready or not self.repo_path:
+            messagebox.showinfo("VS Code", "Selecione um repositório válido antes de abrir arquivos.")
+            return False
+        if not repo_relative_path:
+            messagebox.showwarning("VS Code", "Caminho do arquivo não informado.")
+            return False
+        if os.path.isabs(repo_relative_path):
+            abs_path = repo_relative_path
+        else:
+            abs_path = os.path.join(self.repo_path, repo_relative_path)
+        abs_path = os.path.normpath(abs_path)
+        if not os.path.exists(abs_path):
+            messagebox.showwarning("VS Code", f"Arquivo não encontrado: {repo_relative_path}")
+            return False
+        return self._open_path_in_vscode(abs_path, use_goto=True)
 
     def _checkout_branch(self) -> bool:
         target = self.branch_var.get().strip()
