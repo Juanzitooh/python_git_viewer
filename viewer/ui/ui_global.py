@@ -294,6 +294,8 @@ class GlobalBarMixin:
         self.repo_path = repo_path
         self.repo_ready = True
         self.repo_var.set(repo_path)
+        if hasattr(self, "_register_recent_repo"):
+            self._register_recent_repo(repo_path)
 
         self.patch_cache.clear()
         self.full_patch_cache.clear()

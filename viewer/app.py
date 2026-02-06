@@ -9,12 +9,18 @@ from tkinter import ttk
 
 from .core.git_client import is_git_repo, load_commit_summaries
 from .core.models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffLineInfo
+from .core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
 from .ui.ui_branches import BranchesTabMixin
 from .ui.ui_commit import CommitTabMixin
 from .ui.ui_global import GlobalBarMixin
 from .ui.ui_history import HistoryTabMixin
+from .ui.ui_repos import ReposTabMixin
 from .ui.ui_settings import SettingsTabMixin
 from .ui.ui_stash import StashMixin
+
+
+RECENT_REPOS_LIMIT = 20
+FAVORITE_REPOS_LIMIT = 50
 
 
 class CommitsViewer(
@@ -22,6 +28,7 @@ class CommitsViewer(
     HistoryTabMixin,
     BranchesTabMixin,
     CommitTabMixin,
+    ReposTabMixin,
     SettingsTabMixin,
     StashMixin,
     tk.Tk,
@@ -61,6 +68,11 @@ class CommitsViewer(
         self.loading_more = False
         self.no_more_commits = False
         self.repo_ready = False
+        self.settings_path = get_settings_path()
+        self.settings_data: dict[str, object] = {}
+        self.recent_repos: list[str] = []
+        self.favorite_repos: list[str] = []
+        self._load_settings()
 
         self._build_global_bar()
         self._build_tabs()
@@ -75,16 +87,19 @@ class CommitsViewer(
         self.tabs = ttk.Notebook(self)
         self.tabs.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
 
+        self.repos_tab = ttk.Frame(self.tabs)
         self.history_tab = ttk.Frame(self.tabs)
         self.branches_tab = ttk.Frame(self.tabs)
         self.branch_tab = ttk.Frame(self.tabs)
         self.settings_tab = ttk.Frame(self.tabs)
 
+        self.tabs.add(self.repos_tab, text="Repositórios")
         self.tabs.add(self.history_tab, text="Histórico")
         self.tabs.add(self.branches_tab, text="Comparar")
         self.tabs.add(self.branch_tab, text="Commit")
         self.tabs.add(self.settings_tab, text="Configurações")
 
+        self._build_repos_tab()
         self._build_history_tab()
         self._build_branches_tab()
         self._build_branch_tab()
@@ -114,6 +129,7 @@ class CommitsViewer(
         self.bind_all("<Control-2>", lambda _e: self._select_tab(1), add=True)
         self.bind_all("<Control-3>", lambda _e: self._select_tab(2), add=True)
         self.bind_all("<Control-4>", lambda _e: self._select_tab(3), add=True)
+        self.bind_all("<Control-5>", lambda _e: self._select_tab(4), add=True)
         self.bind_all("<Alt-Up>", lambda _e: self._navigate_lists(-1), add=True)
         self.bind_all("<Alt-Down>", lambda _e: self._navigate_lists(1), add=True)
         self.bind_all("<Control-Return>", self._on_commit_shortcut, add=True)
@@ -129,10 +145,10 @@ class CommitsViewer(
     def _navigate_lists(self, delta: int) -> None:
         if not hasattr(self, "tabs"):
             return
-        current_index = self.tabs.index("current")
-        if current_index == 0:
+        current_label = self.tabs.tab(self.tabs.select(), "text")
+        if current_label == "Histórico":
             self._move_commit_selection(delta)
-        elif current_index == 2:
+        elif current_label == "Commit":
             self._move_status_selection(delta)
 
     def _on_refresh_shortcut(self, _event: tk.Event) -> None:
@@ -160,3 +176,59 @@ class CommitsViewer(
             messagebox.showinfo("Commit", "Selecione um repositório válido antes de commitar.")
             return
         self._commit_and_push()
+
+    def _load_settings(self) -> None:
+        self.settings_data = load_settings(self.settings_path)
+        self.commit_limit = int(self.settings_data.get("commit_limit", self.commit_limit))
+        self.fetch_interval_sec = int(self.settings_data.get("fetch_interval_sec", self.fetch_interval_sec))
+        self.status_interval_sec = int(self.settings_data.get("status_interval_sec", self.status_interval_sec))
+        self.recent_repos = list(self.settings_data.get("recent_repos", []))
+        self.favorite_repos = list(self.settings_data.get("favorite_repos", []))
+        if len(self.recent_repos) > RECENT_REPOS_LIMIT:
+            self.recent_repos = self.recent_repos[:RECENT_REPOS_LIMIT]
+        if len(self.favorite_repos) > FAVORITE_REPOS_LIMIT:
+            self.favorite_repos = self.favorite_repos[:FAVORITE_REPOS_LIMIT]
+
+    def _persist_settings(self) -> None:
+        self.settings_data = {
+            "commit_limit": self.commit_limit,
+            "fetch_interval_sec": self.fetch_interval_sec,
+            "status_interval_sec": self.status_interval_sec,
+            "recent_repos": self.recent_repos,
+            "favorite_repos": self.favorite_repos,
+        }
+        save_settings(self.settings_path, self.settings_data)
+
+    def _register_recent_repo(self, path: str) -> None:
+        normalized = normalize_repo_path(path)
+        self.recent_repos = [normalized] + [item for item in self.recent_repos if item != normalized]
+        if len(self.recent_repos) > RECENT_REPOS_LIMIT:
+            self.recent_repos = self.recent_repos[:RECENT_REPOS_LIMIT]
+        self._persist_settings()
+        if hasattr(self, "_refresh_repo_lists"):
+            self._refresh_repo_lists()
+
+    def _add_favorite_repo(self, path: str) -> None:
+        normalized = normalize_repo_path(path)
+        if normalized in self.favorite_repos:
+            return
+        self.favorite_repos = [normalized] + [item for item in self.favorite_repos if item != normalized]
+        if len(self.favorite_repos) > FAVORITE_REPOS_LIMIT:
+            self.favorite_repos = self.favorite_repos[:FAVORITE_REPOS_LIMIT]
+        self._persist_settings()
+        if hasattr(self, "_refresh_repo_lists"):
+            self._refresh_repo_lists()
+
+    def _remove_favorite_repo(self, path: str) -> None:
+        normalized = normalize_repo_path(path)
+        self.favorite_repos = [item for item in self.favorite_repos if item != normalized]
+        self._persist_settings()
+        if hasattr(self, "_refresh_repo_lists"):
+            self._refresh_repo_lists()
+
+    def _remove_recent_repo(self, path: str) -> None:
+        normalized = normalize_repo_path(path)
+        self.recent_repos = [item for item in self.recent_repos if item != normalized]
+        self._persist_settings()
+        if hasattr(self, "_refresh_repo_lists"):
+            self._refresh_repo_lists()

@@ -72,6 +72,8 @@ class SettingsTabMixin:
         self.fetch_interval_sec = fetch_interval
         self.status_interval_sec = status_interval
         self.settings_status_var.set("Configurações aplicadas.")
+        if hasattr(self, "_persist_settings"):
+            self._persist_settings()
         if self.repo_ready:
             self._reload_commits()
             self._schedule_auto_fetch()
@@ -85,8 +87,9 @@ class SettingsTabMixin:
         self.fetch_interval_var.set(str(self.fetch_interval_sec))
         self.status_interval_var.set(str(self.status_interval_sec))
         self.settings_status_var.set("Padrões restaurados.")
+        if hasattr(self, "_persist_settings"):
+            self._persist_settings()
         if self.repo_ready:
             self._reload_commits()
             self._schedule_auto_fetch()
             self._schedule_auto_status()
-
