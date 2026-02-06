@@ -43,9 +43,38 @@ class CommitFilters:
     path: str = ""
     since: str = ""
     until: str = ""
+    ref: str = ""
+    repo_status: str = ""
 
     def is_active(self) -> bool:
-        return any([self.text, self.author, self.path, self.since, self.until])
+        return any([self.text, self.author, self.path, self.since, self.until, self.ref, self.repo_status])
+
+
+@dataclasses.dataclass(frozen=True)
+class DiffLineInfo:
+    hunk_index: int
+    line_type: str
+    old_line: int
+    new_line: int
+    content: str
+    raw: str
+
+
+@dataclasses.dataclass
+class DiffHunk:
+    header: str
+    old_start: int
+    old_count: int
+    new_start: int
+    new_count: int
+    lines: list[DiffLineInfo]
+    raw_lines: list[str]
+
+
+@dataclasses.dataclass
+class DiffData:
+    header_lines: list[str]
+    hunks: list[DiffHunk]
 
 
 FIELD_SEP = "\x1f"
@@ -132,6 +161,8 @@ def build_log_args(limit: int, skip: int, filters: CommitFilters | None) -> list
         args.append(f"--since={filters.since}")
     if filters.until:
         args.append(f"--until={filters.until}")
+    if filters.ref:
+        args.append(filters.ref)
     if filters.path:
         args.extend(["--", filters.path])
     return args
@@ -196,6 +227,12 @@ class CommitsViewer(tk.Tk):
         self.fetch_interval_sec = 60
         self.status_interval_sec = 15
         self.commit_filters = CommitFilters()
+        self.tag_list: list[str] = []
+        self.word_diff_var = tk.BooleanVar(value=False)
+        self.diff_scope_var = tk.StringVar(value="Unstaged")
+        self.worktree_diff_data: DiffData | None = None
+        self.worktree_line_map: dict[int, DiffLineInfo] = {}
+        self.worktree_diff_scope: str = ""
         self.title("Git Commits Viewer")
         self.geometry("1200x700")
 
@@ -385,8 +422,44 @@ class CommitsViewer(tk.Tk):
         filter_until_entry = ttk.Entry(filter_frame, textvariable=self.filter_until_var, width=12)
         filter_until_entry.grid(row=0, column=9, sticky="w", padx=(0, 8), pady=4)
 
+        ttk.Label(filter_frame, text="Branch:").grid(row=1, column=0, sticky="w", padx=(6, 2), pady=4)
+        self.filter_branch_var = tk.StringVar(value="(todas)")
+        self.filter_branch_combo = ttk.Combobox(
+            filter_frame,
+            textvariable=self.filter_branch_var,
+            state="readonly",
+            width=16,
+            values=["(todas)"],
+        )
+        self.filter_branch_combo.grid(row=1, column=1, sticky="w", padx=(0, 8), pady=4)
+        self.filter_branch_combo.bind("<<ComboboxSelected>>", lambda _e: self._apply_commit_filters())
+
+        ttk.Label(filter_frame, text="Tag:").grid(row=1, column=2, sticky="w", padx=(0, 2), pady=4)
+        self.filter_tag_var = tk.StringVar(value="(todas)")
+        self.filter_tag_combo = ttk.Combobox(
+            filter_frame,
+            textvariable=self.filter_tag_var,
+            state="readonly",
+            width=16,
+            values=["(todas)"],
+        )
+        self.filter_tag_combo.grid(row=1, column=3, sticky="w", padx=(0, 8), pady=4)
+        self.filter_tag_combo.bind("<<ComboboxSelected>>", lambda _e: self._apply_commit_filters())
+
+        ttk.Label(filter_frame, text="Status repo:").grid(row=1, column=4, sticky="w", padx=(0, 2), pady=4)
+        self.filter_repo_status_var = tk.StringVar(value="Todos")
+        self.filter_repo_status_combo = ttk.Combobox(
+            filter_frame,
+            textvariable=self.filter_repo_status_var,
+            state="readonly",
+            width=22,
+            values=["Todos", "Somente limpo", "Somente com alteracoes"],
+        )
+        self.filter_repo_status_combo.grid(row=1, column=5, sticky="w", padx=(0, 8), pady=4)
+        self.filter_repo_status_combo.bind("<<ComboboxSelected>>", lambda _e: self._apply_commit_filters())
+
         filter_actions = ttk.Frame(filter_frame)
-        filter_actions.grid(row=1, column=8, columnspan=2, sticky="e", padx=(0, 8), pady=(0, 6))
+        filter_actions.grid(row=1, column=8, columnspan=2, sticky="e", padx=(0, 8), pady=4)
         ttk.Button(filter_actions, text="Aplicar", command=self._apply_commit_filters).grid(
             row=0,
             column=0,
@@ -399,7 +472,7 @@ class CommitsViewer(tk.Tk):
 
         self.filter_status_var = tk.StringVar(value="Sem filtro ativo.")
         self.filter_status_label = ttk.Label(filter_frame, textvariable=self.filter_status_var)
-        self.filter_status_label.grid(row=1, column=0, columnspan=8, sticky="w", padx=6, pady=(0, 6))
+        self.filter_status_label.grid(row=2, column=0, columnspan=10, sticky="w", padx=6, pady=(0, 6))
 
         for entry in (
             filter_text_entry,
@@ -491,8 +564,16 @@ class CommitsViewer(tk.Tk):
         patch_frame.grid_rowconfigure(1, weight=1)
         patch_frame.grid_columnconfigure(0, weight=1)
 
-        self.patch_label = ttk.Label(patch_frame, text="Patch do arquivo")
-        self.patch_label.grid(row=0, column=0, sticky="w")
+        patch_header = ttk.Frame(patch_frame)
+        patch_header.grid(row=0, column=0, sticky="ew")
+        patch_header.grid_columnconfigure(0, weight=1)
+        ttk.Label(patch_header, text="Patch do arquivo").grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(
+            patch_header,
+            text="Diff por palavra",
+            variable=self.word_diff_var,
+            command=self._toggle_word_diff,
+        ).grid(row=0, column=1, sticky="e")
 
         self.patch_text = tk.Text(patch_frame, wrap="none")
         self.patch_text.grid(row=1, column=0, sticky="nsew")
@@ -502,6 +583,8 @@ class CommitsViewer(tk.Tk):
         self.patch_text.tag_configure("added", foreground="#1a7f37")
         self.patch_text.tag_configure("removed", foreground="#d1242f")
         self.patch_text.tag_configure("meta", foreground="#57606a")
+        self.patch_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
+        self.patch_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
         self.patch_text.configure(font=("Courier New", 10))
         self.patch_text.configure(state="disabled")
 
@@ -569,13 +652,32 @@ class CommitsViewer(tk.Tk):
         commit_buttons.grid(row=4, column=0, sticky="w", pady=(6, 0))
         ttk.Button(commit_buttons, text="Commit", command=self._commit_changes).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(commit_buttons, text="Commit + Push", command=self._commit_and_push).grid(row=0, column=1)
+        ttk.Button(commit_buttons, text="Stash", command=self._open_stash_window).grid(row=0, column=2, padx=(6, 0))
 
         diff_frame = ttk.Frame(content_frame)
         diff_frame.grid(row=0, column=1, sticky="nsew")
         diff_frame.grid_columnconfigure(0, weight=1)
         diff_frame.grid_rowconfigure(1, weight=1)
 
-        ttk.Label(diff_frame, text="Diff do arquivo selecionado:").grid(row=0, column=0, sticky="w")
+        diff_header = ttk.Frame(diff_frame)
+        diff_header.grid(row=0, column=0, sticky="ew")
+        diff_header.grid_columnconfigure(0, weight=1)
+        ttk.Label(diff_header, text="Diff do arquivo selecionado:").grid(row=0, column=0, sticky="w")
+        self.diff_scope_combo = ttk.Combobox(
+            diff_header,
+            textvariable=self.diff_scope_var,
+            state="readonly",
+            width=10,
+            values=["Unstaged", "Staged"],
+        )
+        self.diff_scope_combo.grid(row=0, column=1, padx=(8, 0))
+        self.diff_scope_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_worktree_diff_from_selection())
+        ttk.Checkbutton(
+            diff_header,
+            text="Diff por palavra",
+            variable=self.word_diff_var,
+            command=self._toggle_word_diff,
+        ).grid(row=0, column=2, padx=(8, 0))
         self.worktree_diff_text = tk.Text(diff_frame, wrap="none")
         self.worktree_diff_text.grid(row=1, column=0, sticky="nsew")
         diff_scroll = ttk.Scrollbar(diff_frame, orient="vertical", command=self.worktree_diff_text.yview)
@@ -584,8 +686,36 @@ class CommitsViewer(tk.Tk):
         self.worktree_diff_text.tag_configure("added", foreground="#1a7f37")
         self.worktree_diff_text.tag_configure("removed", foreground="#d1242f")
         self.worktree_diff_text.tag_configure("meta", foreground="#57606a")
+        self.worktree_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
+        self.worktree_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
         self.worktree_diff_text.configure(font=("Courier New", 10))
         self.worktree_diff_text.configure(state="disabled")
+
+        hunk_actions = ttk.Frame(diff_frame)
+        hunk_actions.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.stage_hunk_button = ttk.Button(hunk_actions, text="Stage hunk", command=self._stage_selected_hunk)
+        self.stage_hunk_button.grid(
+            row=0,
+            column=0,
+            padx=(0, 6),
+        )
+        self.unstage_hunk_button = ttk.Button(hunk_actions, text="Unstage hunk", command=self._unstage_selected_hunk)
+        self.unstage_hunk_button.grid(
+            row=0,
+            column=1,
+            padx=(0, 6),
+        )
+        self.stage_line_button = ttk.Button(hunk_actions, text="Stage linha", command=self._stage_selected_line)
+        self.stage_line_button.grid(
+            row=0,
+            column=2,
+            padx=(0, 6),
+        )
+        self.unstage_line_button = ttk.Button(hunk_actions, text="Unstage linha", command=self._unstage_selected_line)
+        self.unstage_line_button.grid(
+            row=0,
+            column=3,
+        )
 
         self.status_var = tk.StringVar(value="")
         self.status_label = ttk.Label(self.branch_tab, textvariable=self.status_var)
@@ -682,12 +812,28 @@ class CommitsViewer(tk.Tk):
     def _get_filters_from_ui(self) -> CommitFilters:
         if not hasattr(self, "filter_text_var"):
             return CommitFilters()
+        ref = ""
+        if hasattr(self, "filter_tag_var"):
+            tag_value = self.filter_tag_var.get().strip()
+            if tag_value and tag_value != "(todas)":
+                ref = tag_value
+        if not ref and hasattr(self, "filter_branch_var"):
+            branch_value = self.filter_branch_var.get().strip()
+            if branch_value and branch_value != "(todas)":
+                ref = branch_value
+        repo_status = ""
+        if hasattr(self, "filter_repo_status_var"):
+            status_value = self.filter_repo_status_var.get().strip()
+            if status_value and status_value != "Todos":
+                repo_status = status_value
         return CommitFilters(
             text=self.filter_text_var.get().strip(),
             author=self.filter_author_var.get().strip(),
             path=self.filter_path_var.get().strip(),
             since=self.filter_since_var.get().strip(),
             until=self.filter_until_var.get().strip(),
+            ref=ref,
+            repo_status=repo_status,
         )
 
     @staticmethod
@@ -706,6 +852,8 @@ class CommitsViewer(tk.Tk):
             self.filter_status_var.set("Sem filtro ativo.")
             return
         parts: list[str] = []
+        if self.commit_filters.ref:
+            parts.append(f"ref='{self._shorten_filter_value(self.commit_filters.ref)}'")
         if self.commit_filters.text:
             parts.append(f"texto='{self._shorten_filter_value(self.commit_filters.text)}'")
         if self.commit_filters.author:
@@ -716,8 +864,23 @@ class CommitsViewer(tk.Tk):
             parts.append(f"desde='{self._shorten_filter_value(self.commit_filters.since, 16)}'")
         if self.commit_filters.until:
             parts.append(f"ate='{self._shorten_filter_value(self.commit_filters.until, 16)}'")
+        if self.commit_filters.repo_status:
+            current_status = "sujo" if self._is_dirty() else "limpo"
+            parts.append(f"status={current_status}")
+            if not self._repo_status_matches_filter(self.commit_filters.repo_status):
+                parts.append("status fora do filtro")
         summary = ", ".join(parts)
         self.filter_status_var.set(f"Filtro ativo: {summary}. {len(self.commit_summaries)} commits.")
+
+    def _repo_status_matches_filter(self, repo_status: str) -> bool:
+        if not repo_status:
+            return True
+        is_dirty = self._is_dirty()
+        if repo_status == "Somente limpo":
+            return not is_dirty
+        if repo_status == "Somente com alteracoes":
+            return is_dirty
+        return True
 
     def _apply_commit_filters(self) -> None:
         self.commit_filters = self._get_filters_from_ui()
@@ -733,13 +896,31 @@ class CommitsViewer(tk.Tk):
             self.filter_path_var.set("")
             self.filter_since_var.set("")
             self.filter_until_var.set("")
+            if hasattr(self, "filter_branch_var"):
+                self.filter_branch_var.set("(todas)")
+            if hasattr(self, "filter_tag_var"):
+                self.filter_tag_var.set("(todas)")
+            if hasattr(self, "filter_repo_status_var"):
+                self.filter_repo_status_var.set("Todos")
         self.commit_filters = CommitFilters()
         if self.repo_ready:
             self._reload_commits()
         else:
             self._update_filter_status()
 
+    def _toggle_word_diff(self) -> None:
+        self.patch_cache.clear()
+        self.full_patch_cache.clear()
+        self.worktree_diff_data = None
+        self.worktree_line_map.clear()
+        selection = self.commit_listbox.curselection()
+        if selection:
+            self._show_commit(selection[-1])
+        self._update_worktree_diff_from_selection()
+
     def _load_commit_summaries(self, skip: int = 0) -> list[CommitSummary]:
+        if self.commit_filters.repo_status and not self._repo_status_matches_filter(self.commit_filters.repo_status):
+            return []
         return load_commit_summaries(
             self.repo_path,
             self.commit_limit,
@@ -844,8 +1025,13 @@ class CommitsViewer(tk.Tk):
             self.load_patch_button.configure(state="disabled")
             self.load_patch_button.grid_remove()
 
-    def _get_patch(self, commit_hash: str, path: str | None = None) -> str:
-        args = ["show", "--unified=0", "--format=", commit_hash]
+    def _get_patch(self, commit_hash: str, path: str | None = None, word_diff: bool | None = None) -> str:
+        if word_diff is None:
+            word_diff = self._word_diff_enabled()
+        args = ["show", "--unified=0", "--format="]
+        if word_diff:
+            args.append("--word-diff=plain")
+        args.append(commit_hash)
         if path:
             args.extend(["--", path])
         return run_git(self.repo_path, args)
@@ -1261,6 +1447,162 @@ class CommitsViewer(tk.Tk):
         ttk.Button(actions, text="Continuar", command=continue_cherry_pick).grid(row=0, column=2, padx=(0, 6))
         ttk.Button(actions, text="Fechar", command=window.destroy).grid(row=0, column=3)
 
+    def _open_stash_window(self) -> None:
+        if not self.repo_ready:
+            messagebox.showinfo("Stash", "Selecione um repositório primeiro.")
+            return
+
+        window = tk.Toplevel(self)
+        window.title("Stashes")
+        window.geometry("900x600")
+
+        container = ttk.Frame(window)
+        container.pack(fill="both", expand=True, padx=8, pady=8)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_columnconfigure(1, weight=2)
+        container.grid_rowconfigure(1, weight=1)
+
+        top_bar = ttk.Frame(container)
+        top_bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        top_bar.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(top_bar, text="Mensagem:").grid(row=0, column=0, sticky="w")
+        stash_message_var = tk.StringVar()
+        stash_entry = ttk.Entry(top_bar, textvariable=stash_message_var)
+        stash_entry.grid(row=0, column=1, sticky="ew", padx=(6, 8))
+
+        def create_stash() -> None:
+            message = stash_message_var.get().strip()
+            args = ["stash", "push", "-u"]
+            if message:
+                args.extend(["-m", message])
+            try:
+                run_git(self.repo_path, args)
+            except RuntimeError as exc:
+                messagebox.showerror("Stash", str(exc))
+                return
+            stash_message_var.set("")
+            self._refresh_status()
+            refresh_list()
+
+        ttk.Button(top_bar, text="Criar stash", command=create_stash).grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(top_bar, text="Atualizar", command=lambda: refresh_list()).grid(row=0, column=3)
+
+        list_frame = ttk.Frame(container)
+        list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
+        list_frame.grid_rowconfigure(0, weight=1)
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        stash_listbox = tk.Listbox(list_frame, activestyle="dotbox", exportselection=False)
+        stash_listbox.grid(row=0, column=0, sticky="nsew")
+        stash_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=stash_listbox.yview)
+        stash_scroll.grid(row=0, column=1, sticky="ns")
+        stash_listbox.configure(yscrollcommand=stash_scroll.set)
+
+        diff_frame = ttk.Frame(container)
+        diff_frame.grid(row=1, column=1, sticky="nsew")
+        diff_frame.grid_rowconfigure(0, weight=1)
+        diff_frame.grid_columnconfigure(0, weight=1)
+
+        stash_diff_text = tk.Text(diff_frame, wrap="none")
+        stash_diff_text.grid(row=0, column=0, sticky="nsew")
+        stash_diff_scroll = ttk.Scrollbar(diff_frame, orient="vertical", command=stash_diff_text.yview)
+        stash_diff_scroll.grid(row=0, column=1, sticky="ns")
+        stash_diff_text.configure(yscrollcommand=stash_diff_scroll.set)
+        stash_diff_text.tag_configure("added", foreground="#1a7f37")
+        stash_diff_text.tag_configure("removed", foreground="#d1242f")
+        stash_diff_text.tag_configure("meta", foreground="#57606a")
+        stash_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
+        stash_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
+        stash_diff_text.configure(font=("Courier New", 10))
+        stash_diff_text.configure(state="disabled")
+
+        actions = ttk.Frame(container)
+        actions.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        stash_refs: list[str] = []
+
+        def selected_ref() -> str | None:
+            selection = stash_listbox.curselection()
+            if not selection:
+                return None
+            return stash_refs[selection[0]]
+
+        def show_selected_stash() -> None:
+            ref = selected_ref()
+            if not ref:
+                self._set_text(stash_diff_text, "(sem stash selecionado)")
+                return
+            try:
+                diff = run_git(self.repo_path, ["stash", "show", "-p", ref])
+            except RuntimeError as exc:
+                messagebox.showerror("Stash", str(exc))
+                return
+            self._render_patch_to_widget(
+                stash_diff_text,
+                diff,
+                read_only=True,
+                show_file_headers=True,
+                word_diff=self._word_diff_enabled(),
+            )
+
+        def refresh_list() -> None:
+            stash_listbox.delete(0, tk.END)
+            stash_refs.clear()
+            try:
+                entries = run_git(self.repo_path, ["stash", "list"]).splitlines()
+            except RuntimeError as exc:
+                messagebox.showerror("Stash", str(exc))
+                return
+            for line in entries:
+                ref, _, desc = line.partition(":")
+                stash_refs.append(ref.strip())
+                stash_listbox.insert(tk.END, f"{ref.strip()}:{desc}")
+            if stash_refs:
+                stash_listbox.selection_set(0)
+                show_selected_stash()
+            else:
+                self._set_text(stash_diff_text, "(sem stashes)")
+
+        def apply_stash(pop: bool) -> None:
+            ref = selected_ref()
+            if not ref:
+                messagebox.showinfo("Stash", "Selecione um stash.")
+                return
+            cmd = ["stash", "pop" if pop else "apply", ref]
+            try:
+                run_git(self.repo_path, cmd)
+            except RuntimeError as exc:
+                messagebox.showerror("Stash", str(exc))
+                return
+            self._refresh_status()
+            self._reload_commits()
+            refresh_list()
+
+        def drop_stash() -> None:
+            ref = selected_ref()
+            if not ref:
+                messagebox.showinfo("Stash", "Selecione um stash.")
+                return
+            try:
+                run_git(self.repo_path, ["stash", "drop", ref])
+            except RuntimeError as exc:
+                messagebox.showerror("Stash", str(exc))
+                return
+            refresh_list()
+
+        ttk.Button(actions, text="Aplicar", command=lambda: apply_stash(pop=False)).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(actions, text="Aplicar e remover", command=lambda: apply_stash(pop=True)).grid(
+            row=0,
+            column=1,
+            padx=(0, 6),
+        )
+        ttk.Button(actions, text="Descartar", command=drop_stash).grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(actions, text="Fechar", command=window.destroy).grid(row=0, column=3)
+
+        stash_listbox.bind("<<ListboxSelect>>", lambda _e: show_selected_stash())
+        refresh_list()
+
     def _open_text_window(
         self,
         title: str,
@@ -1287,9 +1629,17 @@ class CommitsViewer(tk.Tk):
         text_widget.tag_configure("added", foreground="#1a7f37")
         text_widget.tag_configure("removed", foreground="#d1242f")
         text_widget.tag_configure("meta", foreground="#57606a")
+        text_widget.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
+        text_widget.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
 
         if render_patch:
-            self._render_patch_to_widget(text_widget, content, read_only=False, show_file_headers=show_file_headers)
+            self._render_patch_to_widget(
+                text_widget,
+                content,
+                read_only=False,
+                show_file_headers=show_file_headers,
+                word_diff=self._word_diff_enabled(),
+            )
         else:
             text_widget.insert(tk.END, content)
             text_widget.configure(state="normal")
@@ -1415,6 +1765,9 @@ class CommitsViewer(tk.Tk):
         selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
         if not selected:
             self._set_text(self.worktree_diff_text, "Selecione um arquivo para ver o diff.")
+            self.worktree_diff_data = None
+            self.worktree_line_map.clear()
+            self._update_worktree_diff_actions()
             return
         entry = self.status_items[selected[0]]
         self._show_worktree_diff(entry)
@@ -1426,21 +1779,349 @@ class CommitsViewer(tk.Tk):
             self._set_text(self.worktree_diff_text, "Diff indisponível.")
             return
         try:
-            if status.startswith("??"):
-                diff = self._get_untracked_diff(path)
-            else:
-                diff = run_git(self.repo_path, ["diff", "--unified=0", "HEAD", "--", path])
+            scope = self._resolve_diff_scope(status)
+            diff_raw = self._get_diff_for_scope(scope, path, word_diff=False)
+            diff_view = diff_raw
+            if self._word_diff_enabled():
+                diff_view = self._get_diff_for_scope(scope, path, word_diff=True)
         except RuntimeError as exc:
             messagebox.showerror("Diff", str(exc))
             return
-        if not diff.strip():
+        if not diff_view.strip():
             self._set_text(self.worktree_diff_text, "(sem diff)")
+            self.worktree_diff_data = None
+            self.worktree_line_map.clear()
+            self._update_worktree_diff_actions()
             return
-        self._render_patch_to_widget(self.worktree_diff_text, diff, read_only=True, show_file_headers=False)
+        self.worktree_diff_data = self._parse_diff_data(diff_raw)
+        self.worktree_diff_scope = scope
+        self.worktree_line_map.clear()
+        self._render_worktree_diff(diff_view, self._word_diff_enabled())
+        self._update_worktree_diff_actions()
 
-    def _get_untracked_diff(self, path: str) -> str:
+    def _resolve_diff_scope(self, status: str) -> str:
+        if status.startswith("??"):
+            if hasattr(self, "diff_scope_combo"):
+                self.diff_scope_combo.configure(state="disabled")
+            self.diff_scope_var.set("Unstaged")
+            return "untracked"
+        has_staged = status[0] not in (" ", "?")
+        has_unstaged = status[1] not in (" ", "?")
+        requested = self.diff_scope_var.get()
+        if requested == "Staged" and has_staged:
+            scope = "staged"
+        elif requested == "Unstaged" and has_unstaged:
+            scope = "unstaged"
+        elif has_unstaged:
+            scope = "unstaged"
+        elif has_staged:
+            scope = "staged"
+        else:
+            scope = "unstaged"
+        if hasattr(self, "diff_scope_combo"):
+            if has_staged and has_unstaged:
+                self.diff_scope_combo.configure(state="readonly")
+            else:
+                self.diff_scope_combo.configure(state="disabled")
+        self.diff_scope_var.set("Staged" if scope == "staged" else "Unstaged")
+        return scope
+
+    def _get_diff_for_scope(self, scope: str, path: str, word_diff: bool) -> str:
+        if scope == "untracked":
+            return self._get_untracked_diff(path, word_diff)
+        args = ["diff", "--unified=0"]
+        if word_diff:
+            args.append("--word-diff=plain")
+        if scope == "staged":
+            args.append("--cached")
+        args.extend(["--", path])
+        return run_git(self.repo_path, args)
+
+    def _parse_diff_data(self, diff_text: str) -> DiffData:
+        header_lines: list[str] = []
+        hunks: list[DiffHunk] = []
+        current: DiffHunk | None = None
+        old_line = 0
+        new_line = 0
+
+        for line in diff_text.splitlines():
+            if line.startswith("diff --git") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
+                header_lines.append(line)
+                continue
+            if line.startswith("@@"):
+                old_start, old_count, new_start, new_count = self._parse_hunk_header_full(line)
+                current = DiffHunk(
+                    header=line,
+                    old_start=old_start,
+                    old_count=old_count,
+                    new_start=new_start,
+                    new_count=new_count,
+                    lines=[],
+                    raw_lines=[line],
+                )
+                hunks.append(current)
+                old_line = old_start
+                new_line = new_start
+                continue
+            if not current:
+                continue
+            if line.startswith("\\ No newline at end of file"):
+                continue
+            if line.startswith("-"):
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=line[1:],
+                    raw=line,
+                )
+                old_line += 1
+            elif line.startswith("+"):
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=line[1:],
+                    raw=line,
+                )
+                new_line += 1
+            elif line.startswith(" "):
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="context",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=line[1:],
+                    raw=line,
+                )
+                old_line += 1
+                new_line += 1
+            else:
+                continue
+            current.lines.append(info)
+            current.raw_lines.append(line)
+
+        return DiffData(header_lines=header_lines, hunks=hunks)
+
+    def _render_worktree_diff(self, diff_text: str, word_diff: bool) -> None:
+        self._render_patch_to_widget(
+            self.worktree_diff_text,
+            diff_text,
+            read_only=True,
+            show_file_headers=False,
+            word_diff=word_diff,
+        )
+        if word_diff or not self.worktree_diff_data:
+            self.worktree_line_map.clear()
+            return
+        self.worktree_line_map = self._build_line_map(self.worktree_diff_data)
+
+    @staticmethod
+    def _build_line_map(diff_data: DiffData) -> dict[int, DiffLineInfo]:
+        line_map: dict[int, DiffLineInfo] = {}
+        line_index = 1
+        for hunk in diff_data.hunks:
+            for info in hunk.lines:
+                line_map[line_index] = info
+                line_index += 1
+        return line_map
+
+    @staticmethod
+    def _parse_hunk_header_full(header: str) -> tuple[int, int, int, int]:
+        parts = header.split()
+        if len(parts) < 3:
+            return 0, 0, 0, 0
+
+        def parse_range(value: str) -> tuple[int, int]:
+            if "," in value:
+                start, count = value.split(",", 1)
+                return int(start), int(count)
+            return int(value), 1
+
+        try:
+            old_start, old_count = parse_range(parts[1].lstrip("-"))
+            new_start, new_count = parse_range(parts[2].lstrip("+"))
+        except ValueError:
+            return 0, 0, 0, 0
+        return old_start, old_count, new_start, new_count
+
+    def _get_selected_diff_line(self) -> DiffLineInfo | None:
+        if not self.worktree_line_map:
+            return None
+        if self.worktree_diff_text.tag_ranges(tk.SEL):
+            index = self.worktree_diff_text.index(tk.SEL_FIRST)
+        else:
+            index = self.worktree_diff_text.index(tk.INSERT)
+        try:
+            line_no = int(index.split(".")[0])
+        except ValueError:
+            return None
+        return self.worktree_line_map.get(line_no)
+
+    def _build_patch_for_hunk(self, hunk_index: int) -> str | None:
+        if not self.worktree_diff_data:
+            return None
+        if hunk_index < 0 or hunk_index >= len(self.worktree_diff_data.hunks):
+            return None
+        hunk = self.worktree_diff_data.hunks[hunk_index]
+        lines = [*self.worktree_diff_data.header_lines, *hunk.raw_lines]
+        return "\n".join(lines) + "\n"
+
+    def _build_patch_for_line(self, line_info: DiffLineInfo) -> str | None:
+        if not self.worktree_diff_data:
+            return None
+        if line_info.line_type not in ("added", "removed"):
+            return None
+        if line_info.line_type == "added":
+            old_start = line_info.old_line
+            new_start = line_info.new_line
+            old_count = 0
+            new_count = 1
+            line = f"+{line_info.content}"
+        else:
+            old_start = line_info.old_line
+            new_start = line_info.new_line
+            old_count = 1
+            new_count = 0
+            line = f"-{line_info.content}"
+        header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@"
+        lines = [*self.worktree_diff_data.header_lines, header, line]
+        return "\n".join(lines) + "\n"
+
+    def _apply_patch(self, patch: str, reverse: bool) -> None:
+        cmd = ["git", "-C", self.repo_path, "apply", "--recount", "--unidiff-zero", "--cached"]
+        if reverse:
+            cmd.append("-R")
         result = subprocess.run(
-            ["git", "-C", self.repo_path, "diff", "--no-index", "--unified=0", "/dev/null", path],
+            cmd,
+            input=patch,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or "falha ao aplicar patch"
+            raise RuntimeError(stderr)
+
+    def _stage_selected_hunk(self) -> None:
+        if not self.repo_ready or self.worktree_diff_scope != "unstaged":
+            messagebox.showinfo("Stage", "Selecione um diff unstaged.")
+            return
+        line_info = self._get_selected_diff_line()
+        if not line_info:
+            messagebox.showinfo("Stage", "Selecione uma linha do diff.")
+            return
+        patch = self._build_patch_for_hunk(line_info.hunk_index)
+        if not patch:
+            return
+        try:
+            self._apply_patch(patch, reverse=False)
+        except RuntimeError as exc:
+            messagebox.showerror("Stage", str(exc))
+            return
+        self._refresh_status()
+        self._update_worktree_diff_from_selection()
+
+    def _unstage_selected_hunk(self) -> None:
+        if not self.repo_ready or self.worktree_diff_scope != "staged":
+            messagebox.showinfo("Unstage", "Selecione um diff staged.")
+            return
+        line_info = self._get_selected_diff_line()
+        if not line_info:
+            messagebox.showinfo("Unstage", "Selecione uma linha do diff.")
+            return
+        patch = self._build_patch_for_hunk(line_info.hunk_index)
+        if not patch:
+            return
+        try:
+            self._apply_patch(patch, reverse=True)
+        except RuntimeError as exc:
+            messagebox.showerror("Unstage", str(exc))
+            return
+        self._refresh_status()
+        self._update_worktree_diff_from_selection()
+
+    def _stage_selected_line(self) -> None:
+        if not self.repo_ready or self.worktree_diff_scope != "unstaged":
+            messagebox.showinfo("Stage", "Selecione um diff unstaged.")
+            return
+        line_info = self._get_selected_diff_line()
+        if not line_info:
+            messagebox.showinfo("Stage", "Selecione uma linha do diff.")
+            return
+        patch = self._build_patch_for_line(line_info)
+        if not patch:
+            messagebox.showinfo("Stage", "A linha selecionada nao e uma alteracao.")
+            return
+        try:
+            self._apply_patch(patch, reverse=False)
+        except RuntimeError as exc:
+            messagebox.showerror("Stage", str(exc))
+            return
+        self._refresh_status()
+        self._update_worktree_diff_from_selection()
+
+    def _unstage_selected_line(self) -> None:
+        if not self.repo_ready or self.worktree_diff_scope != "staged":
+            messagebox.showinfo("Unstage", "Selecione um diff staged.")
+            return
+        line_info = self._get_selected_diff_line()
+        if not line_info:
+            messagebox.showinfo("Unstage", "Selecione uma linha do diff.")
+            return
+        patch = self._build_patch_for_line(line_info)
+        if not patch:
+            messagebox.showinfo("Unstage", "A linha selecionada nao e uma alteracao.")
+            return
+        try:
+            self._apply_patch(patch, reverse=True)
+        except RuntimeError as exc:
+            messagebox.showerror("Unstage", str(exc))
+            return
+        self._refresh_status()
+        self._update_worktree_diff_from_selection()
+
+    def _update_worktree_diff_actions(self) -> None:
+        if not hasattr(self, "stage_hunk_button"):
+            return
+        disabled = "disabled"
+        enabled = "normal"
+        if not self.worktree_diff_data:
+            self.stage_hunk_button.configure(state=disabled)
+            self.unstage_hunk_button.configure(state=disabled)
+            self.stage_line_button.configure(state=disabled)
+            self.unstage_line_button.configure(state=disabled)
+            return
+        if self._word_diff_enabled():
+            self.stage_hunk_button.configure(state=disabled)
+            self.unstage_hunk_button.configure(state=disabled)
+            self.stage_line_button.configure(state=disabled)
+            self.unstage_line_button.configure(state=disabled)
+            return
+        if self.worktree_diff_scope == "unstaged":
+            self.stage_hunk_button.configure(state=enabled)
+            self.stage_line_button.configure(state=enabled)
+            self.unstage_hunk_button.configure(state=disabled)
+            self.unstage_line_button.configure(state=disabled)
+        elif self.worktree_diff_scope == "staged":
+            self.stage_hunk_button.configure(state=disabled)
+            self.stage_line_button.configure(state=disabled)
+            self.unstage_hunk_button.configure(state=enabled)
+            self.unstage_line_button.configure(state=enabled)
+        else:
+            self.stage_hunk_button.configure(state=disabled)
+            self.unstage_hunk_button.configure(state=disabled)
+            self.stage_line_button.configure(state=disabled)
+            self.unstage_line_button.configure(state=disabled)
+
+    def _get_untracked_diff(self, path: str, word_diff: bool) -> str:
+        cmd = ["git", "-C", self.repo_path, "diff", "--no-index", "--unified=0"]
+        if word_diff:
+            cmd.append("--word-diff=plain")
+        cmd.extend(["/dev/null", path])
+        result = subprocess.run(
+            cmd,
             check=False,
             capture_output=True,
             text=True,
@@ -1582,10 +2263,35 @@ class CommitsViewer(tk.Tk):
         self._update_pull_push_labels()
         self._update_branch_action_branches()
         self._update_operation_preview()
+        self._refresh_filter_refs()
 
     def _get_branches(self) -> list[str]:
         output = run_git(self.repo_path, ["branch", "--format=%(refname:short)"])
         return [line.strip() for line in output.splitlines() if line.strip()]
+
+    def _get_tags(self) -> list[str]:
+        output = run_git(self.repo_path, ["tag", "--list"])
+        return [line.strip() for line in output.splitlines() if line.strip()]
+
+    def _refresh_filter_refs(self) -> None:
+        if not hasattr(self, "filter_branch_combo"):
+            return
+        if not self.repo_ready:
+            self.filter_branch_combo.configure(values=["(todas)"], state="disabled")
+            self.filter_tag_combo.configure(values=["(todas)"], state="disabled")
+            return
+        branch_values = ["(todas)"] + self.branch_list
+        self.filter_branch_combo.configure(values=branch_values, state="readonly")
+        if self.filter_branch_var.get() not in branch_values:
+            self.filter_branch_var.set("(todas)")
+
+        self.tag_list = self._get_tags()
+        tag_values = ["(todas)"] + self.tag_list
+        self.filter_tag_combo.configure(values=tag_values, state="readonly")
+        if self.filter_tag_var.get() not in tag_values:
+            self.filter_tag_var.set("(todas)")
+        if hasattr(self, "filter_repo_status_combo"):
+            self.filter_repo_status_combo.configure(state="readonly")
 
     def _get_current_branch(self) -> str:
         if not self.repo_ready:
@@ -1894,6 +2600,10 @@ class CommitsViewer(tk.Tk):
         self.files_listbox.delete(0, tk.END)
         self.load_patch_button.configure(state="disabled")
         self.load_patch_button.grid_remove()
+        self.worktree_diff_data = None
+        self.worktree_line_map.clear()
+        self.worktree_diff_scope = ""
+        self._update_worktree_diff_actions()
         if hasattr(self, "stage_count_var"):
             self.stage_count_var.set("Selecionados: 0/0")
         self.branch_list = []
@@ -1901,6 +2611,18 @@ class CommitsViewer(tk.Tk):
         self.branch_combo.configure(values=[], state="disabled")
         if hasattr(self, "branch_dest_var"):
             self.branch_dest_var.set("")
+        if hasattr(self, "diff_scope_combo"):
+            self.diff_scope_combo.configure(state="disabled")
+            self.diff_scope_var.set("Unstaged")
+        if hasattr(self, "filter_branch_combo"):
+            self.filter_branch_combo.configure(values=["(todas)"], state="disabled")
+            self.filter_branch_var.set("(todas)")
+        if hasattr(self, "filter_tag_combo"):
+            self.filter_tag_combo.configure(values=["(todas)"], state="disabled")
+            self.filter_tag_var.set("(todas)")
+        if hasattr(self, "filter_repo_status_combo"):
+            self.filter_repo_status_combo.configure(state="disabled")
+            self.filter_repo_status_var.set("Todos")
         self._update_filter_status()
         self._set_action_visibility(self.fetch_button, False)
         self._set_action_visibility(self.pull_button, False)
@@ -2029,8 +2751,19 @@ class CommitsViewer(tk.Tk):
         widget.insert(tk.END, content)
         widget.configure(state="disabled")
 
+    def _word_diff_enabled(self) -> bool:
+        if not hasattr(self, "word_diff_var"):
+            return False
+        return bool(self.word_diff_var.get())
+
     def _render_patch(self, patch: str) -> None:
-        self._render_patch_to_widget(self.patch_text, patch, read_only=True, show_file_headers=False)
+        self._render_patch_to_widget(
+            self.patch_text,
+            patch,
+            read_only=True,
+            show_file_headers=False,
+            word_diff=self._word_diff_enabled(),
+        )
 
     def _render_patch_to_widget(
         self,
@@ -2038,6 +2771,7 @@ class CommitsViewer(tk.Tk):
         patch: str,
         read_only: bool,
         show_file_headers: bool,
+        word_diff: bool,
     ) -> None:
         widget.configure(state="normal")
         widget.delete("1.0", tk.END)
@@ -2050,9 +2784,11 @@ class CommitsViewer(tk.Tk):
 
         old_line = 0
         new_line = 0
+        in_hunk = False
 
         for raw_line in patch.splitlines():
             if raw_line.startswith("diff --git"):
+                in_hunk = False
                 if show_file_headers:
                     try:
                         parts = raw_line.split()
@@ -2065,25 +2801,53 @@ class CommitsViewer(tk.Tk):
                 continue
             if raw_line.startswith("@@"):
                 old_line, new_line = self._parse_hunk_header(raw_line)
+                in_hunk = True
                 continue
             if raw_line.startswith("\\ No newline at end of file"):
                 continue
 
             if raw_line.startswith("-"):
                 content = raw_line[1:]
-                widget.insert(tk.END, f"{old_line:>6} - {content}\n", "removed")
+                self._insert_line_with_word_diff(
+                    widget,
+                    f"{old_line:>6} - ",
+                    content,
+                    base_tag="removed",
+                    word_diff=word_diff,
+                )
                 old_line += 1
                 continue
             if raw_line.startswith("+"):
                 content = raw_line[1:]
-                widget.insert(tk.END, f"{new_line:>6} + {content}\n", "added")
+                self._insert_line_with_word_diff(
+                    widget,
+                    f"{new_line:>6} + ",
+                    content,
+                    base_tag="added",
+                    word_diff=word_diff,
+                )
                 new_line += 1
                 continue
             if raw_line.startswith(" "):
                 content = raw_line[1:]
-                widget.insert(
-                    tk.END,
-                    f"{old_line:>6}   {content}\n",
+                self._insert_line_with_word_diff(
+                    widget,
+                    f"{old_line:>6}   ",
+                    content,
+                    base_tag="",
+                    word_diff=word_diff,
+                )
+                old_line += 1
+                new_line += 1
+                continue
+
+            if word_diff and in_hunk and self._line_has_word_markers(raw_line):
+                self._insert_line_with_word_diff(
+                    widget,
+                    f"{old_line:>6}   ",
+                    raw_line,
+                    base_tag="",
+                    word_diff=True,
                 )
                 old_line += 1
                 new_line += 1
@@ -2093,6 +2857,72 @@ class CommitsViewer(tk.Tk):
 
         if read_only:
             widget.configure(state="disabled")
+
+    @staticmethod
+    def _line_has_word_markers(line: str) -> bool:
+        return "{+" in line or "+}" in line or "[-" in line or "-]" in line or "{-" in line or "-}" in line
+
+    def _insert_line_with_word_diff(
+        self,
+        widget: tk.Text,
+        prefix: str,
+        content: str,
+        base_tag: str,
+        word_diff: bool,
+    ) -> None:
+        if not word_diff:
+            if base_tag:
+                widget.insert(tk.END, f"{prefix}{content}\n", base_tag)
+            else:
+                widget.insert(tk.END, f"{prefix}{content}\n")
+            return
+        if base_tag:
+            widget.insert(tk.END, prefix, base_tag)
+        else:
+            widget.insert(tk.END, prefix)
+        self._insert_word_diff_content(widget, content, base_tag)
+        widget.insert(tk.END, "\n")
+
+    def _insert_word_diff_content(self, widget: tk.Text, content: str, base_tag: str) -> None:
+        markers = [
+            ("{+", "+}", "added_word"),
+            ("[-", "-]", "removed_word"),
+            ("{-", "-}", "removed_word"),
+        ]
+        index = 0
+        while index < len(content):
+            next_marker = None
+            for opener, closer, tag in markers:
+                pos = content.find(opener, index)
+                if pos == -1:
+                    continue
+                if next_marker is None or pos < next_marker[0]:
+                    next_marker = (pos, opener, closer, tag)
+            if next_marker is None:
+                text = content[index:]
+                if text:
+                    if base_tag:
+                        widget.insert(tk.END, text, base_tag)
+                    else:
+                        widget.insert(tk.END, text)
+                break
+            pos, opener, closer, tag = next_marker
+            if pos > index:
+                if base_tag:
+                    widget.insert(tk.END, content[index:pos], base_tag)
+                else:
+                    widget.insert(tk.END, content[index:pos])
+            end = content.find(closer, pos + len(opener))
+            if end == -1:
+                if base_tag:
+                    widget.insert(tk.END, content[pos:], base_tag)
+                else:
+                    widget.insert(tk.END, content[pos:])
+                break
+            word = content[pos + len(opener) : end]
+            tags = (tag, base_tag) if base_tag else (tag,)
+            widget.insert(tk.END, word, tags)
+            index = end + len(closer)
 
     @staticmethod
     def _parse_hunk_header(header: str) -> tuple[int, int]:
