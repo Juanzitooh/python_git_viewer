@@ -10,6 +10,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Stage/unstage por hunk e por linha direto no diff do arquivo.
 - Stash manager com criar, aplicar e descartar stashes.
 - Modularizacao inicial: modelos e funcoes Git em modulos dedicados.
+- Extracao de utilitarios de diff para `diff_utils.py`.
 
 ## [0.1.0] - 2026-02-05
 
