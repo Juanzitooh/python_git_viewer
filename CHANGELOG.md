@@ -23,6 +23,8 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Fluxo guiado de merge/rebase/squash com resumo e alertas.
 - Panes redimensionaveis nas abas Historico e Commit.
 - Tema claro/escuro e fontes configuraveis persistidas.
+- Modo de leitura para diffs grandes (Historico, Comparar e Stash).
+- Indicadores de performance no topo (tempo de operacoes principais).
 
 ## [0.1.0] - 2026-02-05
 
