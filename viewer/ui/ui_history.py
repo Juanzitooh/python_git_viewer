@@ -22,7 +22,6 @@ class HistoryTabMixin:
         top_bar = ttk.Frame(self.history_tab)
         top_bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         top_bar.grid_columnconfigure(0, weight=1)
-        top_bar.grid_columnconfigure(1, weight=1)
 
         history_actions = ttk.Frame(top_bar)
         history_actions.grid(row=0, column=0, sticky="w")
@@ -36,36 +35,7 @@ class HistoryTabMixin:
             column=1,
         )
 
-        action_frame = ttk.Frame(top_bar)
-        action_frame.grid(row=0, column=1, sticky="e")
-
-        ttk.Label(action_frame, text="Ação:").grid(row=0, column=0, sticky="w")
-        self.branch_action_var = tk.StringVar(value="Merge")
-        self.branch_action_combo = ttk.Combobox(
-            action_frame,
-            textvariable=self.branch_action_var,
-            state="readonly",
-            width=12,
-            values=["Merge", "Rebase", "Squash merge"],
-        )
-        self.branch_action_combo.grid(row=0, column=1, sticky="w", padx=(4, 8))
-        self.branch_action_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_operation_preview())
-
-        ttk.Label(action_frame, text="Mensagem (squash):").grid(row=0, column=2, sticky="w")
-        self.branch_message_var = tk.StringVar()
-        self.branch_message_entry = ttk.Entry(action_frame, textvariable=self.branch_message_var, width=18)
-        self.branch_message_entry.grid(row=0, column=3, sticky="w", padx=(4, 8))
-        self.branch_message_entry.bind("<KeyRelease>", lambda _e: self._update_operation_preview())
-
-        self.branch_action_button = ttk.Button(action_frame, text="Executar", command=self._run_branch_action)
-        self.branch_action_button.grid(row=0, column=4, sticky="w")
-        self.branch_action_button.bind("<Enter>", self._show_action_hint)
-        self.branch_action_button.bind("<Leave>", self._hide_action_hint)
-
-        self.branch_action_status = ttk.Label(top_bar, text="")
-        self.branch_action_status.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        self.branch_action_status.bind("<Enter>", self._show_action_hint)
-        self.branch_action_status.bind("<Leave>", self._hide_action_hint)
+        # Ações de merge/rebase/squash agora vivem na aba Comparar.
 
         filter_frame = ttk.LabelFrame(top_bar, text="Filtro de commits")
         filter_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
@@ -1013,146 +983,6 @@ class HistoryTabMixin:
             window.update()
 
         ttk.Button(actions, text="Copiar tudo", command=copy_all).pack(side="right")
-
-    def _update_branch_action_branches(self) -> None:
-        if not hasattr(self, "branch_origin_combo"):
-            return
-        if not self.repo_ready:
-            self.branch_origin_combo.configure(values=[], state="disabled")
-            return
-        current = self._get_current_branch()
-        options = [branch for branch in self.branch_list if branch != current]
-        self.branch_origin_combo.configure(values=options, state="readonly")
-        if not options:
-            self.branch_origin_var.set("")
-            return
-        if not self.branch_origin_var.get() and options:
-            self.branch_origin_var.set(options[0])
-        elif self.branch_origin_var.get() not in options and options:
-            self.branch_origin_var.set(options[0])
-
-    def _update_operation_preview(self) -> None:
-        if not hasattr(self, "branch_action_status"):
-            return
-        if not self.repo_ready:
-            self.branch_action_status.configure(text="Selecione um repositório.")
-            self.branch_action_button.configure(state="disabled")
-            return
-        dest = self._get_current_branch()
-        origin = self.branch_origin_var.get().strip()
-        if not origin or not dest:
-            self.branch_action_status.configure(text="Selecione origem e destino.")
-            self.branch_action_button.configure(state="disabled")
-            return
-        if origin == dest:
-            self.branch_action_status.configure(text="Origem e destino devem ser diferentes.")
-            self.branch_action_button.configure(state="disabled")
-            return
-        if self._is_dirty():
-            self.branch_action_status.configure(text="Working tree sujo. Veja a aba Commit.")
-            self.branch_action_button.configure(state="disabled")
-            return
-        behind, ahead = self._get_ahead_behind_between(origin, dest)
-        conflict = self._has_potential_conflict(origin, dest)
-        conflict_label = "Conflito: sim" if conflict else "Conflito: não"
-        status_text = f"{origin} → {dest} | Ahead: {ahead} | Behind: {behind} | {conflict_label}"
-        self.branch_action_status.configure(text=status_text)
-        action = self.branch_action_var.get()
-        if action == "Squash merge" and not self.branch_message_var.get().strip():
-            self.branch_action_button.configure(state="disabled")
-        else:
-            self.branch_action_button.configure(state="normal")
-
-    def _get_ahead_behind_between(self, origin: str, dest: str) -> tuple[int, int]:
-        try:
-            output = run_git(self.repo_path, ["rev-list", "--left-right", "--count", f"{origin}...{dest}"])
-        except RuntimeError:
-            return 0, 0
-        parts = output.strip().split()
-        if len(parts) != 2:
-            return 0, 0
-        behind = int(parts[0])
-        ahead = int(parts[1])
-        return behind, ahead
-
-    def _has_potential_conflict(self, origin: str, dest: str) -> bool:
-        try:
-            base = run_git(self.repo_path, ["merge-base", dest, origin]).strip()
-            output = run_git(self.repo_path, ["merge-tree", base, dest, origin])
-        except RuntimeError:
-            return False
-        return "<<<<<<<" in output
-
-    def _run_branch_action(self) -> None:
-        if not self.repo_ready:
-            return
-        origin = self.branch_origin_var.get().strip()
-        dest = self._get_current_branch()
-        if not origin or not dest:
-            messagebox.showwarning("Ação", "Selecione a branch de origem e destino.")
-            return
-        if origin == dest:
-            messagebox.showwarning("Ação", "Origem e destino devem ser diferentes.")
-            return
-        if self._is_dirty():
-            messagebox.showwarning("Ação", "Working tree sujo. Faça stash/commit antes.")
-            return
-        action = self.branch_action_var.get()
-        if action == "Squash merge":
-            message = self.branch_message_var.get().strip()
-            if not message:
-                messagebox.showwarning("Squash", "Mensagem obrigatória para squash.")
-                return
-        try:
-            if action == "Merge":
-                run_git(self.repo_path, ["merge", origin])
-            elif action == "Rebase":
-                run_git(self.repo_path, ["rebase", origin])
-            else:
-                run_git(self.repo_path, ["merge", "--squash", origin])
-                run_git(self.repo_path, ["commit", "-m", message])
-        except RuntimeError as exc:
-            messagebox.showerror("Ação", str(exc))
-            self._show_conflicts_window()
-            return
-        self._reload_commits()
-        self._refresh_status()
-        self._refresh_branches()
-        self._update_pull_push_labels()
-
-    def _show_action_hint(self, event: tk.Event) -> None:
-        if not self.repo_ready:
-            return
-        try:
-            is_dirty = self._is_dirty()
-        except RuntimeError:
-            return
-        if not is_dirty:
-            return
-        if getattr(self, "action_hint_window", None) is not None:
-            return
-        tooltip = tk.Toplevel(self)
-        tooltip.wm_overrideredirect(True)
-        tooltip.attributes("-topmost", True)
-        label = tk.Label(
-            tooltip,
-            text="Working tree sujo. Veja a aba Commit.",
-            background="#fff8dc",
-            relief="solid",
-            borderwidth=1,
-            font=("TkDefaultFont", 9),
-        )
-        label.pack(ipadx=6, ipady=2)
-        x = event.widget.winfo_rootx() + 8
-        y = event.widget.winfo_rooty() + event.widget.winfo_height() + 6
-        tooltip.wm_geometry(f"+{x}+{y}")
-        self.action_hint_window = tooltip
-
-    def _hide_action_hint(self, _event: tk.Event) -> None:
-        tooltip = getattr(self, "action_hint_window", None)
-        if tooltip is not None:
-            tooltip.destroy()
-            self.action_hint_window = None
 
     def _render_patch(self, patch: str) -> None:
         render_patch_to_widget(

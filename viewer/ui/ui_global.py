@@ -116,7 +116,8 @@ class GlobalBarMixin:
         elif branches:
             self.branch_var.set(branches[0])
         if hasattr(self, "branch_dest_var"):
-            self.branch_dest_var.set(current)
+            if not self.branch_dest_var.get() or self.branch_dest_var.get() not in branches:
+                self.branch_dest_var.set(current)
         self._set_status(f"Branch atual: {current}" if current else "Branch atual: (desconhecido)")
         self._update_pull_push_labels()
         self._update_branch_action_branches()
@@ -359,6 +360,8 @@ class GlobalBarMixin:
         self._set_action_visibility(self.fetch_button, False)
         self._set_action_visibility(self.pull_button, False)
         self._set_action_visibility(self.push_button, False)
+        if hasattr(self, "_clear_branch_comparison"):
+            self._clear_branch_comparison("Selecione um repositório.")
         self.upstream_var.set("")
         self._set_status("Selecione um repositório.")
         if hasattr(self, "branch_origin_combo"):

@@ -9,6 +9,7 @@ from tkinter import ttk
 
 from .core.git_client import is_git_repo, load_commit_summaries
 from .core.models import CommitFilters, CommitInfo, CommitSummary, DiffData, DiffLineInfo
+from .ui.ui_branches import BranchesTabMixin
 from .ui.ui_commit import CommitTabMixin
 from .ui.ui_global import GlobalBarMixin
 from .ui.ui_history import HistoryTabMixin
@@ -16,7 +17,15 @@ from .ui.ui_settings import SettingsTabMixin
 from .ui.ui_stash import StashMixin
 
 
-class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTabMixin, StashMixin, tk.Tk):
+class CommitsViewer(
+    GlobalBarMixin,
+    HistoryTabMixin,
+    BranchesTabMixin,
+    CommitTabMixin,
+    SettingsTabMixin,
+    StashMixin,
+    tk.Tk,
+):
     def __init__(self, repo_path: str, summaries: list[CommitSummary], patch_limit: int, commit_limit: int) -> None:
         super().__init__()
         self.repo_path = repo_path
@@ -67,14 +76,17 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
         self.tabs.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
 
         self.history_tab = ttk.Frame(self.tabs)
+        self.branches_tab = ttk.Frame(self.tabs)
         self.branch_tab = ttk.Frame(self.tabs)
         self.settings_tab = ttk.Frame(self.tabs)
 
         self.tabs.add(self.history_tab, text="Histórico")
+        self.tabs.add(self.branches_tab, text="Comparar")
         self.tabs.add(self.branch_tab, text="Commit")
         self.tabs.add(self.settings_tab, text="Configurações")
 
         self._build_history_tab()
+        self._build_branches_tab()
         self._build_branch_tab()
         self._build_settings_tab()
 
@@ -87,6 +99,8 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
         if selection:
             self._show_commit(selection[-1])
         self._update_worktree_diff_from_selection()
+        if hasattr(self, "_refresh_compare_diff"):
+            self._refresh_compare_diff()
 
     def _word_diff_enabled(self) -> bool:
         if not hasattr(self, "word_diff_var"):
@@ -99,6 +113,7 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
         self.bind_all("<Control-1>", lambda _e: self._select_tab(0), add=True)
         self.bind_all("<Control-2>", lambda _e: self._select_tab(1), add=True)
         self.bind_all("<Control-3>", lambda _e: self._select_tab(2), add=True)
+        self.bind_all("<Control-4>", lambda _e: self._select_tab(3), add=True)
         self.bind_all("<Alt-Up>", lambda _e: self._navigate_lists(-1), add=True)
         self.bind_all("<Alt-Down>", lambda _e: self._navigate_lists(1), add=True)
         self.bind_all("<Control-Return>", self._on_commit_shortcut, add=True)
@@ -117,7 +132,7 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
         current_index = self.tabs.index("current")
         if current_index == 0:
             self._move_commit_selection(delta)
-        elif current_index == 1:
+        elif current_index == 2:
             self._move_status_selection(delta)
 
     def _on_refresh_shortcut(self, _event: tk.Event) -> None:
@@ -131,6 +146,8 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
         self._refresh_status()
         self._refresh_branches()
         self._update_pull_push_labels()
+        if hasattr(self, "_refresh_branch_comparison"):
+            self._refresh_branch_comparison()
 
     def _on_commit_shortcut(self, _event: tk.Event) -> None:
         if not self.repo_ready:
