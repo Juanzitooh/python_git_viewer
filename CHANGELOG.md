@@ -31,6 +31,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Testes para parsing de diff e numstat.
 - Pipeline de build via CI para Windows e Linux.
 - Releases automaticas com checksums.
+- Icone e metadata do executavel via PyInstaller.
 
 ## [0.1.0] - 2026-02-05
 

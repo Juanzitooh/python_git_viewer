@@ -43,6 +43,7 @@ Saída:
 - Windows: `dist\\git_viewer.exe`
 
 Opcional: `python3 compile.py --console` para manter a janela de console (útil para debug).
+Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/version_info.txt` para personalizar o executável (Windows usa metadata do version file).
 
 ## Estrutura
 

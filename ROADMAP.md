@@ -52,7 +52,7 @@ Legenda
 
 - [x] R5.1 Pipeline de build para Windows e Linux via CI (2026-02-06)
 - [x] R5.2 Releases com checksums e notas de versao (2026-02-06)
-- [ ] R5.3 Icone e metadata do executavel
+- [x] R5.3 Icone e metadata do executavel (2026-02-06)
 
 ## Regras de Manutencao
 
