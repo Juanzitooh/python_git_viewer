@@ -29,6 +29,8 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Cache de diffs com invalidacao segura ao mudar estado do repo.
 - Paginacao de commits com carregamento assíncrono.
 - Testes para parsing de diff e numstat.
+- Pipeline de build via CI para Windows e Linux.
+- Releases automaticas com checksums.
 
 ## [0.1.0] - 2026-02-05
 
