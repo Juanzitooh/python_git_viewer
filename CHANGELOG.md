@@ -5,6 +5,10 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 ## [Unreleased]
 
 - Filtro de commits por texto, autor, arquivo e intervalo de datas na aba Historico.
+- Filtro de commits por branch, tag e status do repositorio na aba Historico.
+- Diff por palavra com realce de mudancas pequenas.
+- Stage/unstage por hunk e por linha direto no diff do arquivo.
+- Stash manager com criar, aplicar e descartar stashes.
 
 ## [0.1.0] - 2026-02-05
 

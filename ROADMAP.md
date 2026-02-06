@@ -14,10 +14,10 @@ Legenda
 ## M1 - Uso Diario
 
 - [x] R1.1 Busca global de commits por autor, mensagem, arquivo e data (2026-02-05)
-- [ ] R1.2 Filtro rapido por branch, tag e status do repo
-- [ ] R1.3 Diff por palavra com realce de mudancas pequenas
-- [ ] R1.4 Stage/unstage por hunk e por linha
-- [ ] R1.5 Stash manager com criar, aplicar e descartar
+- [x] R1.2 Filtro rapido por branch, tag e status do repo (2026-02-06)
+- [x] R1.3 Diff por palavra com realce de mudancas pequenas (2026-02-06)
+- [x] R1.4 Stage/unstage por hunk e por linha (2026-02-06)
+- [x] R1.5 Stash manager com criar, aplicar e descartar (2026-02-06)
 
 ## M2 - Produtividade
 
