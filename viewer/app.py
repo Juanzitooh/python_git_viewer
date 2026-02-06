@@ -58,6 +58,7 @@ class CommitsViewer(
         self.worktree_diff_scope: str = ""
         self.title("Git Commits Viewer")
         self.geometry("1200x700")
+        self._maximize_window()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -239,6 +240,22 @@ class CommitsViewer(
             return
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         self.perf_var.set(f"{label}: {elapsed_ms:.0f} ms")
+
+    def _maximize_window(self) -> None:
+        try:
+            self.state("zoomed")
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.attributes("-zoomed", True)
+            return
+        except tk.TclError:
+            pass
+        self.update_idletasks()
+        width = self.winfo_screenwidth()
+        height = self.winfo_screenheight()
+        self.geometry(f"{width}x{height}+0+0")
 
     def _run_async(
         self,

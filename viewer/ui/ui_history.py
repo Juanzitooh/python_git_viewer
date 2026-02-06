@@ -162,7 +162,7 @@ class HistoryTabMixin:
     def _build_right_panel(self) -> None:
         parent = getattr(self, "_history_paned", self.history_tab)
         self.right_frame = ttk.Frame(parent)
-        self.right_frame.grid_rowconfigure(3, weight=1)
+        self.right_frame.grid_rowconfigure(1, weight=1)
         self.right_frame.grid_columnconfigure(0, weight=1)
 
         top_actions = ttk.Frame(self.right_frame)
@@ -191,12 +191,20 @@ class HistoryTabMixin:
         self.load_patch_button.grid(row=0, column=2)
         self.load_patch_button.grid_remove()
 
-        self.commit_info = tk.Text(self.right_frame, height=8, wrap="word")
-        self.commit_info.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
+        details_paned = ttk.PanedWindow(self.right_frame, orient="vertical")
+        details_paned.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        self._history_details_paned = details_paned
+
+        meta_frame = ttk.Frame(details_paned)
+        meta_frame.grid_columnconfigure(0, weight=1)
+        meta_frame.grid_rowconfigure(1, weight=1)
+
+        self.commit_info = tk.Text(meta_frame, height=6, wrap="word")
+        self.commit_info.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
         self.commit_info.configure(state="disabled")
 
-        files_frame = ttk.Frame(self.right_frame)
-        files_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=4)
+        files_frame = ttk.Frame(meta_frame)
+        files_frame.grid(row=1, column=0, sticky="nsew")
         files_frame.grid_rowconfigure(1, weight=1)
         files_frame.grid_columnconfigure(0, weight=1)
         files_frame.grid_columnconfigure(1, weight=0)
@@ -212,8 +220,7 @@ class HistoryTabMixin:
 
         self.file_stats_by_index: dict[int, FileStat] = {}
 
-        patch_frame = ttk.Frame(self.right_frame)
-        patch_frame.grid(row=3, column=0, sticky="nsew", padx=8, pady=(4, 8))
+        patch_frame = ttk.Frame(details_paned)
         patch_frame.grid_rowconfigure(1, weight=1)
         patch_frame.grid_columnconfigure(0, weight=1)
 
@@ -221,21 +228,27 @@ class HistoryTabMixin:
         patch_header.grid(row=0, column=0, sticky="ew")
         patch_header.grid_columnconfigure(0, weight=1)
         ttk.Label(patch_header, text="Patch do arquivo").grid(row=0, column=0, sticky="w")
+        self.open_patch_button = ttk.Button(
+            patch_header,
+            text="Abrir em janela",
+            command=self._open_patch_window,
+        )
+        self.open_patch_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
         ttk.Checkbutton(
             patch_header,
             text="Diff por palavra",
             variable=self.word_diff_var,
             command=self._toggle_word_diff,
-        ).grid(row=0, column=1, sticky="e")
+        ).grid(row=0, column=2, sticky="e")
         ttk.Checkbutton(
             patch_header,
             text="Modo leitura",
             variable=self.read_mode_var,
             command=self._toggle_read_mode,
-        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        ).grid(row=0, column=3, sticky="e", padx=(8, 0))
         self.patch_read_mode_var = tk.StringVar(value="")
         ttk.Label(patch_header, textvariable=self.patch_read_mode_var).grid(
-            row=0, column=3, sticky="e", padx=(8, 0)
+            row=0, column=4, sticky="e", padx=(8, 0)
         )
 
         self.patch_text = tk.Text(patch_frame, wrap="none")
@@ -250,6 +263,9 @@ class HistoryTabMixin:
         self.patch_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
         self.patch_text.configure(font="TkFixedFont")
         self.patch_text.configure(state="disabled")
+
+        details_paned.add(meta_frame, weight=1)
+        details_paned.add(patch_frame, weight=3)
 
     def _get_filters_from_ui(self) -> CommitFilters:
         if not hasattr(self, "filter_text_var"):
@@ -651,6 +667,28 @@ class HistoryTabMixin:
         self.clipboard_clear()
         self.clipboard_append(content)
         self.update()
+
+    def _open_patch_window(self) -> None:
+        commit = self._get_selected_commit()
+        if not commit:
+            return
+        stat = self._get_selected_file_stat()
+        if stat and stat.is_binary:
+            messagebox.showinfo("Patch", "Arquivo binário: sem diff disponível.")
+            return
+        try:
+            if stat:
+                patch = self._get_patch(commit.commit_hash, stat.path)
+                title = f"Patch: {stat.path}"
+                show_file_headers = False
+            else:
+                patch = self._get_patch(commit.commit_hash)
+                title = f"Patch: {commit.commit_hash[:7]}"
+                show_file_headers = True
+        except RuntimeError as exc:
+            messagebox.showerror("Erro", str(exc))
+            return
+        self._open_text_window(title, patch, render_patch=True, show_file_headers=show_file_headers)
 
     def _load_full_patch_for_selected_file(self) -> None:
         commit = self._get_selected_commit()
