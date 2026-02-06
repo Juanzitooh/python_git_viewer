@@ -32,6 +32,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Pipeline de build via CI para Windows e Linux.
 - Releases automaticas com checksums.
 - Icone e metadata do executavel via PyInstaller.
+- Corrigido entrypoint do app e import ausente na aba de commit.
 
 ## [0.1.0] - 2026-02-05
 
