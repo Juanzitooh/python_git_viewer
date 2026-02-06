@@ -48,12 +48,15 @@ Opcional: `python3 compile.py --console` para manter a janela de console (útil 
 
 ```text
 .
-  app.py               # aplicação principal (GUI e lógica)
   compile.py           # build via PyInstaller
   main.py              # entrypoint
   requirements.txt     # dependências de runtime
   requirements-dev.txt # dependências de build
   README.md
+  viewer/              # pacote principal
+    app.py             # aplicação principal (GUI e lógica)
+    core/              # git, models e utilitários
+    ui/                # mixins de UI por aba
 ```
 
 ## Notas
