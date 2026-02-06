@@ -434,6 +434,24 @@ class HistoryTabMixin:
             return
         self._show_commit(selection[-1])
 
+    def _move_commit_selection(self, delta: int) -> None:
+        if not hasattr(self, "commit_listbox"):
+            return
+        size = self.commit_listbox.size()
+        if size == 0:
+            return
+        selection = self.commit_listbox.curselection()
+        if selection:
+            index = selection[-1] + delta
+        else:
+            index = 0 if delta >= 0 else size - 1
+        index = max(0, min(index, size - 1))
+        self.commit_listbox.selection_clear(0, tk.END)
+        self.commit_listbox.selection_set(index)
+        self.commit_listbox.activate(index)
+        self.commit_listbox.see(index)
+        self._show_commit(index)
+
     def _show_commit(self, index: int) -> None:
         summary = self.commit_summaries[index]
         self.current_commit_hash = summary.commit_hash

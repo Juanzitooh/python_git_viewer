@@ -55,6 +55,7 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
 
         self._build_global_bar()
         self._build_tabs()
+        self._bind_shortcuts()
         self._populate_commit_list()
         if self.repo_path and is_git_repo(self.repo_path):
             self._set_repo_path(self.repo_path, initial=True)
@@ -91,3 +92,54 @@ class CommitsViewer(GlobalBarMixin, HistoryTabMixin, CommitTabMixin, SettingsTab
         if not hasattr(self, "word_diff_var"):
             return False
         return bool(self.word_diff_var.get())
+
+    def _bind_shortcuts(self) -> None:
+        self.bind_all("<F5>", self._on_refresh_shortcut, add=True)
+        self.bind_all("<Control-r>", self._on_refresh_shortcut, add=True)
+        self.bind_all("<Control-1>", lambda _e: self._select_tab(0), add=True)
+        self.bind_all("<Control-2>", lambda _e: self._select_tab(1), add=True)
+        self.bind_all("<Control-3>", lambda _e: self._select_tab(2), add=True)
+        self.bind_all("<Alt-Up>", lambda _e: self._navigate_lists(-1), add=True)
+        self.bind_all("<Alt-Down>", lambda _e: self._navigate_lists(1), add=True)
+        self.bind_all("<Control-Return>", self._on_commit_shortcut, add=True)
+        self.bind_all("<Control-Shift-Return>", self._on_commit_push_shortcut, add=True)
+
+    def _select_tab(self, index: int) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        if index < 0 or index >= self.tabs.index("end"):
+            return
+        self.tabs.select(index)
+
+    def _navigate_lists(self, delta: int) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        current_index = self.tabs.index("current")
+        if current_index == 0:
+            self._move_commit_selection(delta)
+        elif current_index == 1:
+            self._move_status_selection(delta)
+
+    def _on_refresh_shortcut(self, _event: tk.Event) -> None:
+        self._refresh_all()
+
+    def _refresh_all(self) -> None:
+        if not self.repo_ready:
+            self._set_status("Selecione um repositório antes de atualizar.")
+            return
+        self._reload_commits()
+        self._refresh_status()
+        self._refresh_branches()
+        self._update_pull_push_labels()
+
+    def _on_commit_shortcut(self, _event: tk.Event) -> None:
+        if not self.repo_ready:
+            messagebox.showinfo("Commit", "Selecione um repositório válido antes de commitar.")
+            return
+        self._commit_changes()
+
+    def _on_commit_push_shortcut(self, _event: tk.Event) -> None:
+        if not self.repo_ready:
+            messagebox.showinfo("Commit", "Selecione um repositório válido antes de commitar.")
+            return
+        self._commit_and_push()

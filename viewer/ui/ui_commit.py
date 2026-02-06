@@ -231,6 +231,29 @@ class CommitTabMixin:
                 pass
         self.stage_sync_job = self.after(50, self._apply_stage_from_selection)
 
+    def _move_status_selection(self, delta: int) -> None:
+        if not hasattr(self, "status_listbox"):
+            return
+        size = self.status_listbox.size()
+        if size == 0:
+            return
+        selection = self.status_listbox.curselection()
+        if selection:
+            index = selection[-1] + delta
+        else:
+            index = 0 if delta >= 0 else size - 1
+        index = max(0, min(index, size - 1))
+        step = 1 if delta >= 0 else -1
+        while 0 <= index < size and index not in self.status_items:
+            index += step
+        if index < 0 or index >= size or index not in self.status_items:
+            return
+        self.status_listbox.selection_clear(0, tk.END)
+        self.status_listbox.selection_set(index)
+        self.status_listbox.activate(index)
+        self.status_listbox.see(index)
+        self._on_status_select(None)
+
     def _open_status_file_in_vscode(self, event: tk.Event) -> None:
         if self.status_listbox.size() == 0:
             return
