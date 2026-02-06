@@ -6,6 +6,7 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from diff_utils import render_patch_to_widget
 from git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
 from models import CommitFilters, CommitInfo, CommitSummary, FileStat
 
@@ -933,3 +934,240 @@ class HistoryTabMixin:
         self._populate_commit_list()
         self._update_filter_status()
 
+    def _open_text_window(
+        self,
+        title: str,
+        content: str,
+        render_patch: bool,
+        show_file_headers: bool = False,
+    ) -> None:
+        window = tk.Toplevel(self)
+        window.title(title)
+        window.geometry("900x600")
+
+        frame = ttk.Frame(window)
+        frame.pack(fill="both", expand=True, padx=8, pady=8)
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        text_widget = tk.Text(frame, wrap="none")
+        text_widget.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=text_widget.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        text_widget.configure(yscrollcommand=scroll.set)
+        text_widget.configure(font=("Courier New", 10))
+
+        text_widget.tag_configure("added", foreground="#1a7f37")
+        text_widget.tag_configure("removed", foreground="#d1242f")
+        text_widget.tag_configure("meta", foreground="#57606a")
+        text_widget.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
+        text_widget.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
+
+        if render_patch:
+            render_patch_to_widget(
+                text_widget,
+                content,
+                read_only=False,
+                show_file_headers=show_file_headers,
+                word_diff=self._word_diff_enabled(),
+            )
+        else:
+            text_widget.insert(tk.END, content)
+            text_widget.configure(state="normal")
+
+        actions = ttk.Frame(window)
+        actions.pack(fill="x", padx=8, pady=(0, 8))
+
+        def copy_all() -> None:
+            window.clipboard_clear()
+            window.clipboard_append(text_widget.get("1.0", tk.END))
+            window.update()
+
+        ttk.Button(actions, text="Copiar tudo", command=copy_all).pack(side="right")
+
+    def _update_branch_action_branches(self) -> None:
+        if not hasattr(self, "branch_origin_combo"):
+            return
+        if not self.repo_ready:
+            self.branch_origin_combo.configure(values=[], state="disabled")
+            return
+        current = self._get_current_branch()
+        options = [branch for branch in self.branch_list if branch != current]
+        self.branch_origin_combo.configure(values=options, state="readonly")
+        if not options:
+            self.branch_origin_var.set("")
+            return
+        if not self.branch_origin_var.get() and options:
+            self.branch_origin_var.set(options[0])
+        elif self.branch_origin_var.get() not in options and options:
+            self.branch_origin_var.set(options[0])
+
+    def _update_operation_preview(self) -> None:
+        if not hasattr(self, "branch_action_status"):
+            return
+        if not self.repo_ready:
+            self.branch_action_status.configure(text="Selecione um repositório.")
+            self.branch_action_button.configure(state="disabled")
+            return
+        dest = self._get_current_branch()
+        origin = self.branch_origin_var.get().strip()
+        if not origin or not dest:
+            self.branch_action_status.configure(text="Selecione origem e destino.")
+            self.branch_action_button.configure(state="disabled")
+            return
+        if origin == dest:
+            self.branch_action_status.configure(text="Origem e destino devem ser diferentes.")
+            self.branch_action_button.configure(state="disabled")
+            return
+        if self._is_dirty():
+            self.branch_action_status.configure(text="Working tree sujo. Veja a aba Commit.")
+            self.branch_action_button.configure(state="disabled")
+            return
+        behind, ahead = self._get_ahead_behind_between(origin, dest)
+        conflict = self._has_potential_conflict(origin, dest)
+        conflict_label = "Conflito: sim" if conflict else "Conflito: não"
+        status_text = f"{origin} → {dest} | Ahead: {ahead} | Behind: {behind} | {conflict_label}"
+        self.branch_action_status.configure(text=status_text)
+        action = self.branch_action_var.get()
+        if action == "Squash merge" and not self.branch_message_var.get().strip():
+            self.branch_action_button.configure(state="disabled")
+        else:
+            self.branch_action_button.configure(state="normal")
+
+    def _get_ahead_behind_between(self, origin: str, dest: str) -> tuple[int, int]:
+        try:
+            output = run_git(self.repo_path, ["rev-list", "--left-right", "--count", f"{origin}...{dest}"])
+        except RuntimeError:
+            return 0, 0
+        parts = output.strip().split()
+        if len(parts) != 2:
+            return 0, 0
+        behind = int(parts[0])
+        ahead = int(parts[1])
+        return behind, ahead
+
+    def _has_potential_conflict(self, origin: str, dest: str) -> bool:
+        try:
+            base = run_git(self.repo_path, ["merge-base", dest, origin]).strip()
+            output = run_git(self.repo_path, ["merge-tree", base, dest, origin])
+        except RuntimeError:
+            return False
+        return "<<<<<<<" in output
+
+    def _run_branch_action(self) -> None:
+        if not self.repo_ready:
+            return
+        origin = self.branch_origin_var.get().strip()
+        dest = self._get_current_branch()
+        if not origin or not dest:
+            messagebox.showwarning("Ação", "Selecione a branch de origem e destino.")
+            return
+        if origin == dest:
+            messagebox.showwarning("Ação", "Origem e destino devem ser diferentes.")
+            return
+        if self._is_dirty():
+            messagebox.showwarning("Ação", "Working tree sujo. Faça stash/commit antes.")
+            return
+        action = self.branch_action_var.get()
+        if action == "Squash merge":
+            message = self.branch_message_var.get().strip()
+            if not message:
+                messagebox.showwarning("Squash", "Mensagem obrigatória para squash.")
+                return
+        try:
+            if action == "Merge":
+                run_git(self.repo_path, ["merge", origin])
+            elif action == "Rebase":
+                run_git(self.repo_path, ["rebase", origin])
+            else:
+                run_git(self.repo_path, ["merge", "--squash", origin])
+                run_git(self.repo_path, ["commit", "-m", message])
+        except RuntimeError as exc:
+            messagebox.showerror("Ação", str(exc))
+            self._show_conflicts_window()
+            return
+        self._reload_commits()
+        self._refresh_status()
+        self._refresh_branches()
+        self._update_pull_push_labels()
+
+    def _show_action_hint(self, event: tk.Event) -> None:
+        if not self.repo_ready:
+            return
+        try:
+            is_dirty = self._is_dirty()
+        except RuntimeError:
+            return
+        if not is_dirty:
+            return
+        if getattr(self, "action_hint_window", None) is not None:
+            return
+        tooltip = tk.Toplevel(self)
+        tooltip.wm_overrideredirect(True)
+        tooltip.attributes("-topmost", True)
+        label = tk.Label(
+            tooltip,
+            text="Working tree sujo. Veja a aba Commit.",
+            background="#fff8dc",
+            relief="solid",
+            borderwidth=1,
+            font=("TkDefaultFont", 9),
+        )
+        label.pack(ipadx=6, ipady=2)
+        x = event.widget.winfo_rootx() + 8
+        y = event.widget.winfo_rooty() + event.widget.winfo_height() + 6
+        tooltip.wm_geometry(f"+{x}+{y}")
+        self.action_hint_window = tooltip
+
+    def _hide_action_hint(self, _event: tk.Event) -> None:
+        tooltip = getattr(self, "action_hint_window", None)
+        if tooltip is not None:
+            tooltip.destroy()
+            self.action_hint_window = None
+
+    def _render_patch(self, patch: str) -> None:
+        render_patch_to_widget(
+            self.patch_text,
+            patch,
+            read_only=True,
+            show_file_headers=False,
+            word_diff=self._word_diff_enabled(),
+        )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Visualiza commits do Git em uma interface Tkinter.")
+    parser.add_argument(
+        "--repo",
+        default=os.getcwd(),
+        help="Caminho do repositório Git (default: diretório atual)",
+    )
+    parser.add_argument("--limit", type=int, default=100, help="Quantidade de commits (default: 100)")
+    parser.add_argument(
+        "--patch-limit",
+        type=int,
+        default=0,
+        help="(ignorado) mantido por compatibilidade",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    repo_path = os.path.abspath(args.repo)
+    commits: list[CommitSummary] = []
+    if os.path.isdir(repo_path) and is_git_repo(repo_path):
+        try:
+            commits = load_commit_summaries(repo_path, args.limit)
+        except RuntimeError as exc:
+            messagebox.showerror("Erro", str(exc))
+            repo_path = ""
+    else:
+        repo_path = ""
+    app = CommitsViewer(repo_path, commits, args.patch_limit, args.limit)
+    app.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
