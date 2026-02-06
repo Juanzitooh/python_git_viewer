@@ -44,7 +44,7 @@ class CommitTabMixin:
             status_frame,
             selectmode="extended",
             exportselection=False,
-            font=("Courier New", 10),
+            font="TkFixedFont",
         )
         self.status_listbox.grid(row=1, column=0, sticky="nsew")
 
@@ -107,7 +107,7 @@ class CommitTabMixin:
         self.worktree_diff_text.tag_configure("meta", foreground="#57606a")
         self.worktree_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
         self.worktree_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
-        self.worktree_diff_text.configure(font=("Courier New", 10))
+        self.worktree_diff_text.configure(font="TkFixedFont")
         self.worktree_diff_text.configure(state="disabled")
 
         hunk_actions = ttk.Frame(diff_frame)

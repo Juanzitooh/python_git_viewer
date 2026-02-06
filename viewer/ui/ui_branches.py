@@ -137,7 +137,7 @@ class BranchesTabMixin:
         self.compare_diff_text.tag_configure("meta", foreground="#57606a")
         self.compare_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
         self.compare_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
-        self.compare_diff_text.configure(font=("Courier New", 10))
+        self.compare_diff_text.configure(font="TkFixedFont")
         self.compare_diff_text.configure(state="disabled")
         paned.add(diff_frame, weight=2)
 

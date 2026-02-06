@@ -71,13 +71,15 @@ class StashMixin:
         stash_diff_scroll = ttk.Scrollbar(diff_frame, orient="vertical", command=stash_diff_text.yview)
         stash_diff_scroll.grid(row=0, column=1, sticky="ns")
         stash_diff_text.configure(yscrollcommand=stash_diff_scroll.set)
-        stash_diff_text.tag_configure("added", foreground="#1a7f37")
-        stash_diff_text.tag_configure("removed", foreground="#d1242f")
-        stash_diff_text.tag_configure("meta", foreground="#57606a")
-        stash_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
-        stash_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
-        stash_diff_text.configure(font=("Courier New", 10))
+        stash_diff_text.configure(font="TkFixedFont")
         stash_diff_text.configure(state="disabled")
+
+        palette = getattr(self, "theme_palette", None)
+        if palette and hasattr(self, "_apply_text_widget_theme"):
+            self._apply_text_widget_theme(stash_diff_text, palette)
+            self._apply_diff_tags(stash_diff_text, palette)
+        if palette and hasattr(self, "_apply_listbox_theme"):
+            self._apply_listbox_theme(stash_listbox, palette)
 
         actions = ttk.Frame(container)
         actions.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))

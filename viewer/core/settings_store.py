@@ -11,6 +11,11 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "status_interval_sec": 15,
     "recent_repos": [],
     "favorite_repos": [],
+    "theme": "light",
+    "ui_font_family": "",
+    "ui_font_size": 0,
+    "mono_font_family": "",
+    "mono_font_size": 0,
 }
 
 
@@ -37,6 +42,12 @@ def _coerce_int(value: object, default: int, minimum: int) -> int:
     if parsed < minimum:
         return default
     return parsed
+
+
+def _coerce_str(value: object, default: str) -> str:
+    if not isinstance(value, str):
+        return default
+    return value.strip()
 
 
 def _sanitize_repo_list(items: object) -> list[str]:
@@ -81,6 +92,12 @@ def load_settings(path: Path) -> dict[str, object]:
         )
         data["recent_repos"] = _sanitize_repo_list(raw.get("recent_repos"))
         data["favorite_repos"] = _sanitize_repo_list(raw.get("favorite_repos"))
+        theme = _coerce_str(raw.get("theme"), str(DEFAULT_SETTINGS["theme"]))
+        data["theme"] = theme if theme in ("light", "dark") else str(DEFAULT_SETTINGS["theme"])
+        data["ui_font_family"] = _coerce_str(raw.get("ui_font_family"), "")
+        data["ui_font_size"] = _coerce_int(raw.get("ui_font_size"), 0, minimum=0)
+        data["mono_font_family"] = _coerce_str(raw.get("mono_font_family"), "")
+        data["mono_font_size"] = _coerce_int(raw.get("mono_font_size"), 0, minimum=0)
     return data
 
 

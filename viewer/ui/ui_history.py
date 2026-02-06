@@ -238,7 +238,7 @@ class HistoryTabMixin:
         self.patch_text.tag_configure("meta", foreground="#57606a")
         self.patch_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
         self.patch_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
-        self.patch_text.configure(font=("Courier New", 10))
+        self.patch_text.configure(font="TkFixedFont")
         self.patch_text.configure(state="disabled")
 
     def _get_filters_from_ui(self) -> CommitFilters:
@@ -958,13 +958,13 @@ class HistoryTabMixin:
         scroll = ttk.Scrollbar(frame, orient="vertical", command=text_widget.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         text_widget.configure(yscrollcommand=scroll.set)
-        text_widget.configure(font=("Courier New", 10))
+        text_widget.configure(font="TkFixedFont")
 
-        text_widget.tag_configure("added", foreground="#1a7f37")
-        text_widget.tag_configure("removed", foreground="#d1242f")
-        text_widget.tag_configure("meta", foreground="#57606a")
-        text_widget.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
-        text_widget.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
+        palette = getattr(self, "theme_palette", None)
+        if palette and hasattr(self, "_apply_text_widget_theme"):
+            self._apply_text_widget_theme(text_widget, palette)
+            self._apply_diff_tags(text_widget, palette)
+
 
         if render_patch:
             render_patch_to_widget(

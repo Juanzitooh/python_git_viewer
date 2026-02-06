@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import messagebox
 from tkinter import ttk
 
@@ -72,10 +73,17 @@ class CommitsViewer(
         self.settings_data: dict[str, object] = {}
         self.recent_repos: list[str] = []
         self.favorite_repos: list[str] = []
+        self.theme_name = "light"
+        self.ui_font_family = ""
+        self.ui_font_size = 0
+        self.mono_font_family = ""
+        self.mono_font_size = 0
+        self.theme_palette: dict[str, str] = {}
         self._load_settings()
 
         self._build_global_bar()
         self._build_tabs()
+        self._apply_theme_settings()
         self._bind_shortcuts()
         self._populate_commit_list()
         if self.repo_path and is_git_repo(self.repo_path):
@@ -184,10 +192,26 @@ class CommitsViewer(
         self.status_interval_sec = int(self.settings_data.get("status_interval_sec", self.status_interval_sec))
         self.recent_repos = list(self.settings_data.get("recent_repos", []))
         self.favorite_repos = list(self.settings_data.get("favorite_repos", []))
+        self.theme_name = str(self.settings_data.get("theme", "light"))
+        self.ui_font_family = str(self.settings_data.get("ui_font_family", "")).strip()
+        self.ui_font_size = int(self.settings_data.get("ui_font_size", 0))
+        self.mono_font_family = str(self.settings_data.get("mono_font_family", "")).strip()
+        self.mono_font_size = int(self.settings_data.get("mono_font_size", 0))
         if len(self.recent_repos) > RECENT_REPOS_LIMIT:
             self.recent_repos = self.recent_repos[:RECENT_REPOS_LIMIT]
         if len(self.favorite_repos) > FAVORITE_REPOS_LIMIT:
             self.favorite_repos = self.favorite_repos[:FAVORITE_REPOS_LIMIT]
+        if self.theme_name not in ("light", "dark"):
+            self.theme_name = "light"
+        default_ui_family, default_ui_size, default_mono_family, default_mono_size = self._get_default_font_settings()
+        if not self.ui_font_family:
+            self.ui_font_family = default_ui_family
+        if self.ui_font_size <= 0:
+            self.ui_font_size = default_ui_size
+        if not self.mono_font_family:
+            self.mono_font_family = default_mono_family
+        if self.mono_font_size <= 0:
+            self.mono_font_size = default_mono_size
 
     def _persist_settings(self) -> None:
         self.settings_data = {
@@ -196,6 +220,11 @@ class CommitsViewer(
             "status_interval_sec": self.status_interval_sec,
             "recent_repos": self.recent_repos,
             "favorite_repos": self.favorite_repos,
+            "theme": self.theme_name,
+            "ui_font_family": self.ui_font_family,
+            "ui_font_size": self.ui_font_size,
+            "mono_font_family": self.mono_font_family,
+            "mono_font_size": self.mono_font_size,
         }
         save_settings(self.settings_path, self.settings_data)
 
@@ -232,3 +261,182 @@ class CommitsViewer(
         self._persist_settings()
         if hasattr(self, "_refresh_repo_lists"):
             self._refresh_repo_lists()
+
+    def _get_default_font_settings(self) -> tuple[str, int, str, int]:
+        ui_font = tkfont.nametofont("TkDefaultFont")
+        mono_font = tkfont.nametofont("TkFixedFont")
+        return (
+            str(ui_font.cget("family")),
+            int(ui_font.cget("size")),
+            str(mono_font.cget("family")),
+            int(mono_font.cget("size")),
+        )
+
+    def _reset_theme_settings(self) -> None:
+        default_ui_family, default_ui_size, default_mono_family, default_mono_size = self._get_default_font_settings()
+        self.theme_name = "light"
+        self.ui_font_family = default_ui_family
+        self.ui_font_size = default_ui_size
+        self.mono_font_family = default_mono_family
+        self.mono_font_size = default_mono_size
+        if hasattr(self, "theme_var"):
+            self.theme_var.set("Claro")
+        if hasattr(self, "ui_font_family_var"):
+            self.ui_font_family_var.set(self.ui_font_family)
+        if hasattr(self, "ui_font_size_var"):
+            self.ui_font_size_var.set(str(self.ui_font_size))
+        if hasattr(self, "mono_font_family_var"):
+            self.mono_font_family_var.set(self.mono_font_family)
+        if hasattr(self, "mono_font_size_var"):
+            self.mono_font_size_var.set(str(self.mono_font_size))
+        self._apply_theme_settings()
+        self._persist_settings()
+
+    def _apply_theme_settings(self) -> None:
+        palette = self._get_theme_palette(self.theme_name)
+        self.theme_palette = palette
+        self._apply_tk_palette(palette)
+        self._apply_ttk_theme(palette)
+        self._apply_fonts()
+        self._apply_widget_theme(palette)
+
+    def _get_theme_palette(self, name: str) -> dict[str, str]:
+        if name == "dark":
+            return {
+                "bg": "#1f2328",
+                "fg": "#e6edf3",
+                "panel_bg": "#22272e",
+                "field_bg": "#0d1117",
+                "accent": "#2f81f7",
+                "select_bg": "#264f78",
+                "select_fg": "#e6edf3",
+                "text_bg": "#0d1117",
+                "text_fg": "#e6edf3",
+                "diff_added": "#3fb950",
+                "diff_removed": "#f85149",
+                "diff_meta": "#8b949e",
+                "diff_added_bg": "#0b3d1e",
+                "diff_removed_bg": "#4b1113",
+            }
+        return {
+            "bg": "#f6f6f6",
+            "fg": "#1f2328",
+            "panel_bg": "#ffffff",
+            "field_bg": "#ffffff",
+            "accent": "#0969da",
+            "select_bg": "#cce0ff",
+            "select_fg": "#1f2328",
+            "text_bg": "#ffffff",
+            "text_fg": "#1f2328",
+            "diff_added": "#1a7f37",
+            "diff_removed": "#d1242f",
+            "diff_meta": "#57606a",
+            "diff_added_bg": "#dafbe1",
+            "diff_removed_bg": "#ffebe9",
+        }
+
+    def _apply_tk_palette(self, palette: dict[str, str]) -> None:
+        self.tk_setPalette(
+            background=palette["bg"],
+            foreground=palette["fg"],
+            selectBackground=palette["select_bg"],
+            selectForeground=palette["select_fg"],
+            insertBackground=palette["fg"],
+            activeBackground=palette["panel_bg"],
+            activeForeground=palette["fg"],
+        )
+
+    def _apply_ttk_theme(self, palette: dict[str, str]) -> None:
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TFrame", background=palette["bg"])
+        style.configure("TLabel", background=palette["bg"], foreground=palette["fg"])
+        style.configure("TLabelframe", background=palette["bg"], foreground=palette["fg"])
+        style.configure("TLabelframe.Label", background=palette["bg"], foreground=palette["fg"])
+        style.configure("TButton", background=palette["bg"], foreground=palette["fg"])
+        style.map(
+            "TButton",
+            background=[("active", palette["panel_bg"])],
+            foreground=[("active", palette["fg"])],
+        )
+        style.configure("TEntry", fieldbackground=palette["field_bg"], foreground=palette["fg"])
+        style.configure("TCombobox", fieldbackground=palette["field_bg"], foreground=palette["fg"])
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", palette["field_bg"])],
+            foreground=[("readonly", palette["fg"])],
+        )
+        style.configure("TNotebook", background=palette["bg"])
+        style.configure("TNotebook.Tab", background=palette["panel_bg"], foreground=palette["fg"], padding=(10, 4))
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", palette["field_bg"])],
+            foreground=[("selected", palette["fg"])],
+        )
+
+    def _apply_fonts(self) -> None:
+        ui_font = tkfont.nametofont("TkDefaultFont")
+        ui_font.configure(family=self.ui_font_family, size=self.ui_font_size)
+        text_font = tkfont.nametofont("TkTextFont")
+        text_font.configure(family=self.ui_font_family, size=self.ui_font_size)
+        heading_font = tkfont.nametofont("TkHeadingFont")
+        heading_font.configure(family=self.ui_font_family, size=self.ui_font_size)
+        mono_font = tkfont.nametofont("TkFixedFont")
+        mono_font.configure(family=self.mono_font_family, size=self.mono_font_size)
+
+    def _apply_widget_theme(self, palette: dict[str, str]) -> None:
+        text_widgets = [
+            "commit_info",
+            "commit_body_text",
+            "patch_text",
+            "worktree_diff_text",
+            "compare_diff_text",
+        ]
+        for name in text_widgets:
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+            self._apply_text_widget_theme(widget, palette)
+            self._apply_diff_tags(widget, palette)
+
+        list_widgets = [
+            "commit_listbox",
+            "files_listbox",
+            "status_listbox",
+            "compare_commits_listbox",
+            "compare_files_listbox",
+            "favorite_listbox",
+            "recent_listbox",
+        ]
+        for name in list_widgets:
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+            self._apply_listbox_theme(widget, palette)
+
+    def _apply_text_widget_theme(self, widget: tk.Text, palette: dict[str, str]) -> None:
+        widget.configure(
+            background=palette["text_bg"],
+            foreground=palette["text_fg"],
+            insertbackground=palette["text_fg"],
+            selectbackground=palette["select_bg"],
+            selectforeground=palette["select_fg"],
+        )
+
+    def _apply_listbox_theme(self, widget: tk.Listbox, palette: dict[str, str]) -> None:
+        widget.configure(
+            background=palette["field_bg"],
+            foreground=palette["text_fg"],
+            selectbackground=palette["select_bg"],
+            selectforeground=palette["select_fg"],
+        )
+
+    def _apply_diff_tags(self, widget: tk.Text, palette: dict[str, str]) -> None:
+        widget.tag_configure("added", foreground=palette["diff_added"])
+        widget.tag_configure("removed", foreground=palette["diff_removed"])
+        widget.tag_configure("meta", foreground=palette["diff_meta"])
+        widget.tag_configure("added_word", foreground=palette["diff_added"], background=palette["diff_added_bg"])
+        widget.tag_configure("removed_word", foreground=palette["diff_removed"], background=palette["diff_removed_bg"])
