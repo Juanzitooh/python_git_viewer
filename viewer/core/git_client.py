@@ -66,7 +66,8 @@ def build_log_args(limit: int, skip: int, filters: CommitFilters | None) -> list
         "log",
         f"--max-count={limit}",
         f"--skip={skip}",
-        f"--pretty=format:%H{FIELD_SEP}%s{RECORD_SEP}",
+        "--date=iso",
+        f"--pretty=format:%H{FIELD_SEP}%s{FIELD_SEP}%an{FIELD_SEP}%ad{FIELD_SEP}%ct{RECORD_SEP}",
     ]
     if not filters:
         return args
@@ -108,8 +109,24 @@ def load_commit_summaries(
         fields = record.split(FIELD_SEP)
         if len(fields) < 2:
             continue
-        commit_hash, subject = fields[0], fields[1]
-        summaries.append(CommitSummary(commit_hash=commit_hash, subject=subject))
+        commit_hash = fields[0]
+        subject = fields[1]
+        author = fields[2] if len(fields) > 2 else ""
+        date = fields[3] if len(fields) > 3 else ""
+        timestamp_raw = fields[4] if len(fields) > 4 else ""
+        try:
+            timestamp = int(timestamp_raw)
+        except ValueError:
+            timestamp = 0
+        summaries.append(
+            CommitSummary(
+                commit_hash=commit_hash,
+                subject=subject,
+                author=author,
+                date=date,
+                timestamp=timestamp,
+            )
+        )
     return summaries
 
 

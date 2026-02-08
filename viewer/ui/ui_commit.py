@@ -28,32 +28,57 @@ class CommitTabMixin:
         status_frame.grid(row=0, column=0, sticky="nsew")
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=0)
-        status_frame.grid_columnconfigure(2, weight=0)
-        status_frame.grid_rowconfigure(1, weight=1)
+        status_frame.grid_rowconfigure(2, weight=1)
 
-        ttk.Label(status_frame, text="Arquivos em aberto:").grid(row=0, column=0, sticky="w")
-        self.stage_count_var = tk.StringVar(value="Selecionados: 0/0")
-        ttk.Label(status_frame, textvariable=self.stage_count_var).grid(row=0, column=1, sticky="e", padx=(8, 0))
-        ttk.Button(status_frame, text="Atualizar status", command=self._refresh_status).grid(
+        header_row = ttk.Frame(status_frame)
+        header_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        header_row.grid_columnconfigure(0, weight=1)
+        header_row.grid_columnconfigure(1, weight=0)
+        ttk.Label(header_row, text="Arquivos em aberto:").grid(row=0, column=0, sticky="w")
+        self.stage_count_var = tk.StringVar(value="Staged: 0/0")
+        ttk.Label(header_row, textvariable=self.stage_count_var).grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+        controls_row = ttk.Frame(status_frame)
+        controls_row.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        ttk.Button(controls_row, text="Atualizar status", command=self._refresh_status).grid(
             row=0,
-            column=2,
-            sticky="e",
-            padx=(8, 0),
+            column=0,
+            sticky="w",
+            padx=(0, 8),
         )
+        commit_branch_controls = ttk.Frame(controls_row)
+        commit_branch_controls.grid(row=0, column=1, sticky="w")
+        ttk.Label(commit_branch_controls, text="Branch:").grid(row=0, column=0, sticky="e", padx=(0, 4))
+        self.commit_branch_quick_var = tk.StringVar(value="")
+        self.commit_branch_quick_combo = ttk.Combobox(
+            commit_branch_controls,
+            textvariable=self.commit_branch_quick_var,
+            state="disabled",
+            width=20,
+            values=[],
+        )
+        self.commit_branch_quick_combo.grid(row=0, column=1, sticky="e")
+        self.commit_branch_quick_combo.bind("<<ComboboxSelected>>", self._on_commit_quick_branch_selected)
+        ttk.Button(
+            commit_branch_controls,
+            text="Nova branch",
+            command=self._create_commit_quick_branch,
+        ).grid(row=0, column=2, sticky="e", padx=(6, 0))
 
         self.status_listbox = tk.Listbox(
             status_frame,
-            selectmode="extended",
+            selectmode="browse",
             exportselection=False,
             font="TkFixedFont",
         )
-        self.status_listbox.grid(row=1, column=0, sticky="nsew")
+        self.status_listbox.grid(row=2, column=0, sticky="nsew")
 
         status_scroll = ttk.Scrollbar(status_frame, orient="vertical", command=self.status_listbox.yview)
-        status_scroll.grid(row=1, column=1, sticky="ns")
+        status_scroll.grid(row=2, column=1, sticky="ns")
         self.status_listbox.configure(yscrollcommand=status_scroll.set)
         self.status_listbox.bind("<<ListboxSelect>>", self._on_status_select)
-        self.status_listbox.bind("<Double-Button-1>", self._open_status_file_in_vscode)
+        self.status_listbox.bind("<ButtonRelease-1>", self._on_status_list_single_click, add=True)
+        self.status_listbox.bind("<Double-Button-1>", self._on_status_list_double_click, add=True)
 
         commit_frame = ttk.Frame(left_column)
         commit_frame.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
@@ -74,6 +99,14 @@ class CommitTabMixin:
         ttk.Button(commit_buttons, text="Commit", command=self._commit_changes).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(commit_buttons, text="Commit + Push", command=self._commit_and_push).grid(row=0, column=1)
         ttk.Button(commit_buttons, text="Stash", command=self._open_stash_window).grid(row=0, column=2, padx=(6, 0))
+        self.undo_commit_button = ttk.Button(commit_buttons, text="Undo commit", command=self._open_undo_commit_window)
+        self.undo_commit_button.grid(
+            row=0,
+            column=3,
+            padx=(6, 0),
+        )
+        self.undo_commit_button.bind("<Enter>", self._on_undo_commit_button_hover, add=True)
+        self.undo_commit_button.bind("<Leave>", self._hide_hover_tooltip, add=True)
 
         diff_frame = ttk.Frame(paned)
         diff_frame.grid_columnconfigure(0, weight=1)
@@ -108,34 +141,16 @@ class CommitTabMixin:
         self.worktree_diff_text.tag_configure("meta", foreground="#57606a")
         self.worktree_diff_text.tag_configure("added_word", foreground="#1a7f37", background="#dafbe1")
         self.worktree_diff_text.tag_configure("removed_word", foreground="#d1242f", background="#ffebe9")
+        self.worktree_diff_text.tag_configure("selected_hunk", background="#e8f0ff")
+        self.worktree_diff_text.tag_configure("selected_line", background="#cfe0ff")
         self.worktree_diff_text.configure(font="TkFixedFont")
         self.worktree_diff_text.configure(state="disabled")
+        self.worktree_diff_text.bind("<ButtonRelease-1>", self._on_worktree_diff_single_click, add=True)
+        self.worktree_diff_text.bind("<Double-Button-1>", self._on_worktree_diff_double_click, add=True)
 
-        hunk_actions = ttk.Frame(diff_frame)
-        hunk_actions.grid(row=2, column=0, sticky="w", pady=(6, 0))
-        self.stage_hunk_button = ttk.Button(hunk_actions, text="Stage hunk", command=self._stage_selected_hunk)
-        self.stage_hunk_button.grid(
-            row=0,
-            column=0,
-            padx=(0, 6),
-        )
-        self.unstage_hunk_button = ttk.Button(hunk_actions, text="Unstage hunk", command=self._unstage_selected_hunk)
-        self.unstage_hunk_button.grid(
-            row=0,
-            column=1,
-            padx=(0, 6),
-        )
-        self.stage_line_button = ttk.Button(hunk_actions, text="Stage linha", command=self._stage_selected_line)
-        self.stage_line_button.grid(
-            row=0,
-            column=2,
-            padx=(0, 6),
-        )
-        self.unstage_line_button = ttk.Button(hunk_actions, text="Unstage linha", command=self._unstage_selected_line)
-        self.unstage_line_button.grid(
-            row=0,
-            column=3,
-        )
+        self.diff_interaction_hint_var = tk.StringVar(value="")
+        self.diff_interaction_hint_label = ttk.Label(diff_frame, textvariable=self.diff_interaction_hint_var)
+        self.diff_interaction_hint_label.grid(row=2, column=0, sticky="w", pady=(6, 0))
 
         paned.add(left_column, weight=1)
         paned.add(diff_frame, weight=2)
@@ -145,6 +160,11 @@ class CommitTabMixin:
         self.status_label.grid(row=1, column=0, sticky="w", padx=8, pady=(6, 8))
 
         self.status_items: dict[str, dict[str, str | bool]] = {}
+        self.status_focus_path = ""
+        self.status_click_job: str | None = None
+        self.status_click_path = ""
+        self.diff_click_job: str | None = None
+        self.diff_click_line_no = 0
         self._refresh_branches()
         self._refresh_status()
 
@@ -212,44 +232,134 @@ class CommitTabMixin:
                 self.status_listbox.insert(tk.END, line)
                 self.status_items[item_index] = entry
         if hasattr(self, "stage_count_var"):
-            self.stage_count_var.set(f"Selecionados: {staged_count}/{total}")
-        self._sync_selection_to_staged()
+            self.stage_count_var.set(f"Staged: {staged_count}/{total}")
+        selected_index: int | None = None
+        preferred_path = self.status_focus_path.strip() if hasattr(self, "status_focus_path") else ""
+        if preferred_path:
+            selected_index = self._find_status_index_by_path(preferred_path)
+        if selected_index is None and self.status_items:
+            selected_index = min(self.status_items.keys())
+        if selected_index is not None:
+            self._select_status_index(selected_index)
+        else:
+            self.status_listbox.selection_clear(0, tk.END)
         self._update_worktree_diff_from_selection()
         self._update_operation_preview()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
 
-    def _sync_selection_to_staged(self) -> None:
-        if self.suspend_stage_sync:
-            return
-        self.suspend_stage_sync = True
-        self.status_listbox.selection_clear(0, tk.END)
+    def _find_status_index_by_path(self, path_for_git: str) -> int | None:
+        if not path_for_git:
+            return None
         for index, entry in self.status_items.items():
-            if entry.get("staged"):
-                self.status_listbox.selection_set(index)
-        self.suspend_stage_sync = False
+            if str(entry.get("path_for_git", "")).strip() == path_for_git:
+                return index
+        return None
+
+    def _select_status_index(self, index: int) -> None:
+        self.status_listbox.selection_clear(0, tk.END)
+        self.status_listbox.selection_set(index)
+        self.status_listbox.activate(index)
+        self.status_listbox.see(index)
+
+    def _status_entry_index_from_event(self, event: tk.Event) -> int | None:
+        if self.status_listbox.size() == 0:
+            return None
+        index = self.status_listbox.nearest(event.y)
+        if index < 0 or index >= self.status_listbox.size():
+            return None
+        bbox = self.status_listbox.bbox(index)
+        if not bbox:
+            return None
+        y_top = bbox[1]
+        y_bottom = y_top + bbox[3]
+        if event.y < y_top or event.y > y_bottom:
+            return None
+        if index not in self.status_items:
+            return None
+        return index
 
     def _on_status_select(self, _event: tk.Event) -> None:
         if self.suspend_stage_sync:
             return
         selected = set(self.status_listbox.curselection())
         file_selected = [index for index in selected if index in self.status_items]
-        if len(file_selected) != len(selected):
-            self.suspend_stage_sync = True
+        if not file_selected:
             self.status_listbox.selection_clear(0, tk.END)
-            for index in file_selected:
-                self.status_listbox.selection_set(index)
-            self.suspend_stage_sync = False
-            if not file_selected:
-                self._sync_selection_to_staged()
-                return
+            self.status_focus_path = ""
+            self._update_worktree_diff_from_selection()
+            return
+        focus_index = file_selected[-1]
+        if len(file_selected) != len(selected):
+            self._select_status_index(focus_index)
+        entry = self.status_items.get(focus_index)
+        if entry:
+            self.status_focus_path = str(entry.get("path_for_git", "")).strip()
         self._update_worktree_diff_from_selection()
-        if self.stage_sync_job is not None:
+
+    def _on_status_list_single_click(self, event: tk.Event) -> str:
+        index = self._status_entry_index_from_event(event)
+        if index is None:
+            return "break"
+        self._select_status_index(index)
+        self._on_status_select(None)
+        entry = self.status_items.get(index)
+        if not entry:
+            return "break"
+        self.status_click_path = str(entry.get("path_for_git", "")).strip()
+        if self.status_click_job is not None:
             try:
-                self.after_cancel(self.stage_sync_job)
+                self.after_cancel(self.status_click_job)
             except tk.TclError:
                 pass
-        self.stage_sync_job = self.after(50, self._apply_stage_from_selection)
+            self.status_click_job = None
+        self.status_click_job = self.after(220, self._execute_status_single_click)
+        return "break"
+
+    def _on_status_list_double_click(self, event: tk.Event) -> str:
+        if self.status_click_job is not None:
+            try:
+                self.after_cancel(self.status_click_job)
+            except tk.TclError:
+                pass
+            self.status_click_job = None
+        self.status_click_path = ""
+        self._open_status_file_in_vscode(event)
+        return "break"
+
+    def _execute_status_single_click(self) -> None:
+        self.status_click_job = None
+        path = self.status_click_path.strip()
+        self.status_click_path = ""
+        if not path:
+            return
+        index = self._find_status_index_by_path(path)
+        if index is None:
+            return
+        entry = self.status_items.get(index)
+        if not entry:
+            return
+        self._toggle_status_entry_stage(entry)
+
+    def _toggle_status_entry_stage(self, entry: dict[str, str | bool]) -> None:
+        path_for_git = str(entry.get("path_for_git", "")).strip()
+        if not path_for_git:
+            return
+        staged = bool(entry.get("staged", False))
+        try:
+            if staged:
+                run_git(self.repo_path, ["reset", "--", path_for_git])
+                self._set_status(f"Arquivo removido do stage: {path_for_git}")
+            else:
+                run_git(self.repo_path, ["add", "--", path_for_git])
+                self._set_status(f"Arquivo adicionado ao stage: {path_for_git}")
+        except RuntimeError as exc:
+            messagebox.showerror("Stage", str(exc))
+            return
+        self.status_focus_path = path_for_git
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
+        self._refresh_status()
 
     def _move_status_selection(self, delta: int) -> None:
         if not hasattr(self, "status_listbox"):
@@ -275,11 +385,12 @@ class CommitTabMixin:
         self._on_status_select(None)
 
     def _open_status_file_in_vscode(self, event: tk.Event) -> None:
-        if self.status_listbox.size() == 0:
-            return
-        index = self.status_listbox.nearest(event.y)
-        if index >= self.status_listbox.size():
-            return
+        index = self._status_entry_index_from_event(event)
+        if index is None:
+            selection = self.status_listbox.curselection()
+            if not selection:
+                return
+            index = selection[-1]
         entry = self.status_items.get(index)
         if not entry:
             return
@@ -289,29 +400,8 @@ class CommitTabMixin:
         self._open_repo_file_in_vscode(path)
 
     def _apply_stage_from_selection(self) -> None:
-        self.stage_sync_job = None
-        selected = set(self.status_listbox.curselection())
-        add_paths: list[str] = []
-        reset_paths: list[str] = []
-        for index, entry in self.status_items.items():
-            staged = bool(entry["staged"])
-            selected_now = index in selected
-            path_for_git = str(entry["path_for_git"])
-            if selected_now and not staged:
-                add_paths.append(path_for_git)
-            elif not selected_now and staged:
-                reset_paths.append(path_for_git)
-        try:
-            for path in add_paths:
-                run_git(self.repo_path, ["add", "--", path])
-            for path in reset_paths:
-                run_git(self.repo_path, ["reset", "--", path])
-        except RuntimeError as exc:
-            messagebox.showerror("Erro", str(exc))
-            return
-        if (add_paths or reset_paths) and hasattr(self, "_bump_repo_state"):
-            self._bump_repo_state()
-        self._refresh_status()
+        # Mantido por compatibilidade com fluxos antigos.
+        return
 
     def _update_worktree_diff_from_selection(self) -> None:
         if not hasattr(self, "worktree_diff_text"):
@@ -321,6 +411,7 @@ class CommitTabMixin:
             self._set_text(self.worktree_diff_text, "Selecione um arquivo para ver o diff.")
             self.worktree_diff_data = None
             self.worktree_line_map.clear()
+            self._clear_worktree_selection_highlight()
             self._update_worktree_diff_actions()
             return
         entry = self.status_items[selected[0]]
@@ -345,12 +436,14 @@ class CommitTabMixin:
             self._set_text(self.worktree_diff_text, "(sem diff)")
             self.worktree_diff_data = None
             self.worktree_line_map.clear()
+            self._clear_worktree_selection_highlight()
             self._update_worktree_diff_actions()
             return
         self.worktree_diff_data = parse_diff_data(diff_raw)
         self.worktree_diff_scope = scope
         self.worktree_line_map.clear()
         self._render_worktree_diff(diff_view, self._word_diff_enabled())
+        self._clear_worktree_selection_highlight()
         self._update_worktree_diff_actions()
 
     def _resolve_diff_scope(self, status: str) -> str:
@@ -411,6 +504,113 @@ class CommitTabMixin:
             self.worktree_line_map.clear()
             return
         self.worktree_line_map = build_line_map(self.worktree_diff_data)
+
+    def _clear_worktree_selection_highlight(self) -> None:
+        if not hasattr(self, "worktree_diff_text"):
+            return
+        self.worktree_diff_text.tag_remove("selected_hunk", "1.0", tk.END)
+        self.worktree_diff_text.tag_remove("selected_line", "1.0", tk.END)
+
+    def _highlight_selected_diff_line(self, line_info: DiffLineInfo) -> None:
+        if not hasattr(self, "worktree_diff_text"):
+            return
+        self._clear_worktree_selection_highlight()
+        for line_no, info in self.worktree_line_map.items():
+            if info.hunk_index == line_info.hunk_index:
+                self.worktree_diff_text.tag_add("selected_hunk", f"{line_no}.0", f"{line_no}.end")
+        self.worktree_diff_text.tag_add("selected_line", f"{line_info.line_no}.0", f"{line_info.line_no}.end")
+
+    def _get_diff_line_info_from_event(self, event: tk.Event) -> DiffLineInfo | None:
+        if not self.worktree_line_map:
+            return None
+        try:
+            index = self.worktree_diff_text.index(f"@{event.x},{event.y}")
+            line_no = int(index.split(".")[0])
+        except (tk.TclError, ValueError):
+            return None
+        return self.worktree_line_map.get(line_no)
+
+    def _remember_status_focus_from_selection(self) -> None:
+        selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
+        if not selected:
+            return
+        entry = self.status_items.get(selected[-1])
+        if not entry:
+            return
+        self.status_focus_path = str(entry.get("path_for_git", "")).strip()
+
+    def _on_worktree_diff_single_click(self, event: tk.Event) -> str:
+        if self.diff_click_job is not None:
+            try:
+                self.after_cancel(self.diff_click_job)
+            except tk.TclError:
+                pass
+            self.diff_click_job = None
+        line_info = self._get_diff_line_info_from_event(event)
+        if not line_info:
+            return "break"
+        self._highlight_selected_diff_line(line_info)
+        self.diff_click_line_no = line_info.line_no
+        self.diff_click_job = self.after(220, self._execute_worktree_line_click)
+        return "break"
+
+    def _on_worktree_diff_double_click(self, event: tk.Event) -> str:
+        if self.diff_click_job is not None:
+            try:
+                self.after_cancel(self.diff_click_job)
+            except tk.TclError:
+                pass
+            self.diff_click_job = None
+        line_info = self._get_diff_line_info_from_event(event)
+        if not line_info:
+            return "break"
+        self._highlight_selected_diff_line(line_info)
+        self.worktree_diff_text.mark_set(tk.INSERT, f"{line_info.line_no}.0")
+        self._remember_status_focus_from_selection()
+        if self._word_diff_enabled():
+            self._set_status("Desative Diff por palavra para stage/unstage por hunk.")
+            return "break"
+        if self.worktree_diff_scope == "unstaged":
+            self._stage_selected_hunk()
+        elif self.worktree_diff_scope == "staged":
+            self._unstage_selected_hunk()
+        elif self.worktree_diff_scope == "untracked":
+            selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
+            if selected:
+                entry = self.status_items.get(selected[-1])
+                if entry is not None:
+                    self._toggle_status_entry_stage(entry)
+        return "break"
+
+    def _execute_worktree_line_click(self) -> None:
+        self.diff_click_job = None
+        line_no = self.diff_click_line_no
+        self.diff_click_line_no = 0
+        if line_no <= 0:
+            return
+        line_info = self.worktree_line_map.get(line_no)
+        if not line_info:
+            return
+        self.worktree_diff_text.mark_set(tk.INSERT, f"{line_info.line_no}.0")
+        self._remember_status_focus_from_selection()
+        if self._word_diff_enabled():
+            self._set_status("Desative Diff por palavra para stage/unstage por linha.")
+            return
+        if self.worktree_diff_scope == "unstaged":
+            self._stage_selected_line()
+            return
+        if self.worktree_diff_scope == "staged":
+            self._unstage_selected_line()
+            return
+        if self.worktree_diff_scope == "untracked":
+            selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
+            if not selected:
+                return
+            entry = self.status_items.get(selected[-1])
+            if entry is None:
+                return
+            self._toggle_status_entry_stage(entry)
+            return
 
     def _get_selected_diff_line(self) -> DiffLineInfo | None:
         if not self.worktree_line_map:
@@ -526,37 +726,24 @@ class CommitTabMixin:
         self._update_worktree_diff_from_selection()
 
     def _update_worktree_diff_actions(self) -> None:
-        if not hasattr(self, "stage_hunk_button"):
+        if not hasattr(self, "diff_interaction_hint_var"):
             return
-        disabled = "disabled"
-        enabled = "normal"
         if not self.worktree_diff_data:
-            self.stage_hunk_button.configure(state=disabled)
-            self.unstage_hunk_button.configure(state=disabled)
-            self.stage_line_button.configure(state=disabled)
-            self.unstage_line_button.configure(state=disabled)
+            self.diff_interaction_hint_var.set("Selecione um arquivo para usar stage/unstage por clique.")
             return
         if self._word_diff_enabled():
-            self.stage_hunk_button.configure(state=disabled)
-            self.unstage_hunk_button.configure(state=disabled)
-            self.stage_line_button.configure(state=disabled)
-            self.unstage_line_button.configure(state=disabled)
+            self.diff_interaction_hint_var.set("Desative Diff por palavra para stage/unstage por linha e hunk.")
             return
         if self.worktree_diff_scope == "unstaged":
-            self.stage_hunk_button.configure(state=enabled)
-            self.stage_line_button.configure(state=enabled)
-            self.unstage_hunk_button.configure(state=disabled)
-            self.unstage_line_button.configure(state=disabled)
-        elif self.worktree_diff_scope == "staged":
-            self.stage_hunk_button.configure(state=disabled)
-            self.stage_line_button.configure(state=disabled)
-            self.unstage_hunk_button.configure(state=enabled)
-            self.unstage_line_button.configure(state=enabled)
-        else:
-            self.stage_hunk_button.configure(state=disabled)
-            self.unstage_hunk_button.configure(state=disabled)
-            self.stage_line_button.configure(state=disabled)
-            self.unstage_line_button.configure(state=disabled)
+            self.diff_interaction_hint_var.set("Clique: stage linha | duplo clique: stage hunk.")
+            return
+        if self.worktree_diff_scope == "staged":
+            self.diff_interaction_hint_var.set("Clique: unstage linha | duplo clique: unstage hunk.")
+            return
+        if self.worktree_diff_scope == "untracked":
+            self.diff_interaction_hint_var.set("Clique no diff para stagear o arquivo inteiro.")
+            return
+        self.diff_interaction_hint_var.set("")
 
     def _get_untracked_diff(self, path: str, word_diff: bool) -> str:
         cmd = ["git", "-C", self.repo_path, "diff", "--no-index", "--unified=0"]
@@ -607,13 +794,6 @@ class CommitTabMixin:
         if not title:
             messagebox.showwarning("Commit", "Informe o título do commit.")
             return False
-        if self.stage_sync_job is not None:
-            try:
-                self.after_cancel(self.stage_sync_job)
-            except tk.TclError:
-                pass
-            self.stage_sync_job = None
-        self._apply_stage_from_selection()
         try:
             staged = run_git(self.repo_path, ["diff", "--cached", "--name-only"]).strip()
         except RuntimeError as exc:
@@ -659,3 +839,182 @@ class CommitTabMixin:
             return
         if self._commit_changes():
             self._push_repo()
+
+    def _can_undo_last_commit(self) -> tuple[bool, str]:
+        if not self.repo_ready:
+            return False, "Selecione um repositório válido antes de desfazer commit."
+        try:
+            run_git(self.repo_path, ["rev-parse", "--verify", "HEAD"])
+        except RuntimeError:
+            return False, "Não há commits para desfazer."
+        try:
+            run_git(self.repo_path, ["rev-parse", "--verify", "HEAD~1"])
+        except RuntimeError:
+            return False, "Este fluxo não desfaz o commit inicial da branch."
+        return True, ""
+
+    def _on_undo_commit_button_hover(self, event: tk.Event) -> None:
+        tooltip = self._get_undo_commit_tooltip_text()
+        self._show_hover_tooltip("undo_commit_button", tooltip, event.x_root + 12, event.y_root + 12)
+
+    def _get_undo_commit_tooltip_text(self) -> str:
+        if not self.repo_ready:
+            return "Selecione um repositório válido."
+        try:
+            head_commit = run_git(self.repo_path, ["show", "-s", "--pretty=format:%h %s", "HEAD"]).strip()
+        except RuntimeError:
+            return "Não há commit para desfazer."
+        if not head_commit:
+            return "Não há commit para desfazer."
+        try:
+            run_git(self.repo_path, ["rev-parse", "--verify", "HEAD~1"])
+        except RuntimeError:
+            return f"Commit inicial da branch:\n{head_commit}\nEste fluxo não desfaz o commit inicial."
+        return f"Commit que será desfeito:\n{head_commit}"
+
+    def _undo_last_commit(self, mode: str) -> bool:
+        ok, message = self._can_undo_last_commit()
+        if not ok:
+            messagebox.showinfo("Undo commit", message)
+            return False
+        reset_mode_map = {
+            "soft": "--soft",
+            "mixed": "--mixed",
+            "hard": "--hard",
+        }
+        reset_flag = reset_mode_map.get(mode)
+        if not reset_flag:
+            messagebox.showerror("Undo commit", "Modo de undo inválido.")
+            return False
+        mode_label_map = {
+            "soft": "Soft: mantém mudanças staged.",
+            "mixed": "Mixed: mantém mudanças sem stage.",
+            "hard": "Hard: descarta as mudanças do commit e alterações locais.",
+        }
+        confirm = messagebox.askyesno(
+            "Undo commit",
+            f"Desfazer o último commit?\nModo: {mode_label_map[mode]}",
+        )
+        if not confirm:
+            return False
+        if mode == "hard":
+            hard_confirm = messagebox.askyesno(
+                "Undo commit",
+                "Confirma modo HARD?\nEsta ação descarta alterações locais sem possibilidade de desfazer pela UI.",
+            )
+            if not hard_confirm:
+                return False
+        try:
+            run_git(self.repo_path, ["reset", reset_flag, "HEAD~1"])
+        except RuntimeError as exc:
+            messagebox.showerror("Undo commit", str(exc))
+            return False
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
+        self._refresh_status()
+        self._reload_commits()
+        self._refresh_branches()
+        self._update_pull_push_labels()
+        self._set_status(f"Último commit desfeito ({mode}).")
+        return True
+
+    def _open_undo_commit_window(self) -> None:
+        self._hide_hover_tooltip()
+        ok, message = self._can_undo_last_commit()
+        if not ok:
+            messagebox.showinfo("Undo commit", message)
+            return
+        window = tk.Toplevel(self)
+        window.title("Undo commit")
+        window.geometry("560x250")
+        window.transient(self)
+        window.grab_set()
+
+        frame = ttk.Frame(window)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+        frame.grid_columnconfigure(0, weight=1)
+
+        ttk.Label(
+            frame,
+            text=(
+                "Escolha como desfazer o último commit da branch atual.\n"
+                "Use hard apenas quando tiver certeza."
+            ),
+            justify="left",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+
+        mode_var = tk.StringVar(value="soft")
+        ttk.Radiobutton(
+            frame,
+            text="Soft (reset --soft HEAD~1): mantém mudanças staged",
+            variable=mode_var,
+            value="soft",
+        ).grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Radiobutton(
+            frame,
+            text="Mixed (reset --mixed HEAD~1): mantém mudanças sem stage",
+            variable=mode_var,
+            value="mixed",
+        ).grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Radiobutton(
+            frame,
+            text="Hard (reset --hard HEAD~1): descarta alterações",
+            variable=mode_var,
+            value="hard",
+        ).grid(row=3, column=0, sticky="w", pady=2)
+
+        warning_var = tk.StringVar(value="")
+        warning_label = ttk.Label(frame, textvariable=warning_var, foreground="#b42318")
+        warning_label.grid(row=4, column=0, sticky="w", pady=(8, 0))
+
+        def update_warning() -> None:
+            if mode_var.get() == "hard":
+                warning_var.set("Aviso: modo HARD descarta alterações locais.")
+            else:
+                warning_var.set("")
+
+        update_warning()
+        mode_var.trace_add("write", lambda *_: update_warning())
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=5, column=0, sticky="e", pady=(12, 0))
+
+        def execute() -> None:
+            if self._undo_last_commit(mode_var.get().strip()):
+                window.destroy()
+
+        ttk.Button(actions, text="Cancelar", command=window.destroy).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(actions, text="Desfazer commit", command=execute).grid(row=0, column=1)
+
+    def _refresh_commit_branch_quick_selector(self, branches: list[str], current: str) -> None:
+        if not hasattr(self, "commit_branch_quick_combo"):
+            return
+        if not self.repo_ready or not branches:
+            self.commit_branch_quick_combo.configure(values=[], state="disabled")
+            if hasattr(self, "commit_branch_quick_var"):
+                self.commit_branch_quick_var.set("")
+            return
+        self.commit_branch_quick_combo.configure(values=branches, state="readonly")
+        if current and current in branches:
+            self.commit_branch_quick_var.set(current)
+            return
+        selected = self.commit_branch_quick_var.get().strip()
+        if selected in branches:
+            return
+        self.commit_branch_quick_var.set(branches[0])
+
+    def _on_commit_quick_branch_selected(self, _event: tk.Event) -> None:
+        if not self.repo_ready:
+            return
+        target = self.commit_branch_quick_var.get().strip()
+        if not target:
+            return
+        current = self.branch_var.get().strip() if hasattr(self, "branch_var") else ""
+        if target == current:
+            return
+        if not self._checkout_to_branch(target):
+            self._refresh_commit_branch_quick_selector(self.branch_list, current)
+
+    def _create_commit_quick_branch(self) -> None:
+        base = self.commit_branch_quick_var.get().strip() if hasattr(self, "commit_branch_quick_var") else ""
+        self._prompt_create_branch(base)

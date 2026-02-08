@@ -11,7 +11,7 @@ from ..core.git_client import run_git
 class BranchesTabMixin:
     def _build_branches_tab(self) -> None:
         self.branches_tab.grid_columnconfigure(0, weight=1)
-        self.branches_tab.grid_rowconfigure(4, weight=1)
+        self.branches_tab.grid_rowconfigure(2, weight=1)
 
         selection_frame = ttk.Frame(self.branches_tab)
         selection_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
@@ -52,44 +52,12 @@ class BranchesTabMixin:
             sticky="e",
         )
 
-        action_frame = ttk.Frame(self.branches_tab)
-        action_frame.grid(row=1, column=0, sticky="ew", padx=8)
-        action_frame.grid_columnconfigure(5, weight=1)
-
-        ttk.Label(action_frame, text="Ação:").grid(row=0, column=0, sticky="w")
-        self.branch_action_var = tk.StringVar(value="Merge")
-        self.branch_action_combo = ttk.Combobox(
-            action_frame,
-            textvariable=self.branch_action_var,
-            state="readonly",
-            width=12,
-            values=["Merge", "Rebase", "Squash merge"],
-        )
-        self.branch_action_combo.grid(row=0, column=1, sticky="w", padx=(6, 12))
-        self.branch_action_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_operation_preview())
-
-        ttk.Label(action_frame, text="Mensagem (squash):").grid(row=0, column=2, sticky="w")
-        self.branch_message_var = tk.StringVar()
-        self.branch_message_entry = ttk.Entry(action_frame, textvariable=self.branch_message_var, width=28)
-        self.branch_message_entry.grid(row=0, column=3, sticky="w", padx=(6, 12))
-        self.branch_message_entry.bind("<KeyRelease>", lambda _e: self._update_operation_preview())
-
-        self.branch_action_button = ttk.Button(action_frame, text="Executar", command=self._run_branch_action)
-        self.branch_action_button.grid(row=0, column=4, sticky="w")
-        self.branch_action_button.bind("<Enter>", self._show_action_hint)
-        self.branch_action_button.bind("<Leave>", self._hide_action_hint)
-
-        self.branch_action_status = ttk.Label(self.branches_tab, text="")
-        self.branch_action_status.grid(row=2, column=0, sticky="w", padx=8, pady=(6, 0))
-        self.branch_action_status.bind("<Enter>", self._show_action_hint)
-        self.branch_action_status.bind("<Leave>", self._hide_action_hint)
-
         self.compare_status_var = tk.StringVar(value="Selecione as branches para comparar.")
         self.compare_status_label = ttk.Label(self.branches_tab, textvariable=self.compare_status_var)
-        self.compare_status_label.grid(row=3, column=0, sticky="w", padx=8, pady=(2, 6))
+        self.compare_status_label.grid(row=1, column=0, sticky="w", padx=8, pady=(2, 6))
 
         paned = ttk.PanedWindow(self.branches_tab, orient="horizontal")
-        paned.grid(row=4, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        paned.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 6))
 
         commits_frame = ttk.Frame(paned)
         commits_frame.grid_columnconfigure(0, weight=1)
@@ -152,7 +120,58 @@ class BranchesTabMixin:
             self._apply_listbox_theme(self.compare_files_listbox, palette)
         paned.add(diff_frame, weight=2)
 
+        action_footer = ttk.Frame(self.branches_tab)
+        action_footer.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
+        action_footer.grid_columnconfigure(0, weight=1)
+        action_footer.grid_columnconfigure(1, weight=0)
+
+        action_controls = ttk.Frame(action_footer)
+        action_controls.grid(row=0, column=0, sticky="w")
+
+        ttk.Label(action_controls, text="Ação:").grid(row=0, column=0, sticky="w")
+        self.branch_action_var = tk.StringVar(value="Merge")
+        self.branch_action_combo = ttk.Combobox(
+            action_controls,
+            textvariable=self.branch_action_var,
+            state="readonly",
+            width=12,
+            values=["Merge", "Rebase", "Squash merge"],
+        )
+        self.branch_action_combo.grid(row=0, column=1, sticky="w", padx=(6, 12))
+        self.branch_action_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_branch_action_changed())
+
+        self.branch_message_label = ttk.Label(action_controls, text="Mensagem (squash):")
+        self.branch_message_label.grid(row=0, column=2, sticky="w")
+        self.branch_message_var = tk.StringVar()
+        self.branch_message_entry = ttk.Entry(action_controls, textvariable=self.branch_message_var, width=34)
+        self.branch_message_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        self.branch_message_entry.bind("<KeyRelease>", lambda _e: self._update_operation_preview())
+
+        status_row = ttk.Frame(action_footer)
+        status_row.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        status_row.grid_columnconfigure(0, weight=1)
+
+        self.branch_action_status = ttk.Label(status_row, text="")
+        self.branch_action_status.grid(row=0, column=0, sticky="w")
+        self.branch_action_status.bind("<Enter>", self._show_action_hint)
+        self.branch_action_status.bind("<Leave>", self._hide_action_hint)
+
+        self.branch_dirty_cta_button = ttk.Button(
+            status_row,
+            text="Ir para aba Commit",
+            command=self._open_commit_tab_from_compare,
+        )
+        self.branch_dirty_cta_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.branch_dirty_cta_button.grid_remove()
+
+        self.branch_action_button = ttk.Button(action_footer, text="Executar", command=self._run_branch_action)
+        self.branch_action_button.grid(row=1, column=1, sticky="se", padx=(12, 0), pady=(6, 0))
+        self.branch_action_button.bind("<Enter>", self._show_action_hint)
+        self.branch_action_button.bind("<Leave>", self._hide_action_hint)
+
         self.compare_file_stats_by_index: dict[int, dict[str, object]] = {}
+        self._update_branch_message_visibility()
+        self._set_branch_dirty_cta_visibility(False)
 
     def _update_branch_action_branches(self) -> None:
         if not hasattr(self, "compare_origin_combo"):
@@ -193,6 +212,10 @@ class BranchesTabMixin:
         dest = self.branch_dest_var.get().strip()
         if not origin or not dest:
             self._clear_branch_comparison("Selecione origem e destino.")
+            self._perf_end("Comparar branches", start)
+            return
+        if self.branch_list and (origin not in self.branch_list or dest not in self.branch_list):
+            self._clear_branch_comparison("Branches nao encontradas no repositório atual.")
             self._perf_end("Comparar branches", start)
             return
         if origin == dest:
@@ -378,27 +401,73 @@ class BranchesTabMixin:
             return
         self._show_compare_diff_for_index(selection[0])
 
+    def _on_branch_action_changed(self) -> None:
+        self._update_branch_message_visibility()
+        self._update_operation_preview()
+
+    def _update_branch_message_visibility(self) -> None:
+        if not hasattr(self, "branch_action_var"):
+            return
+        show_message = self.branch_action_var.get().strip() == "Squash merge"
+        if hasattr(self, "branch_message_label"):
+            if show_message:
+                self.branch_message_label.grid()
+            else:
+                self.branch_message_label.grid_remove()
+        if hasattr(self, "branch_message_entry"):
+            if show_message:
+                self.branch_message_entry.grid()
+            else:
+                self.branch_message_entry.grid_remove()
+
+    def _set_branch_dirty_cta_visibility(self, visible: bool) -> None:
+        if not hasattr(self, "branch_dirty_cta_button"):
+            return
+        if visible:
+            self.branch_dirty_cta_button.grid()
+        else:
+            self.branch_dirty_cta_button.grid_remove()
+
+    def _open_commit_tab_from_compare(self) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        tab_count = self.tabs.index("end")
+        for index in range(tab_count):
+            if self.tabs.tab(index, "text") != "Commit":
+                continue
+            if hasattr(self, "_select_tab"):
+                self._select_tab(index)
+            else:
+                self.tabs.select(index)
+            return
+
     def _update_operation_preview(self) -> None:
         if not hasattr(self, "branch_action_status"):
             return
+        self._update_branch_message_visibility()
         if not self.repo_ready:
             self.branch_action_status.configure(text="Selecione um repositório.")
             self.branch_action_button.configure(state="disabled")
+            self._set_branch_dirty_cta_visibility(False)
             return
         dest = self.branch_dest_var.get().strip()
         origin = self.branch_origin_var.get().strip()
         if not origin or not dest:
             self.branch_action_status.configure(text="Selecione origem e destino.")
             self.branch_action_button.configure(state="disabled")
+            self._set_branch_dirty_cta_visibility(False)
             return
         if origin == dest:
             self.branch_action_status.configure(text="Origem e destino devem ser diferentes.")
             self.branch_action_button.configure(state="disabled")
+            self._set_branch_dirty_cta_visibility(False)
             return
         if self._is_dirty():
-            self.branch_action_status.configure(text="Working tree sujo. Veja a aba Commit.")
+            self.branch_action_status.configure(text="Arquivos com mudanças locais. Veja a aba Commit.")
             self.branch_action_button.configure(state="disabled")
+            self._set_branch_dirty_cta_visibility(True)
             return
+        self._set_branch_dirty_cta_visibility(False)
         behind, ahead = self._get_ahead_behind_between(origin, dest)
         conflict = self._has_potential_conflict(origin, dest)
         conflict_label = "Conflito: sim" if conflict else "Conflito: não"
@@ -442,7 +511,8 @@ class BranchesTabMixin:
             messagebox.showwarning("Ação", "Origem e destino devem ser diferentes.")
             return
         if self._is_dirty():
-            messagebox.showwarning("Ação", "Working tree sujo. Faça stash/commit antes.")
+            messagebox.showwarning("Ação", "Arquivos com mudanças locais. Veja a aba Commit.")
+            self._set_branch_dirty_cta_visibility(True)
             return
         action = self.branch_action_var.get()
         if action == "Squash merge":

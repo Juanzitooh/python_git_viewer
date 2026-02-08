@@ -28,6 +28,9 @@ class CommitInfo:
 class CommitSummary:
     commit_hash: str
     subject: str
+    author: str = ""
+    date: str = ""
+    timestamp: int = 0
 
 
 @dataclasses.dataclass

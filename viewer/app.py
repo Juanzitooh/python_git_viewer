@@ -5,6 +5,8 @@ import argparse
 import os
 import threading
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 import tkinter as tk
 import tkinter.font as tkfont
@@ -19,6 +21,7 @@ from .ui.ui_branches import BranchesTabMixin
 from .ui.ui_commit import CommitTabMixin
 from .ui.ui_global import GlobalBarMixin
 from .ui.ui_history import HistoryTabMixin
+from .ui.ui_import import ImportTabMixin
 from .ui.ui_repos import ReposTabMixin
 from .ui.ui_settings import SettingsTabMixin
 from .ui.ui_stash import StashMixin
@@ -28,11 +31,14 @@ RECENT_REPOS_LIMIT = 20
 FAVORITE_REPOS_LIMIT = 50
 READ_MODE_THRESHOLD = 1200
 READ_MODE_MAX_LINES = 400
+PERF_LOG_FILENAME = "performance.log"
+STARTUP_SHOW_MIN_WAIT_SEC = 0.45
 
 
 class CommitsViewer(
     GlobalBarMixin,
     HistoryTabMixin,
+    ImportTabMixin,
     BranchesTabMixin,
     CommitTabMixin,
     ReposTabMixin,
@@ -40,12 +46,21 @@ class CommitsViewer(
     StashMixin,
     tk.Tk,
 ):
-    def __init__(self, repo_path: str, summaries: list[CommitSummary], patch_limit: int, commit_limit: int) -> None:
+    def __init__(
+        self,
+        repo_path: str,
+        summaries: list[CommitSummary],
+        patch_limit: int,
+        commit_limit: int,
+        perf_enabled: bool = False,
+    ) -> None:
         super().__init__()
         self.repo_path = repo_path
         self.commit_summaries = summaries
         self.patch_limit = patch_limit
         self.commit_limit = commit_limit
+        self.perf_enabled = perf_enabled
+        self.withdraw()
         self.fetch_interval_sec = 60
         self.status_interval_sec = 15
         self.commit_filters = CommitFilters()
@@ -62,6 +77,7 @@ class CommitsViewer(
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=0)
 
         self.patch_cache: dict[tuple[str, str], str] = {}
         self.full_patch_cache: dict[str, str] = {}
@@ -81,6 +97,7 @@ class CommitsViewer(
         self.worktree_diff_cache: dict[tuple[object, ...], str] = {}
         self.compare_diff_cache: dict[tuple[object, ...], str] = {}
         self._async_tokens: dict[str, int] = {}
+        self._async_busy_count = 0
         self.commit_list_epoch = 0
         self.loading_commits = False
         self.status_loading = False
@@ -89,18 +106,29 @@ class CommitsViewer(
         self.status_signature = ""
         self.settings_path = get_settings_path()
         self.settings_data: dict[str, object] = {}
+        self.last_tab_index = 0
         self.recent_repos: list[str] = []
         self.favorite_repos: list[str] = []
+        self.repo_scan_root = ""
         self.theme_name = "light"
         self.ui_font_family = ""
         self.ui_font_size = 0
         self.mono_font_family = ""
         self.mono_font_size = 0
         self.theme_palette: dict[str, str] = {}
+        self.github_ssh_cache: dict[str, object] = {}
         self.perf_var = tk.StringVar(value="")
+        self.perf_log_path = self._resolve_perf_log_path() if self.perf_enabled else None
+        self._startup_window_pending = True
+        self._startup_ready_not_before = 0.0
+        self._startup_poll_job: str | None = None
+        self.hover_tooltip_window: tk.Toplevel | None = None
+        self.hover_tooltip_label: ttk.Label | None = None
+        self.hover_tooltip_owner = ""
         self._load_settings()
 
         self._build_global_bar()
+        self._build_busy_indicator()
         self._build_tabs()
         self._apply_theme_settings()
         self._bind_shortcuts()
@@ -110,6 +138,9 @@ class CommitsViewer(
             self._set_repo_path(self.repo_path, initial=True)
         else:
             self._set_repo_ui_no_repo()
+        self._startup_ready_not_before = time.monotonic() + STARTUP_SHOW_MIN_WAIT_SEC
+        self._schedule_startup_show_check()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_tabs(self) -> None:
         self.tabs = ttk.Notebook(self)
@@ -117,21 +148,135 @@ class CommitsViewer(
 
         self.repos_tab = ttk.Frame(self.tabs)
         self.history_tab = ttk.Frame(self.tabs)
+        self.import_tab = ttk.Frame(self.tabs)
         self.branches_tab = ttk.Frame(self.tabs)
         self.branch_tab = ttk.Frame(self.tabs)
         self.settings_tab = ttk.Frame(self.tabs)
 
         self.tabs.add(self.repos_tab, text="Repositórios")
         self.tabs.add(self.history_tab, text="Histórico")
+        self.tabs.add(self.import_tab, text="Importar")
         self.tabs.add(self.branches_tab, text="Comparar")
         self.tabs.add(self.branch_tab, text="Commit")
         self.tabs.add(self.settings_tab, text="Configurações")
 
         self._build_repos_tab()
         self._build_history_tab()
+        self._build_import_tab()
         self._build_branches_tab()
         self._build_branch_tab()
         self._build_settings_tab()
+        tab_count = self.tabs.index("end")
+        if tab_count > 0:
+            if self.last_tab_index >= tab_count:
+                self.last_tab_index = tab_count - 1
+            self.tabs.select(self.last_tab_index)
+        self.tabs.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed, add=True)
+        self.after_idle(self._on_notebook_tab_changed)
+
+    def _on_notebook_tab_changed(self, _event: tk.Event | None = None) -> None:
+        if hasattr(self, "tabs"):
+            try:
+                selected = self.tabs.select()
+                self.last_tab_index = self.tabs.index(selected) if selected else 0
+            except tk.TclError:
+                self.last_tab_index = 0
+        if hasattr(self, "_refresh_repo_selector_visibility"):
+            self._refresh_repo_selector_visibility()
+
+    def _is_startup_loading_pending(self) -> bool:
+        if self._async_busy_count > 0:
+            return True
+        if getattr(self, "workspace_card_refresh_job", None) is not None:
+            return True
+        if getattr(self, "loading_commits", False):
+            return True
+        if getattr(self, "branches_loading", False):
+            return True
+        if getattr(self, "status_loading", False):
+            return True
+        if getattr(self, "loading_more", False):
+            return True
+        return False
+
+    def _schedule_startup_show_check(self, delay_ms: int = 80) -> None:
+        if not self._startup_window_pending:
+            return
+        if self._startup_poll_job is not None:
+            try:
+                self.after_cancel(self._startup_poll_job)
+            except tk.TclError:
+                pass
+            self._startup_poll_job = None
+        self._startup_poll_job = self.after(delay_ms, self._finish_startup_show_if_ready)
+
+    def _finish_startup_show_if_ready(self) -> None:
+        self._startup_poll_job = None
+        if not self._startup_window_pending:
+            return
+        if time.monotonic() < self._startup_ready_not_before:
+            self._schedule_startup_show_check(80)
+            return
+        if self._is_startup_loading_pending():
+            self._schedule_startup_show_check(120)
+            return
+        self._startup_window_pending = False
+        self.deiconify()
+        self.lift()
+
+    def _on_close(self) -> None:
+        if self._startup_poll_job is not None:
+            try:
+                self.after_cancel(self._startup_poll_job)
+            except tk.TclError:
+                pass
+            self._startup_poll_job = None
+        self._hide_hover_tooltip()
+        if hasattr(self, "tabs"):
+            try:
+                selected = self.tabs.select()
+                self.last_tab_index = self.tabs.index(selected) if selected else 0
+            except tk.TclError:
+                self.last_tab_index = 0
+        self._persist_settings()
+        self.destroy()
+
+    def _build_busy_indicator(self) -> None:
+        self.busy_indicator_frame = ttk.Frame(self)
+        self.busy_indicator_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 4))
+        self.busy_indicator_frame.grid_columnconfigure(0, weight=1)
+        self.busy_indicator = ttk.Progressbar(
+            self.busy_indicator_frame,
+            orient="horizontal",
+            mode="indeterminate",
+            style="Busy.Horizontal.TProgressbar",
+        )
+        self.busy_indicator.grid(row=0, column=0, sticky="ew")
+        self.busy_indicator_frame.grid_remove()
+
+    def _set_busy_indicator_visible(self, visible: bool) -> None:
+        if not hasattr(self, "busy_indicator_frame") or not hasattr(self, "busy_indicator"):
+            return
+        if visible:
+            self.busy_indicator_frame.grid()
+            self.busy_indicator.start(12)
+            return
+        self.busy_indicator.stop()
+        self.busy_indicator_frame.grid_remove()
+
+    def _begin_async_busy(self) -> None:
+        self._async_busy_count += 1
+        if self._async_busy_count == 1:
+            self._set_busy_indicator_visible(True)
+
+    def _end_async_busy(self) -> None:
+        if self._async_busy_count <= 0:
+            self._async_busy_count = 0
+            self._set_busy_indicator_visible(False)
+            return
+        self._async_busy_count -= 1
+        if self._async_busy_count == 0:
+            self._set_busy_indicator_visible(False)
 
     def _toggle_word_diff(self) -> None:
         self.patch_cache.clear()
@@ -153,11 +298,12 @@ class CommitsViewer(
     def _bind_shortcuts(self) -> None:
         self.bind_all("<F5>", self._on_refresh_shortcut, add=True)
         self.bind_all("<Control-r>", self._on_refresh_shortcut, add=True)
-        self.bind_all("<Control-1>", lambda _e: self._select_tab(0), add=True)
-        self.bind_all("<Control-2>", lambda _e: self._select_tab(1), add=True)
-        self.bind_all("<Control-3>", lambda _e: self._select_tab(2), add=True)
-        self.bind_all("<Control-4>", lambda _e: self._select_tab(3), add=True)
-        self.bind_all("<Control-5>", lambda _e: self._select_tab(4), add=True)
+        self.bind_all("<Control-Key-1>", lambda _e: self._select_tab(0), add=True)
+        self.bind_all("<Control-Key-2>", lambda _e: self._select_tab(1), add=True)
+        self.bind_all("<Control-Key-3>", lambda _e: self._select_tab(3), add=True)
+        self.bind_all("<Control-Key-4>", lambda _e: self._select_tab(4), add=True)
+        self.bind_all("<Control-Key-5>", lambda _e: self._select_tab(5), add=True)
+        self.bind_all("<Control-Key-6>", lambda _e: self._select_tab(2), add=True)
         self.bind_all("<Alt-Up>", lambda _e: self._navigate_lists(-1), add=True)
         self.bind_all("<Alt-Down>", lambda _e: self._navigate_lists(1), add=True)
         self.bind_all("<Control-Return>", self._on_commit_shortcut, add=True)
@@ -169,6 +315,7 @@ class CommitsViewer(
         if index < 0 or index >= self.tabs.index("end"):
             return
         self.tabs.select(index)
+        self._on_notebook_tab_changed()
 
     def _navigate_lists(self, delta: int) -> None:
         if not hasattr(self, "tabs"):
@@ -227,6 +374,8 @@ class CommitsViewer(
             self._refresh_compare_diff()
 
     def _perf_start(self, label: str) -> float:
+        if not getattr(self, "perf_enabled", False):
+            return 0.0
         if not hasattr(self, "perf_var"):
             return 0.0
         self.perf_var.set(f"{label}...")
@@ -237,10 +386,45 @@ class CommitsViewer(
         return time.perf_counter()
 
     def _perf_end(self, label: str, start: float) -> None:
+        if not getattr(self, "perf_enabled", False):
+            return
         if not start or not hasattr(self, "perf_var"):
             return
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         self.perf_var.set(f"{label}: {elapsed_ms:.0f} ms")
+        self._append_perf_log(label, elapsed_ms)
+
+    def _resolve_perf_log_path(self) -> Path:
+        project_root = Path(__file__).resolve().parent.parent
+        candidates = [
+            project_root / PERF_LOG_FILENAME,
+            Path.cwd() / PERF_LOG_FILENAME,
+        ]
+        for candidate in candidates:
+            try:
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.touch(exist_ok=True)
+            except OSError:
+                continue
+            return candidate
+        return candidates[0]
+
+    def _append_perf_log(self, label: str, elapsed_ms: float) -> None:
+        if not getattr(self, "perf_enabled", False):
+            return
+        log_path = getattr(self, "perf_log_path", None)
+        if not isinstance(log_path, Path):
+            return
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        repo_name = "(nenhum)"
+        if self.repo_path:
+            repo_name = os.path.basename(self.repo_path.rstrip(os.sep)) or self.repo_path
+        line = f"{timestamp} | repo={repo_name} | {label} | {elapsed_ms:.0f} ms\n"
+        try:
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(line)
+        except OSError:
+            return
 
     def _update_window_title(self) -> None:
         base_title = "Git Viewer"
@@ -273,6 +457,44 @@ class CommitsViewer(
         height = self.winfo_screenheight()
         self.geometry(f"{width}x{height}+0+0")
 
+    def _show_hover_tooltip(self, owner: str, text: str, x: int, y: int) -> None:
+        content = text.strip()
+        if not content:
+            self._hide_hover_tooltip()
+            return
+        window = getattr(self, "hover_tooltip_window", None)
+        label = getattr(self, "hover_tooltip_label", None)
+        if window is not None and window.winfo_exists() and label is not None:
+            self.hover_tooltip_owner = owner
+            if str(label.cget("text")) != content:
+                label.configure(text=content)
+            window.geometry(f"+{x}+{y}")
+            return
+        self._hide_hover_tooltip()
+        tip_window = tk.Toplevel(self)
+        tip_window.wm_overrideredirect(True)
+        try:
+            tip_window.wm_attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        tip_label = ttk.Label(tip_window, text=content, justify="left", padding=(8, 4))
+        tip_label.pack(fill="both", expand=True)
+        tip_window.geometry(f"+{x}+{y}")
+        self.hover_tooltip_window = tip_window
+        self.hover_tooltip_label = tip_label
+        self.hover_tooltip_owner = owner
+
+    def _hide_hover_tooltip(self, _event: tk.Event | None = None) -> None:
+        window = getattr(self, "hover_tooltip_window", None)
+        self.hover_tooltip_window = None
+        self.hover_tooltip_label = None
+        self.hover_tooltip_owner = ""
+        if window is None:
+            return
+        if not window.winfo_exists():
+            return
+        window.destroy()
+
     def _run_async(
         self,
         key: str,
@@ -283,9 +505,11 @@ class CommitsViewer(
     ) -> int:
         token = self._async_tokens.get(key, 0) + 1
         self._async_tokens[key] = token
+        self._begin_async_busy()
         start = self._perf_start(label) if label else 0.0
 
         def finish_success(result: object) -> None:
+            self._end_async_busy()
             if self._async_tokens.get(key) != token:
                 return
             if on_success:
@@ -294,6 +518,7 @@ class CommitsViewer(
                 self._perf_end(label, start)
 
         def finish_error(exc: Exception) -> None:
+            self._end_async_busy()
             if self._async_tokens.get(key) != token:
                 return
             if on_error:
@@ -331,13 +556,17 @@ class CommitsViewer(
         self.commit_limit = int(self.settings_data.get("commit_limit", self.commit_limit))
         self.fetch_interval_sec = int(self.settings_data.get("fetch_interval_sec", self.fetch_interval_sec))
         self.status_interval_sec = int(self.settings_data.get("status_interval_sec", self.status_interval_sec))
+        self.last_tab_index = int(self.settings_data.get("last_tab_index", self.last_tab_index))
         self.recent_repos = list(self.settings_data.get("recent_repos", []))
         self.favorite_repos = list(self.settings_data.get("favorite_repos", []))
+        self.repo_scan_root = str(self.settings_data.get("repo_scan_root", "")).strip()
         self.theme_name = str(self.settings_data.get("theme", "light"))
         self.ui_font_family = str(self.settings_data.get("ui_font_family", "")).strip()
         self.ui_font_size = int(self.settings_data.get("ui_font_size", 0))
         self.mono_font_family = str(self.settings_data.get("mono_font_family", "")).strip()
         self.mono_font_size = int(self.settings_data.get("mono_font_size", 0))
+        cache_raw = self.settings_data.get("github_ssh_cache", {})
+        self.github_ssh_cache = dict(cache_raw) if isinstance(cache_raw, dict) else {}
         if len(self.recent_repos) > RECENT_REPOS_LIMIT:
             self.recent_repos = self.recent_repos[:RECENT_REPOS_LIMIT]
         if len(self.favorite_repos) > FAVORITE_REPOS_LIMIT:
@@ -359,19 +588,25 @@ class CommitsViewer(
             "commit_limit": self.commit_limit,
             "fetch_interval_sec": self.fetch_interval_sec,
             "status_interval_sec": self.status_interval_sec,
+            "last_tab_index": self.last_tab_index,
             "recent_repos": self.recent_repos,
             "favorite_repos": self.favorite_repos,
+            "repo_scan_root": self.repo_scan_root,
             "theme": self.theme_name,
             "ui_font_family": self.ui_font_family,
             "ui_font_size": self.ui_font_size,
             "mono_font_family": self.mono_font_family,
             "mono_font_size": self.mono_font_size,
+            "github_ssh_cache": self.github_ssh_cache,
         }
         save_settings(self.settings_path, self.settings_data)
 
-    def _register_recent_repo(self, path: str) -> None:
+    def _register_recent_repo(self, path: str, *, promote: bool = True) -> None:
         normalized = normalize_repo_path(path)
-        self.recent_repos = [normalized] + [item for item in self.recent_repos if item != normalized]
+        if promote:
+            self.recent_repos = [normalized] + [item for item in self.recent_repos if item != normalized]
+        elif normalized not in self.recent_repos:
+            self.recent_repos.append(normalized)
         if len(self.recent_repos) > RECENT_REPOS_LIMIT:
             self.recent_repos = self.recent_repos[:RECENT_REPOS_LIMIT]
         self._persist_settings()
@@ -517,6 +752,15 @@ class CommitsViewer(
             background=[("selected", palette["field_bg"])],
             foreground=[("selected", palette["fg"])],
         )
+        style.configure(
+            "Busy.Horizontal.TProgressbar",
+            troughcolor=palette["bg"],
+            background=palette["accent"],
+            lightcolor=palette["accent"],
+            darkcolor=palette["accent"],
+            bordercolor=palette["bg"],
+            thickness=3,
+        )
 
     def _apply_fonts(self) -> None:
         ui_font = tkfont.nametofont("TkDefaultFont")
@@ -549,6 +793,7 @@ class CommitsViewer(
             "status_listbox",
             "compare_commits_listbox",
             "compare_files_listbox",
+            "import_commits_listbox",
             "favorite_listbox",
             "recent_listbox",
         ]
@@ -597,6 +842,11 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="(ignorado) mantido por compatibilidade",
     )
+    parser.add_argument(
+        "--perf",
+        action="store_true",
+        help="habilita indicador de performance na UI e log em performance.log",
+    )
     return parser.parse_args()
 
 
@@ -612,7 +862,7 @@ def main() -> int:
             repo_path = ""
     else:
         repo_path = ""
-    app = CommitsViewer(repo_path, commits, args.patch_limit, args.limit)
+    app = CommitsViewer(repo_path, commits, args.patch_limit, args.limit, perf_enabled=bool(args.perf))
     app.mainloop()
     return 0
 

@@ -5,7 +5,7 @@ import os
 import shutil
 import subprocess
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ..core.git_client import is_git_repo, run_git
 
@@ -14,71 +14,68 @@ class GlobalBarMixin:
     def _build_global_bar(self) -> None:
         self.global_bar = ttk.Frame(self)
         self.global_bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
-        self.global_bar.grid_columnconfigure(1, weight=1)
-        self.global_bar.grid_columnconfigure(6, weight=1)
-        self.global_bar.grid_columnconfigure(15, weight=1)
+        self.global_bar.grid_columnconfigure(0, weight=1)
+        self.global_bar.grid_columnconfigure(1, weight=0)
 
-        ttk.Label(self.global_bar, text="Repo:").grid(row=0, column=0, sticky="w")
-        self.repo_var = tk.StringVar(value=self.repo_path)
-        self.repo_entry = ttk.Entry(self.global_bar, textvariable=self.repo_var, width=50)
-        self.repo_entry.grid(row=0, column=1, sticky="w")
-        self.repo_entry.bind("<Return>", lambda _e: self._apply_repo_from_entry())
+        self.repo_left_actions = ttk.Frame(self.global_bar)
+        self.repo_left_actions.grid(row=0, column=0, sticky="ew")
+        self.repo_left_actions.grid_columnconfigure(0, weight=1)
 
-        ttk.Button(self.global_bar, text="Abrir repo", command=self._open_repo_dialog).grid(
+        self.repo_right_actions = ttk.Frame(self.global_bar)
+        self.repo_right_actions.grid(row=0, column=1, sticky="e")
+
+        self.repo_selector_frame = ttk.Frame(self.repo_left_actions)
+        self.repo_selector_frame.grid(row=0, column=0, sticky="ew")
+        self.repo_selector_frame.grid_columnconfigure(0, weight=1)
+        self.repo_var = tk.StringVar(value="(nenhum)")
+        self.repo_path_combo = ttk.Combobox(self.repo_selector_frame, textvariable=self.repo_var, state="readonly")
+        self.repo_path_combo.grid(row=0, column=0, sticky="ew")
+        self.repo_path_combo.bind("<<ComboboxSelected>>", self._on_repo_selected)
+        self._repo_selector_lookup: dict[str, str] = {}
+        self._repo_selector_visible = True
+
+        ttk.Button(self.repo_left_actions, text="Copiar caminho", command=self._copy_repo_path).grid(
+            row=0, column=1, padx=(6, 0)
+        )
+
+        ttk.Button(self.repo_left_actions, text="Abrir no VS Code", command=self._open_repo_in_vscode).grid(
             row=0, column=2, padx=(6, 0)
         )
-        ttk.Button(self.global_bar, text="Copiar caminho", command=self._copy_repo_path).grid(
-            row=0, column=3, padx=(6, 0)
+        self.repo_favorite_button = ttk.Button(
+            self.repo_left_actions,
+            text="Adicionar favorito",
+            command=self._toggle_current_repo_favorite,
         )
+        self.repo_favorite_button.grid(row=0, column=3, padx=(6, 0))
 
-        ttk.Button(self.global_bar, text="Abrir no VS Code", command=self._open_repo_in_vscode).grid(
-            row=0, column=4, padx=(6, 0)
-        )
-
-        ttk.Label(self.global_bar, text="Branch:").grid(row=0, column=5, sticky="w", padx=(12, 0))
-
-        self.branch_var = tk.StringVar()
-        self.branch_combo = ttk.Combobox(
-            self.global_bar,
-            textvariable=self.branch_var,
-            state="readonly",
-            width=24,
-        )
-        self.branch_combo.grid(row=0, column=6, sticky="w")
-        self.branch_combo.bind("<<ComboboxSelected>>", self._on_branch_selected)
-
-        ttk.Label(self.global_bar, text="Origem:").grid(row=0, column=7, sticky="w", padx=(12, 0))
-        self.branch_origin_var = tk.StringVar()
-        self.branch_origin_combo = ttk.Combobox(
-            self.global_bar,
-            textvariable=self.branch_origin_var,
-            state="readonly",
-            width=18,
-        )
-        self.branch_origin_combo.grid(row=0, column=8, sticky="w")
-        self.branch_origin_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_operation_preview())
-
-        ttk.Label(self.global_bar, text="Destino:").grid(row=0, column=9, sticky="w", padx=(12, 0))
+        # Vars kept at global scope because they are shared across tabs.
+        self.branch_var = tk.StringVar(value="")
+        self.branch_origin_var = tk.StringVar(value="")
         self.branch_dest_var = tk.StringVar(value="")
-        self.branch_dest_label = ttk.Label(self.global_bar, textvariable=self.branch_dest_var)
-        self.branch_dest_label.grid(row=0, column=10, sticky="w")
 
-        self.fetch_button = ttk.Button(self.global_bar, text="Fetch", command=self._fetch_repo)
-        self.fetch_button.grid(row=0, column=11, padx=(12, 0))
-        self.pull_button = ttk.Button(self.global_bar, text="Pull", command=self._pull_repo)
-        self.pull_button.grid(row=0, column=12, padx=(6, 0))
-        self.push_button = ttk.Button(self.global_bar, text="Push", command=self._push_repo)
-        self.push_button.grid(row=0, column=13, padx=(6, 0))
+        self.fetch_button = ttk.Button(self.repo_right_actions, text="Fetch", command=self._fetch_repo)
+        self.fetch_button.grid(row=0, column=0, padx=(0, 0))
+        self.pull_button = ttk.Button(self.repo_right_actions, text="Pull", command=self._pull_repo)
+        self.pull_button.grid(row=0, column=1, padx=(6, 0))
+        self.push_button = ttk.Button(self.repo_right_actions, text="Push", command=self._push_repo)
+        self.push_button.grid(row=0, column=2, padx=(6, 0))
+        self.push_button.bind("<Enter>", self._on_push_button_hover, add=True)
+        self.push_button.bind("<Leave>", self._hide_hover_tooltip, add=True)
 
         self.upstream_var = tk.StringVar(value="")
-        self.upstream_label = ttk.Label(self.global_bar, textvariable=self.upstream_var)
-        self.upstream_label.grid(row=0, column=14, sticky="w", padx=(12, 0))
+        self.upstream_label = ttk.Label(self.repo_right_actions, textvariable=self.upstream_var)
+        self.upstream_label.grid(row=0, column=3, sticky="w", padx=(12, 0))
 
         if not hasattr(self, "perf_var"):
             self.perf_var = tk.StringVar(value="")
-        ttk.Label(self.global_bar, text="Perf:").grid(row=0, column=15, sticky="w", padx=(12, 0))
-        self.perf_label = ttk.Label(self.global_bar, textvariable=self.perf_var)
-        self.perf_label.grid(row=0, column=16, sticky="w")
+        self.perf_title_label = ttk.Label(self.repo_right_actions, text="Perf:")
+        self.perf_title_label.grid(row=0, column=4, sticky="w", padx=(12, 0))
+        self.perf_label = ttk.Label(self.repo_right_actions, textvariable=self.perf_var)
+        self.perf_label.grid(row=0, column=5, sticky="w")
+        if not getattr(self, "perf_enabled", False):
+            self.perf_title_label.grid_remove()
+            self.perf_label.grid_remove()
+        self._refresh_repo_selector()
 
     def _fetch_repo(self) -> None:
         if not self.repo_ready:
@@ -120,6 +117,7 @@ class GlobalBarMixin:
     def _push_repo(self) -> None:
         if not self.repo_ready:
             return
+        self._hide_hover_tooltip()
 
         def task() -> None:
             run_git(self.repo_path, ["push"])
@@ -135,6 +133,30 @@ class GlobalBarMixin:
             messagebox.showerror("Erro", str(exc))
 
         self._run_async("push", "Push", task, success, error)
+
+    def _on_push_button_hover(self, event: tk.Event) -> None:
+        tooltip = self._get_push_tooltip_text()
+        self._show_hover_tooltip("push_button", tooltip, event.x_root + 12, event.y_root + 12)
+
+    def _get_push_tooltip_text(self) -> str:
+        if not self.repo_ready:
+            return "Selecione um repositório válido."
+        upstream = self._get_upstream()
+        if not upstream:
+            return "Sem upstream configurado para a branch atual."
+        try:
+            output = run_git(self.repo_path, ["log", "--pretty=format:%h %s", f"{upstream}..HEAD"])
+        except RuntimeError as exc:
+            return f"Falha ao listar commits para push:\n{exc}"
+        commits = [line.strip() for line in output.splitlines() if line.strip()]
+        if not commits:
+            return "Nada para enviar."
+        limit = 12
+        visible = commits[:limit]
+        suffix = ""
+        if len(commits) > limit:
+            suffix = f"\n... e mais {len(commits) - limit} commit(s)."
+        return "Commits que serão enviados:\n" + "\n".join(visible) + suffix
 
     def _refresh_branches(self) -> None:
         if not self.repo_ready or self.branches_loading:
@@ -157,7 +179,6 @@ class GlobalBarMixin:
 
     def _render_branches(self, branches: list[str], current: str) -> None:
         self.branch_list = branches
-        self.branch_combo["values"] = branches
         if current and current in branches:
             self.branch_var.set(current)
         elif branches:
@@ -172,6 +193,12 @@ class GlobalBarMixin:
         self._update_branch_action_branches()
         self._update_operation_preview()
         self._refresh_filter_refs()
+        if hasattr(self, "_sync_import_tab_with_current_repo"):
+            self._sync_import_tab_with_current_repo()
+        if hasattr(self, "_refresh_history_branch_quick_selector"):
+            self._refresh_history_branch_quick_selector(branches, current)
+        if hasattr(self, "_refresh_commit_branch_quick_selector"):
+            self._refresh_commit_branch_quick_selector(branches, current)
 
     def _get_branches(self) -> list[str]:
         output = run_git(self.repo_path, ["branch", "--format=%(refname:short)"])
@@ -281,6 +308,48 @@ class GlobalBarMixin:
         self._update_pull_push_labels()
         return True
 
+    def _prompt_create_branch(self, base_branch: str = "") -> bool:
+        if not self.repo_ready:
+            messagebox.showinfo("Nova branch", "Selecione um repositório válido antes de criar branch.")
+            return False
+        base = base_branch.strip() if base_branch else ""
+        if not base:
+            try:
+                base = self._get_current_branch().strip()
+            except RuntimeError as exc:
+                messagebox.showerror("Nova branch", str(exc))
+                return False
+        if base:
+            prompt = f"Nome da nova branch (base: {base}):"
+        else:
+            prompt = "Nome da nova branch:"
+        branch_name = simpledialog.askstring("Nova branch", prompt, parent=self)
+        if branch_name is None:
+            return False
+        branch_name = branch_name.strip()
+        if not branch_name:
+            messagebox.showwarning("Nova branch", "Informe o nome da branch.")
+            return False
+        if branch_name in self.branch_list:
+            messagebox.showwarning("Nova branch", f"A branch '{branch_name}' já existe.")
+            return False
+        args = ["branch", branch_name]
+        if base:
+            args.append(base)
+        try:
+            run_git(self.repo_path, args)
+        except RuntimeError as exc:
+            messagebox.showerror("Nova branch", str(exc))
+            return False
+        if base:
+            self._set_status(f"Branch criada: {branch_name} (base: {base}).")
+        else:
+            self._set_status(f"Branch criada: {branch_name}.")
+        self._refresh_branches()
+        if messagebox.askyesno("Nova branch", f"Branch '{branch_name}' criada. Deseja fazer checkout agora?"):
+            return self._checkout_to_branch(branch_name)
+        return True
+
     def _prompt_dirty_checkout(self) -> str:
         dialog = tk.Toplevel(self)
         dialog.title("Alterações locais")
@@ -323,8 +392,141 @@ class GlobalBarMixin:
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)
 
+    @staticmethod
+    def _normalize_repo_path_candidate(path: str) -> str:
+        return os.path.normpath(os.path.abspath(os.path.expanduser(path.strip())))
+
+    def _format_repo_display_path(self, repo_path: str) -> str:
+        if not repo_path:
+            return "(nenhum)"
+        workspace_root = str(getattr(self, "repo_scan_root", "")).strip()
+        normalized_repo = self._normalize_repo_path_candidate(repo_path)
+        if workspace_root:
+            normalized_root = self._normalize_repo_path_candidate(workspace_root)
+            try:
+                common = os.path.commonpath([normalized_repo, normalized_root])
+            except ValueError:
+                common = ""
+            if common == normalized_root:
+                relative = os.path.relpath(normalized_repo, normalized_root)
+                if relative in (".", ""):
+                    return "/"
+                return "/" + relative.replace(os.sep, "/")
+        return normalized_repo
+
+    def _refresh_repo_selector(self) -> None:
+        if not hasattr(self, "repo_path_combo"):
+            return
+        favorite_paths: list[str] = []
+        for path in getattr(self, "favorite_repos", []):
+            if not path:
+                continue
+            normalized = self._normalize_repo_path_candidate(path)
+            if normalized not in favorite_paths:
+                favorite_paths.append(normalized)
+        other_paths: list[str] = []
+        for path in getattr(self, "recent_repos", []):
+            if not path:
+                continue
+            normalized = self._normalize_repo_path_candidate(path)
+            if normalized in favorite_paths or normalized in other_paths:
+                continue
+            other_paths.append(normalized)
+        current = ""
+        if self.repo_path:
+            current = self._normalize_repo_path_candidate(self.repo_path)
+            if current not in favorite_paths and current not in other_paths:
+                other_paths.insert(0, current)
+        ordered_paths = favorite_paths + other_paths
+        favorite_set = set(favorite_paths)
+        labels: list[str] = []
+        lookup: dict[str, str] = {}
+        path_to_label: dict[str, str] = {}
+        for path in ordered_paths:
+            base = self._format_repo_display_path(path)
+            if path in favorite_set:
+                base = f"★ {base}"
+            label = base
+            suffix = 2
+            while label in lookup:
+                label = f"{base} [{suffix}]"
+                suffix += 1
+            labels.append(label)
+            lookup[label] = path
+            path_to_label[path] = label
+        self._repo_selector_lookup = lookup
+        self.repo_path_combo.configure(values=labels)
+        if self.repo_ready and current:
+            self.repo_var.set(path_to_label.get(current, self._format_repo_display_path(current)))
+        else:
+            self.repo_var.set("(nenhum)")
+        self._update_repo_favorite_button()
+
+    def _update_repo_display_path(self) -> None:
+        self._refresh_repo_selector()
+
+    def _on_repo_selected(self, _event: tk.Event) -> None:
+        if not hasattr(self, "repo_var") or not hasattr(self, "_repo_selector_lookup"):
+            return
+        label = self.repo_var.get().strip()
+        selected_path = self._repo_selector_lookup.get(label)
+        if not selected_path:
+            return
+        if self.repo_ready and self.repo_path:
+            current = self._normalize_repo_path_candidate(self.repo_path)
+            if current == selected_path:
+                return
+        self._set_repo_path(selected_path, initial=False)
+
+    def _refresh_repo_selector_visibility(self) -> None:
+        if not hasattr(self, "repo_selector_frame"):
+            return
+        if not hasattr(self, "tabs") or not hasattr(self, "repos_tab"):
+            self._set_repo_selector_visibility(True)
+            return
+        tab_id = self.tabs.select()
+        is_repos_tab = bool(tab_id) and str(tab_id) == str(self.repos_tab)
+        self._set_repo_selector_visibility(not is_repos_tab)
+
+    def _set_repo_selector_visibility(self, visible: bool) -> None:
+        if not hasattr(self, "repo_selector_frame"):
+            return
+        if visible:
+            self.repo_selector_frame.grid()
+            if hasattr(self, "repo_left_actions"):
+                self.repo_left_actions.grid_columnconfigure(0, weight=1)
+        else:
+            self.repo_selector_frame.grid_remove()
+            if hasattr(self, "repo_left_actions"):
+                self.repo_left_actions.grid_columnconfigure(0, weight=0)
+        self._repo_selector_visible = visible
+
+    def _update_repo_favorite_button(self) -> None:
+        if not hasattr(self, "repo_favorite_button"):
+            return
+        if not self.repo_ready or not self.repo_path:
+            self.repo_favorite_button.configure(text="Adicionar favorito", state="disabled")
+            return
+        current = self._normalize_repo_path_candidate(self.repo_path)
+        favorite_set = {self._normalize_repo_path_candidate(path) for path in getattr(self, "favorite_repos", [])}
+        if current in favorite_set:
+            self.repo_favorite_button.configure(text="Remover favorito", state="normal")
+        else:
+            self.repo_favorite_button.configure(text="Adicionar favorito", state="normal")
+
+    def _toggle_current_repo_favorite(self) -> None:
+        if not self.repo_ready or not self.repo_path:
+            return
+        current = self._normalize_repo_path_candidate(self.repo_path)
+        favorite_set = {self._normalize_repo_path_candidate(path) for path in getattr(self, "favorite_repos", [])}
+        if current in favorite_set:
+            self._remove_favorite_repo(current)
+        else:
+            self._add_favorite_repo(current)
+        self._refresh_repo_selector()
+
     def _copy_repo_path(self) -> None:
-        if not self.repo_path:
+        if not self.repo_ready or not self.repo_path:
             messagebox.showinfo("Repo", "Selecione um repositório antes de copiar o caminho.")
             return
         self.clipboard_clear()
@@ -332,6 +534,8 @@ class GlobalBarMixin:
         self.update()
 
     def _apply_repo_from_entry(self) -> None:
+        if not hasattr(self, "repo_var"):
+            return
         path = self.repo_var.get().strip()
         if not path:
             self._set_repo_ui_no_repo()
@@ -342,10 +546,11 @@ class GlobalBarMixin:
         path = filedialog.askdirectory()
         if not path:
             return
-        self.repo_var.set(path)
         self._set_repo_path(path, initial=False)
 
     def _set_repo_path(self, path: str, initial: bool) -> bool:
+        if hasattr(self, "_hide_hover_tooltip"):
+            self._hide_hover_tooltip()
         repo_path = os.path.abspath(path)
         if not os.path.isdir(repo_path) or not is_git_repo(repo_path):
             if not initial:
@@ -354,9 +559,9 @@ class GlobalBarMixin:
             return False
         self.repo_path = repo_path
         self.repo_ready = True
-        self.repo_var.set(repo_path)
+        self._update_repo_display_path()
         if hasattr(self, "_register_recent_repo"):
-            self._register_recent_repo(repo_path)
+            self._register_recent_repo(repo_path, promote=False)
         if hasattr(self, "_bump_repo_state"):
             self._bump_repo_state()
         if hasattr(self, "_update_window_title"):
@@ -367,11 +572,23 @@ class GlobalBarMixin:
         self.selected_file_by_commit.clear()
         self._reload_commits()
 
-        self.branch_combo.configure(state="readonly")
+        # Limpa seletores de branch da aba Comparar para evitar refs do repo anterior.
+        self.branch_list = []
+        self.branch_var.set("")
+        if hasattr(self, "branch_origin_var"):
+            self.branch_origin_var.set("")
+        if hasattr(self, "branch_dest_var"):
+            self.branch_dest_var.set("")
+        if hasattr(self, "compare_origin_combo"):
+            self.compare_origin_combo.configure(values=[], state="disabled")
+        if hasattr(self, "compare_dest_combo"):
+            self.compare_dest_combo.configure(values=[], state="disabled")
+        if hasattr(self, "_clear_branch_comparison"):
+            self._clear_branch_comparison("Atualizando branches do repositório...")
+
         self._set_action_visibility(self.fetch_button, True)
         self._refresh_branches()
         self._refresh_status()
-        self._update_branch_action_branches()
         self._update_operation_preview()
         self._schedule_auto_fetch()
         self._schedule_auto_status()
@@ -379,6 +596,8 @@ class GlobalBarMixin:
 
     def _set_repo_ui_no_repo(self) -> None:
         self.repo_ready = False
+        self.repo_path = ""
+        self._update_repo_display_path()
         if self.auto_fetch_job is not None:
             try:
                 self.after_cancel(self.auto_fetch_job)
@@ -392,6 +611,10 @@ class GlobalBarMixin:
                 pass
             self.auto_status_job = None
         self.commit_summaries = []
+        if hasattr(self, "local_only_commit_hashes"):
+            self.local_only_commit_hashes = set()
+        if hasattr(self, "history_has_upstream"):
+            self.history_has_upstream = False
         self.commit_details_cache.clear()
         self.current_commit_hash = None
         if hasattr(self, "status_signature"):
@@ -410,27 +633,50 @@ class GlobalBarMixin:
             self.stage_count_var.set("Selecionados: 0/0")
         self.branch_list = []
         self.branch_var.set("")
-        self.branch_combo.configure(values=[], state="disabled")
         if hasattr(self, "branch_dest_var"):
             self.branch_dest_var.set("")
         if hasattr(self, "diff_scope_combo"):
             self.diff_scope_combo.configure(state="disabled")
             self.diff_scope_var.set("Unstaged")
-        if hasattr(self, "filter_branch_combo"):
-            self.filter_branch_combo.configure(values=["(todas)"], state="disabled")
+        if hasattr(self, "filter_branch_var"):
             self.filter_branch_var.set("(todas)")
-        if hasattr(self, "filter_tag_combo"):
-            self.filter_tag_combo.configure(values=["(todas)"], state="disabled")
+        if hasattr(self, "filter_tag_var"):
             self.filter_tag_var.set("(todas)")
-        if hasattr(self, "filter_repo_status_combo"):
-            self.filter_repo_status_combo.configure(state="disabled")
+        if hasattr(self, "filter_repo_status_var"):
             self.filter_repo_status_var.set("Todos")
+        if hasattr(self, "filter_branch_values"):
+            self.filter_branch_values = ["(todas)"]
+        if hasattr(self, "filter_tag_values"):
+            self.filter_tag_values = ["(todas)"]
+        filter_branch_combo = getattr(self, "filter_branch_combo", None)
+        if filter_branch_combo is not None:
+            filter_branch_combo.configure(values=["(todas)"], state="disabled")
+        filter_tag_combo = getattr(self, "filter_tag_combo", None)
+        if filter_tag_combo is not None:
+            filter_tag_combo.configure(values=["(todas)"], state="disabled")
+        filter_repo_status_combo = getattr(self, "filter_repo_status_combo", None)
+        if filter_repo_status_combo is not None:
+            filter_repo_status_combo.configure(state="disabled")
+        if hasattr(self, "_sync_import_tab_with_current_repo"):
+            self._sync_import_tab_with_current_repo()
+        if hasattr(self, "_close_filter_modal"):
+            self._close_filter_modal()
+        if hasattr(self, "_hide_commit_tooltip"):
+            self._hide_commit_tooltip()
+        if hasattr(self, "_hide_hover_tooltip"):
+            self._hide_hover_tooltip()
+        if hasattr(self, "_refresh_history_branch_quick_selector"):
+            self._refresh_history_branch_quick_selector([], "")
+        if hasattr(self, "_refresh_commit_branch_quick_selector"):
+            self._refresh_commit_branch_quick_selector([], "")
         self._update_filter_status()
         self._set_action_visibility(self.fetch_button, False)
         self._set_action_visibility(self.pull_button, False)
         self._set_action_visibility(self.push_button, False)
         if hasattr(self, "_clear_branch_comparison"):
             self._clear_branch_comparison("Selecione um repositório.")
+        if hasattr(self, "_update_branch_action_branches"):
+            self._update_branch_action_branches()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
         if hasattr(self, "_bump_repo_state"):
@@ -439,8 +685,6 @@ class GlobalBarMixin:
             self._update_window_title()
         self.upstream_var.set("")
         self._set_status("Selecione um repositório.")
-        if hasattr(self, "branch_origin_combo"):
-            self.branch_origin_combo.configure(values=[], state="disabled")
         if hasattr(self, "branch_action_button"):
             self.branch_action_button.configure(state="disabled")
         if hasattr(self, "branch_action_status"):
