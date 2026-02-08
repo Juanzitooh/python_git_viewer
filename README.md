@@ -14,6 +14,7 @@ python3 main.py --repo /caminho/do/repo --limit 100
 Parâmetros:
 - `--repo`: caminho do repositório (default: diretório atual).
 - `--limit`: quantidade inicial de commits a carregar.
+- `--perf`: habilita indicador de performance na UI e gravações em `performance.log` na raiz.
 
 No Windows:
 
