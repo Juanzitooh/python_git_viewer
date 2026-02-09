@@ -181,6 +181,8 @@ class CommitsViewer(
                 self.last_tab_index = self.tabs.index(selected) if selected else 0
             except tk.TclError:
                 self.last_tab_index = 0
+        if hasattr(self, "_dismiss_repo_context_menu"):
+            self._dismiss_repo_context_menu()
         if hasattr(self, "_refresh_repo_selector_visibility"):
             self._refresh_repo_selector_visibility()
 
@@ -231,6 +233,8 @@ class CommitsViewer(
             except tk.TclError:
                 pass
             self._startup_poll_job = None
+        if hasattr(self, "_dismiss_repo_context_menu"):
+            self._dismiss_repo_context_menu()
         self._hide_hover_tooltip()
         if hasattr(self, "tabs"):
             try:

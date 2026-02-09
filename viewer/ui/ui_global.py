@@ -32,9 +32,17 @@ class GlobalBarMixin:
         self.repo_path_combo = ttk.Combobox(self.repo_selector_frame, textvariable=self.repo_var, state="readonly")
         self.repo_path_combo.grid(row=0, column=0, sticky="ew")
         self.repo_path_combo.bind("<<ComboboxSelected>>", self._on_repo_selected)
-        self.repo_path_combo.bind("<Button-3>", self._on_repo_selector_context_menu, add=True)
+        self.repo_path_combo.bind("<ButtonPress-3>", self._on_repo_selector_context_menu, add=True)
+        self.repo_path_combo.bind("<ButtonRelease-3>", self._on_repo_selector_context_menu, add=True)
+        self.repo_path_combo_dropdown = None
+        self._bind_repo_selector_dropdown_context_menu()
         self._repo_selector_lookup: dict[str, str] = {}
         self._repo_selector_visible = True
+        self.repo_context_menu: tk.Menu | None = None
+        self.bind_all("<ButtonPress-1>", self._dismiss_repo_context_menu, add=True)
+        self.bind_all("<ButtonPress-2>", self._dismiss_repo_context_menu, add=True)
+        self.bind_all("<Escape>", self._dismiss_repo_context_menu, add=True)
+        self.bind("<FocusOut>", self._dismiss_repo_context_menu, add=True)
 
         # Vars kept at global scope because they are shared across tabs.
         self.branch_var = tk.StringVar(value="")
@@ -472,6 +480,7 @@ class GlobalBarMixin:
         else:
             self.repo_var.set("(nenhum)")
         self._update_repo_favorite_button()
+        self._bind_repo_selector_dropdown_context_menu()
 
     def _update_repo_display_path(self) -> None:
         self._refresh_repo_selector()
@@ -543,10 +552,6 @@ class GlobalBarMixin:
             if os.path.isdir(normalized) and is_git_repo(normalized):
                 return normalized
             return ""
-        if self.repo_ready and self.repo_path:
-            normalized = self._normalize_repo_path_candidate(self.repo_path)
-            if os.path.isdir(normalized) and is_git_repo(normalized):
-                return normalized
         if hasattr(self, "repo_var") and hasattr(self, "_repo_selector_lookup"):
             label = self.repo_var.get().strip()
             selected = str(self._repo_selector_lookup.get(label, "")).strip()
@@ -554,6 +559,10 @@ class GlobalBarMixin:
                 normalized = self._normalize_repo_path_candidate(selected)
                 if os.path.isdir(normalized) and is_git_repo(normalized):
                     return normalized
+        if self.repo_ready and self.repo_path:
+            normalized = self._normalize_repo_path_candidate(self.repo_path)
+            if os.path.isdir(normalized) and is_git_repo(normalized):
+                return normalized
         return ""
 
     def _on_repo_selector_context_menu(self, event: tk.Event) -> str:
@@ -561,11 +570,56 @@ class GlobalBarMixin:
         self._show_repo_context_menu(event, selected)
         return "break"
 
+    def _bind_repo_selector_dropdown_context_menu(self) -> None:
+        if not hasattr(self, "repo_path_combo"):
+            return
+        try:
+            popdown_path = str(self.tk.call("ttk::combobox::PopdownWindow", str(self.repo_path_combo)))
+            listbox_path = f"{popdown_path}.f.l"
+            listbox_widget = self.nametowidget(listbox_path)
+        except (tk.TclError, KeyError):
+            return
+        self.repo_path_combo_dropdown = listbox_widget
+        listbox_widget.bind("<ButtonPress-3>", self._on_repo_selector_dropdown_context_menu, add=True)
+        listbox_widget.bind("<ButtonRelease-3>", self._on_repo_selector_dropdown_context_menu, add=True)
+
+    def _on_repo_selector_dropdown_context_menu(self, event: tk.Event) -> str:
+        dropdown = getattr(self, "repo_path_combo_dropdown", None)
+        if dropdown is None:
+            return "break"
+        try:
+            index = int(dropdown.nearest(event.y))
+        except (tk.TclError, ValueError, TypeError):
+            return "break"
+        try:
+            label = str(dropdown.get(index)).strip()
+        except tk.TclError:
+            return "break"
+        selected_path = str(self._repo_selector_lookup.get(label, "")).strip()
+        if selected_path:
+            self.repo_var.set(label)
+        self._show_repo_context_menu(event, selected_path)
+        return "break"
+
     def _on_repo_context_menu_request(self, event: tk.Event, repo_path: str = "") -> str:
         self._show_repo_context_menu(event, repo_path)
         return "break"
 
+    def _dismiss_repo_context_menu(self, _event: tk.Event | None = None) -> None:
+        menu = getattr(self, "repo_context_menu", None)
+        self.repo_context_menu = None
+        if menu is None:
+            return
+        try:
+            menu.unpost()
+        except tk.TclError:
+            return
+
+    def _on_repo_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self.repo_context_menu = None
+
     def _show_repo_context_menu(self, event: tk.Event, repo_path: str = "") -> None:
+        self._dismiss_repo_context_menu()
         resolved_repo = self._resolve_repo_action_path(repo_path)
         if not resolved_repo:
             return
@@ -609,10 +663,9 @@ class GlobalBarMixin:
                 label="Adicionar aos favoritos",
                 command=lambda path=normalized_repo: self._add_favorite_repo(path),
             )
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+        self.repo_context_menu = menu
+        menu.bind("<Unmap>", self._on_repo_context_menu_unmap, add=True)
+        menu.post(event.x_root, event.y_root)
 
     def _copy_repo_path(self, repo_path: str = "") -> None:
         resolved_repo = self._resolve_repo_action_path(repo_path)
