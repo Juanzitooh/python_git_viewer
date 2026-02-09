@@ -32,19 +32,21 @@ class GlobalBarMixin:
         self.repo_path_combo = ttk.Combobox(self.repo_selector_frame, textvariable=self.repo_var, state="readonly")
         self.repo_path_combo.grid(row=0, column=0, sticky="ew")
         self.repo_path_combo.bind("<<ComboboxSelected>>", self._on_repo_selected)
-        self.repo_path_combo.bind("<ButtonPress-3>", self._on_repo_selector_context_menu, add=True)
-        self.repo_path_combo.bind("<ButtonRelease-3>", self._on_repo_selector_context_menu, add=True)
+        self.repo_path_combo.bind("<Button-3>", self._on_repo_selector_context_menu, add=True)
         self.repo_path_combo_dropdown = None
         self.repo_path_combo_dropdown_path = ""
         self._bind_repo_selector_dropdown_context_menu()
         self._repo_selector_lookup: dict[str, str] = {}
         self._repo_selector_visible = True
         self.repo_context_menu: tk.Menu | None = None
-        self.bind_all("<ButtonPress-1>", self._dismiss_repo_context_menu, add=True)
-        self.bind_all("<ButtonPress-2>", self._dismiss_repo_context_menu, add=True)
-        self.bind_all("<ButtonRelease-3>", self._on_global_right_click, add=True)
+        self._repo_context_selection_lock = False
+        self._repo_focus_out_job: str | None = None
+        self.bind_all("<ButtonPress-1>", self._on_global_pointer_click, add=True)
+        self.bind_all("<ButtonPress-2>", self._on_global_pointer_click, add=True)
+        self.bind_all("<ButtonPress-3>", self._on_global_right_click, add=True)
         self.bind_all("<Escape>", self._dismiss_repo_context_menu, add=True)
-        self.bind("<FocusOut>", self._dismiss_repo_context_menu, add=True)
+        self.bind_all("<FocusOut>", self._on_app_focus_out, add=True)
+        self.bind("<Unmap>", self._dismiss_repo_context_menu, add=True)
 
         # Vars kept at global scope because they are shared across tabs.
         self.branch_var = tk.StringVar(value="")
@@ -490,6 +492,10 @@ class GlobalBarMixin:
     def _on_repo_selected(self, _event: tk.Event) -> None:
         if not hasattr(self, "repo_var") or not hasattr(self, "_repo_selector_lookup"):
             return
+        if getattr(self, "_repo_context_selection_lock", False):
+            self._repo_context_selection_lock = False
+            self._update_repo_display_path()
+            return
         label = self.repo_var.get().strip()
         selected_path = self._repo_selector_lookup.get(label)
         if not selected_path:
@@ -568,20 +574,29 @@ class GlobalBarMixin:
         return ""
 
     def _on_repo_selector_context_menu(self, event: tk.Event) -> str:
+        self._repo_context_selection_lock = True
         selected = self._resolve_repo_action_path("")
         self._show_repo_context_menu(event, selected)
         return "break"
 
+    def _resolve_repo_selector_dropdown_path(self) -> str:
+        if not hasattr(self, "repo_path_combo"):
+            return ""
+        try:
+            popdown_path = str(self.tk.call("ttk::combobox::PopdownWindow", str(self.repo_path_combo)))
+        except tk.TclError:
+            self.repo_path_combo_dropdown_path = ""
+            return ""
+        listbox_path = f"{popdown_path}.f.l"
+        self.repo_path_combo_dropdown_path = listbox_path
+        return listbox_path
+
     def _bind_repo_selector_dropdown_context_menu(self) -> None:
         if not hasattr(self, "repo_path_combo"):
             return
-        try:
-            popdown_path = str(self.tk.call("ttk::combobox::PopdownWindow", str(self.repo_path_combo)))
-            listbox_path = f"{popdown_path}.f.l"
-            self.repo_path_combo_dropdown_path = listbox_path
-        except tk.TclError:
+        listbox_path = self._resolve_repo_selector_dropdown_path()
+        if not listbox_path:
             self.repo_path_combo_dropdown = None
-            self.repo_path_combo_dropdown_path = ""
             return
         try:
             listbox_widget = self.nametowidget(listbox_path)
@@ -589,19 +604,79 @@ class GlobalBarMixin:
             self.repo_path_combo_dropdown = None
             return
         self.repo_path_combo_dropdown = listbox_widget
+        listbox_widget.bind("<Button-3>", self._on_repo_selector_dropdown_context_menu, add=True)
         listbox_widget.bind("<ButtonPress-3>", self._on_repo_selector_dropdown_context_menu, add=True)
-        listbox_widget.bind("<ButtonRelease-3>", self._on_repo_selector_dropdown_context_menu, add=True)
 
     def _on_global_right_click(self, event: tk.Event) -> None:
-        dropdown_path = str(getattr(self, "repo_path_combo_dropdown_path", "")).strip()
-        if not dropdown_path:
+        if self._is_pointer_inside_widget(getattr(self, "repo_path_combo", None), event.x_root, event.y_root):
+            self._on_repo_selector_context_menu(event)
             return
-        widget = getattr(event, "widget", None)
+        dropdown_label = self._get_repo_dropdown_label_at_pointer(event.x_root, event.y_root)
+        if not dropdown_label:
+            return
+        self._repo_context_selection_lock = True
+        selected_path = str(self._repo_selector_lookup.get(dropdown_label, "")).strip()
+        self._show_repo_context_menu(event, selected_path, close_dropdown=False)
+
+    def _on_global_pointer_click(self, event: tk.Event) -> None:
+        close_dropdown = False
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            inside_combo = self._is_pointer_inside_widget(getattr(self, "repo_path_combo", None), x_root, y_root)
+            inside_dropdown = self._is_point_inside_repo_dropdown(x_root, y_root)
+            close_dropdown = not inside_combo and not inside_dropdown
+        self._dismiss_repo_context_menu(event, close_dropdown=close_dropdown)
+
+    def _is_pointer_inside_widget(self, widget: object | None, x_root: int, y_root: int) -> bool:
         if widget is None:
-            return
-        if str(widget) != dropdown_path:
-            return
-        self._on_repo_selector_dropdown_context_menu(event)
+            return False
+        try:
+            if int(widget.winfo_ismapped()) != 1:
+                return False
+            root_x = int(widget.winfo_rootx())
+            root_y = int(widget.winfo_rooty())
+            width = int(widget.winfo_width())
+            height = int(widget.winfo_height())
+        except (tk.TclError, ValueError, TypeError, AttributeError):
+            return False
+        if width <= 0 or height <= 0:
+            return False
+        return root_x <= x_root < (root_x + width) and root_y <= y_root < (root_y + height)
+
+    def _is_point_inside_repo_dropdown(self, x_root: int, y_root: int) -> bool:
+        dropdown_path = self._resolve_repo_selector_dropdown_path()
+        if not dropdown_path:
+            return False
+        try:
+            if int(self.tk.call("winfo", "ismapped", dropdown_path)) != 1:
+                return False
+            root_x = int(self.tk.call("winfo", "rootx", dropdown_path))
+            root_y = int(self.tk.call("winfo", "rooty", dropdown_path))
+            width = int(self.tk.call("winfo", "width", dropdown_path))
+            height = int(self.tk.call("winfo", "height", dropdown_path))
+        except (tk.TclError, ValueError, TypeError):
+            return False
+        if width <= 0 or height <= 0:
+            return False
+        return root_x <= x_root < (root_x + width) and root_y <= y_root < (root_y + height)
+
+    def _get_repo_dropdown_label_at_pointer(self, x_root: int, y_root: int) -> str:
+        if not self._is_point_inside_repo_dropdown(x_root, y_root):
+            return ""
+        dropdown_path = self._resolve_repo_selector_dropdown_path()
+        if not dropdown_path:
+            return ""
+        try:
+            root_y = int(self.tk.call("winfo", "rooty", dropdown_path))
+        except (tk.TclError, ValueError, TypeError):
+            return ""
+        local_y = y_root - root_y
+        try:
+            index = int(self.tk.call(dropdown_path, "nearest", local_y))
+            return str(self.tk.call(dropdown_path, "get", index)).strip()
+        except (tk.TclError, ValueError, TypeError):
+            return ""
 
     def _resolve_repo_selector_dropdown_widget(self, widget: object | None) -> object | None:
         if widget is not None and hasattr(widget, "nearest") and hasattr(widget, "get"):
@@ -630,28 +705,110 @@ class GlobalBarMixin:
         return resolved
 
     def _on_repo_selector_dropdown_context_menu(self, event: tk.Event) -> str:
-        dropdown = self._resolve_repo_selector_dropdown_widget(getattr(event, "widget", None))
-        if dropdown is None:
-            return "break"
-        try:
-            index = int(dropdown.nearest(event.y))
-        except (tk.TclError, ValueError, TypeError):
-            return "break"
-        try:
-            label = str(dropdown.get(index)).strip()
-        except tk.TclError:
-            return "break"
+        self._repo_context_selection_lock = True
+        label = self._get_repo_dropdown_label_at_pointer(event.x_root, event.y_root)
+        if not label:
+            dropdown = self._resolve_repo_selector_dropdown_widget(getattr(event, "widget", None))
+            if dropdown is None:
+                return "break"
+            if isinstance(dropdown, str):
+                try:
+                    index = int(self.tk.call(dropdown, "nearest", event.y))
+                    label = str(self.tk.call(dropdown, "get", index)).strip()
+                except (tk.TclError, ValueError, TypeError):
+                    return "break"
+            else:
+                try:
+                    index = int(dropdown.nearest(event.y))
+                    label = str(dropdown.get(index)).strip()
+                except (tk.TclError, ValueError, TypeError):
+                    return "break"
         selected_path = str(self._repo_selector_lookup.get(label, "")).strip()
-        if selected_path:
-            self.repo_var.set(label)
-        self._show_repo_context_menu(event, selected_path)
+        self._show_repo_context_menu(event, selected_path, close_dropdown=False)
         return "break"
 
     def _on_repo_context_menu_request(self, event: tk.Event, repo_path: str = "") -> str:
         self._show_repo_context_menu(event, repo_path)
         return "break"
 
-    def _dismiss_repo_context_menu(self, _event: tk.Event | None = None) -> None:
+    def _dismiss_repo_selector_dropdown(self) -> None:
+        if not hasattr(self, "repo_path_combo"):
+            return
+        try:
+            self.tk.call("ttk::combobox::Unpost", str(self.repo_path_combo))
+        except tk.TclError:
+            return
+
+    def _on_app_focus_out(self, _event: tk.Event | None = None) -> None:
+        if self._repo_focus_out_job is not None:
+            try:
+                self.after_cancel(self._repo_focus_out_job)
+            except tk.TclError:
+                pass
+        self._repo_focus_out_job = self.after(160, self._dismiss_repo_overlays_if_unfocused)
+
+    def _focus_path_for_display(self) -> str:
+        try:
+            value = self.tk.call("focus", "-displayof", str(self))
+        except tk.TclError:
+            return ""
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    def _has_local_focus(self) -> bool:
+        focus_path = self._focus_path_for_display()
+        if not focus_path:
+            return False
+        root_path = str(self).strip()
+        if not root_path:
+            return False
+        return focus_path.startswith(root_path)
+
+    def _is_pointer_over_local_widget(self) -> bool:
+        try:
+            x_root = int(self.winfo_pointerx())
+            y_root = int(self.winfo_pointery())
+        except (tk.TclError, ValueError, TypeError):
+            return False
+        try:
+            widget = self.winfo_containing(x_root, y_root)
+        except tk.TclError:
+            return False
+        if widget is None:
+            return False
+        path = str(widget).strip()
+        if not path:
+            return False
+        root_path = str(self).strip()
+        if root_path and path.startswith(root_path):
+            return True
+        dropdown_path = str(getattr(self, "repo_path_combo_dropdown_path", "")).strip()
+        if dropdown_path and (path == dropdown_path or path.startswith(f"{dropdown_path}.")):
+            return True
+        return ".popdown." in path
+
+    def _dismiss_repo_overlays_if_unfocused(self) -> None:
+        self._repo_focus_out_job = None
+        if self._has_local_focus():
+            return
+        if self._is_pointer_over_local_widget():
+            return
+        self._dismiss_repo_context_menu(close_dropdown=True)
+
+    def _dismiss_repo_context_menu(
+        self,
+        _event: tk.Event | None = None,
+        *,
+        clear_lock: bool = True,
+        close_dropdown: bool = False,
+    ) -> None:
+        if _event is not None and self._is_event_inside_repo_context_menu(_event):
+            return
+        if close_dropdown:
+            self._dismiss_repo_selector_dropdown()
+        if clear_lock:
+            self._repo_context_selection_lock = False
         menu = getattr(self, "repo_context_menu", None)
         self.repo_context_menu = None
         if menu is None:
@@ -661,57 +818,103 @@ class GlobalBarMixin:
         except tk.TclError:
             return
 
+    def _is_event_inside_repo_context_menu(self, event: tk.Event) -> bool:
+        menu = getattr(self, "repo_context_menu", None)
+        if menu is None:
+            return False
+        menu_path = str(menu).strip()
+        if not menu_path:
+            return False
+        candidate_paths: list[str] = []
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            widget_path = str(widget).strip()
+            if widget_path:
+                candidate_paths.append(widget_path)
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            try:
+                contained = self.tk.call("winfo", "containing", x_root, y_root)
+            except tk.TclError:
+                contained = ""
+            contained_path = str(contained).strip()
+            if contained_path:
+                candidate_paths.append(contained_path)
+        for path in candidate_paths:
+            if path == menu_path or path.startswith(f"{menu_path}."):
+                return True
+        return False
+
     def _on_repo_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self._repo_context_selection_lock = False
         self.repo_context_menu = None
 
-    def _show_repo_context_menu(self, event: tk.Event, repo_path: str = "") -> None:
-        self._dismiss_repo_context_menu()
+    def _show_repo_context_menu(self, event: tk.Event, repo_path: str = "", *, close_dropdown: bool = True) -> None:
+        self._dismiss_repo_context_menu(clear_lock=False)
         resolved_repo = self._resolve_repo_action_path(repo_path)
         if not resolved_repo:
+            self._repo_context_selection_lock = False
             return
+        if close_dropdown:
+            self._dismiss_repo_selector_dropdown()
         normalized_repo = self._normalize_repo_path_candidate(resolved_repo)
         current_repo = self._normalize_repo_path_candidate(self.repo_path) if self.repo_ready and self.repo_path else ""
         is_current = normalized_repo == current_repo
         favorite_set = {self._normalize_repo_path_candidate(path) for path in getattr(self, "favorite_repos", [])}
         is_favorite = normalized_repo in favorite_set
         menu = tk.Menu(self, tearoff=0)
+
+        def run_repo_menu_action(action: object) -> None:
+            self._dismiss_repo_context_menu(close_dropdown=True)
+            action()
+
         if is_current:
             menu.add_command(label="Repositório atual", state="disabled")
         else:
             menu.add_command(
                 label="Abrir no Git Viewer",
-                command=lambda path=normalized_repo: self._set_repo_path(path, initial=False),
+                command=lambda path=normalized_repo: run_repo_menu_action(
+                    lambda: self._set_repo_path(path, initial=False)
+                ),
             )
         menu.add_command(
             label="Abrir no VS Code",
-            command=lambda path=normalized_repo: self._open_repo_in_vscode(path),
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_in_vscode(path)),
         )
         menu.add_command(
             label="Abrir na Pasta",
-            command=lambda path=normalized_repo: self._open_repo_in_file_manager(path),
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_in_file_manager(path)),
         )
         menu.add_command(
             label="Abrir no GitHub",
-            command=lambda path=normalized_repo: self._open_repo_in_github(path),
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_in_github(path)),
         )
         menu.add_command(
             label="Copiar caminho",
-            command=lambda path=normalized_repo: self._copy_repo_path(path),
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_path(path)),
         )
         menu.add_separator()
         if is_favorite:
             menu.add_command(
                 label="Remover dos favoritos",
-                command=lambda path=normalized_repo: self._remove_favorite_repo(path),
+                command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._remove_favorite_repo(path)),
             )
         else:
             menu.add_command(
                 label="Adicionar aos favoritos",
-                command=lambda path=normalized_repo: self._add_favorite_repo(path),
+                command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._add_favorite_repo(path)),
             )
         self.repo_context_menu = menu
         menu.bind("<Unmap>", self._on_repo_context_menu_unmap, add=True)
-        menu.post(event.x_root, event.y_root)
+        menu.bind("<FocusOut>", self._dismiss_repo_context_menu, add=True)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
 
     def _copy_repo_path(self, repo_path: str = "") -> None:
         resolved_repo = self._resolve_repo_action_path(repo_path)
