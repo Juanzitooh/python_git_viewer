@@ -12,6 +12,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "fetch_interval_sec": 60,
     "status_interval_sec": 15,
     "last_tab_index": 0,
+    "last_repo_path": "",
     "recent_repos": [],
     "favorite_repos": [],
     "repo_scan_root": default_repo_scan_root(),
@@ -80,6 +81,15 @@ def _sanitize_repo_root(value: object) -> str:
     return normalize_repo_path(candidate)
 
 
+def _sanitize_repo_path(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    return normalize_repo_path(candidate)
+
+
 def _sanitize_github_ssh_cache(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         return {}
@@ -144,6 +154,7 @@ def load_settings(path: Path) -> dict[str, object]:
             int(DEFAULT_SETTINGS["last_tab_index"]),
             minimum=0,
         )
+        data["last_repo_path"] = _sanitize_repo_path(raw.get("last_repo_path"))
         data["recent_repos"] = _sanitize_repo_list(raw.get("recent_repos"))
         data["favorite_repos"] = _sanitize_repo_list(raw.get("favorite_repos"))
         data["repo_scan_root"] = _sanitize_repo_root(raw.get("repo_scan_root"))
@@ -160,6 +171,7 @@ def load_settings(path: Path) -> dict[str, object]:
 def save_settings(path: Path, settings: dict[str, object]) -> None:
     data = dict(DEFAULT_SETTINGS)
     data.update(settings)
+    data["last_repo_path"] = _sanitize_repo_path(data.get("last_repo_path"))
     data["recent_repos"] = _sanitize_repo_list(data.get("recent_repos"))
     data["favorite_repos"] = _sanitize_repo_list(data.get("favorite_repos"))
     data["repo_scan_root"] = _sanitize_repo_root(data.get("repo_scan_root"))

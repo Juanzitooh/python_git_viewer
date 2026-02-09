@@ -1022,6 +1022,7 @@ class GlobalBarMixin:
             self._set_repo_ui_no_repo()
             return False
         self.repo_path = repo_path
+        self.last_repo_path = self._normalize_repo_path_candidate(repo_path)
         self.repo_ready = True
         if hasattr(self, "status_head_hash"):
             self.status_head_hash = ""

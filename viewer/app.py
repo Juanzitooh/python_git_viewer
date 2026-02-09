@@ -107,6 +107,7 @@ class CommitsViewer(
         self.settings_path = get_settings_path()
         self.settings_data: dict[str, object] = {}
         self.last_tab_index = 0
+        self.last_repo_path = ""
         self.recent_repos: list[str] = []
         self.favorite_repos: list[str] = []
         self.repo_scan_root = ""
@@ -587,6 +588,7 @@ class CommitsViewer(
         self.fetch_interval_sec = int(self.settings_data.get("fetch_interval_sec", self.fetch_interval_sec))
         self.status_interval_sec = int(self.settings_data.get("status_interval_sec", self.status_interval_sec))
         self.last_tab_index = int(self.settings_data.get("last_tab_index", self.last_tab_index))
+        self.last_repo_path = str(self.settings_data.get("last_repo_path", "")).strip()
         self.recent_repos = list(self.settings_data.get("recent_repos", []))
         self.favorite_repos = list(self.settings_data.get("favorite_repos", []))
         self.repo_scan_root = str(self.settings_data.get("repo_scan_root", "")).strip()
@@ -614,11 +616,14 @@ class CommitsViewer(
             self.mono_font_size = default_mono_size
 
     def _persist_settings(self) -> None:
+        if self.repo_ready and self.repo_path:
+            self.last_repo_path = normalize_repo_path(self.repo_path)
         self.settings_data = {
             "commit_limit": self.commit_limit,
             "fetch_interval_sec": self.fetch_interval_sec,
             "status_interval_sec": self.status_interval_sec,
             "last_tab_index": self.last_tab_index,
+            "last_repo_path": self.last_repo_path,
             "recent_repos": self.recent_repos,
             "favorite_repos": self.favorite_repos,
             "repo_scan_root": self.repo_scan_root,
@@ -862,8 +867,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualiza commits do Git em uma interface Tkinter.")
     parser.add_argument(
         "--repo",
-        default=os.getcwd(),
-        help="Caminho do repositório Git (default: diretório atual)",
+        default=None,
+        help="Caminho do repositório Git (default: último aberto, senão diretório atual se for Git)",
     )
     parser.add_argument("--limit", type=int, default=100, help="Quantidade de commits (default: 100)")
     parser.add_argument(
@@ -880,18 +885,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _resolve_startup_repo(repo_arg: str | None) -> str:
+    explicit_repo = (repo_arg or "").strip()
+    if explicit_repo:
+        candidate = os.path.abspath(explicit_repo)
+        if os.path.isdir(candidate) and is_git_repo(candidate):
+            return candidate
+        return ""
+
+    settings = load_settings(get_settings_path())
+    cached_repo_raw = settings.get("last_repo_path", "")
+    if isinstance(cached_repo_raw, str) and cached_repo_raw.strip():
+        cached_repo = normalize_repo_path(cached_repo_raw)
+        if os.path.isdir(cached_repo) and is_git_repo(cached_repo):
+            return cached_repo
+
+    fallback = os.path.abspath(os.getcwd())
+    if os.path.isdir(fallback) and is_git_repo(fallback):
+        return fallback
+    return ""
+
+
 def main() -> int:
     args = parse_args()
-    repo_path = os.path.abspath(args.repo)
+    repo_path = _resolve_startup_repo(args.repo)
     commits: list[CommitSummary] = []
-    if os.path.isdir(repo_path) and is_git_repo(repo_path):
+    if repo_path:
         try:
             commits = load_commit_summaries(repo_path, args.limit)
         except RuntimeError as exc:
             messagebox.showerror("Erro", str(exc))
             repo_path = ""
-    else:
-        repo_path = ""
     app = CommitsViewer(repo_path, commits, args.patch_limit, args.limit, perf_enabled=bool(args.perf))
     app.mainloop()
     return 0
