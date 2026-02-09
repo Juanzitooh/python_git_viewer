@@ -880,7 +880,10 @@ class ReposTabMixin:
             current = normalize_repo_path(self.repo_path)
             if current == normalize_repo_path(repo_path):
                 return
-        self._open_repo_from_path(repo_path)
+        if not self._open_repo_from_path(repo_path):
+            return
+        if self._is_repositories_tab_selected():
+            self._open_repo_post_select_tab()
 
     def _open_workspace_card_repo_vscode(self, index: int) -> None:
         repo_path = self._get_workspace_card_repo_path(index)
@@ -949,8 +952,8 @@ class ReposTabMixin:
             return
         self._open_repo_from_path(path)
 
-    def _open_repo_from_path(self, path: str) -> None:
-        self._open_repo_from_path_with_options(path, refresh_remote=False, switch_to_history=False)
+    def _open_repo_from_path(self, path: str) -> bool:
+        return self._open_repo_from_path_with_options(path, refresh_remote=False, switch_to_history=False)
 
     def _open_repo_from_path_with_options(
         self,
@@ -958,15 +961,50 @@ class ReposTabMixin:
         *,
         refresh_remote: bool,
         switch_to_history: bool,
-    ) -> None:
+    ) -> bool:
         if not path:
-            return
+            return False
         if not self._set_repo_path(path, initial=False):
-            return
+            return False
         if refresh_remote and hasattr(self, "_fetch_repo"):
             self._fetch_repo()
         if switch_to_history:
             self._open_history_tab()
+        return True
+
+    def _is_repositories_tab_selected(self) -> bool:
+        if not hasattr(self, "tabs") or not hasattr(self, "repos_tab"):
+            return False
+        try:
+            selected = self.tabs.select()
+        except tk.TclError:
+            return False
+        return bool(selected) and str(selected) == str(self.repos_tab)
+
+    def _open_repo_post_select_tab(self) -> None:
+        if not self.repo_ready:
+            return
+        try:
+            has_pending_changes = self._is_dirty()
+        except RuntimeError:
+            has_pending_changes = False
+        if has_pending_changes:
+            self._open_commit_tab()
+        else:
+            self._open_history_tab()
+
+    def _open_commit_tab(self) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        tab_count = self.tabs.index("end")
+        for index in range(tab_count):
+            if self.tabs.tab(index, "text") != "Commit":
+                continue
+            if hasattr(self, "_select_tab"):
+                self._select_tab(index)
+            else:
+                self.tabs.select(index)
+            return
 
     def _open_history_tab(self) -> None:
         if not hasattr(self, "tabs"):
