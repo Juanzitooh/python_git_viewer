@@ -35,7 +35,7 @@ class CommitTabMixin:
         header_row.grid_columnconfigure(0, weight=1)
         header_row.grid_columnconfigure(1, weight=0)
         ttk.Label(header_row, text="Arquivos em aberto:").grid(row=0, column=0, sticky="w")
-        self.stage_count_var = tk.StringVar(value="Staged: 0/0")
+        self.stage_count_var = tk.StringVar(value="Selecionados: 0/0")
         ttk.Label(header_row, textvariable=self.stage_count_var).grid(row=0, column=1, sticky="e", padx=(8, 0))
 
         controls_row = ttk.Frame(status_frame)
@@ -164,6 +164,8 @@ class CommitTabMixin:
         self.status_label.grid(row=1, column=0, sticky="w", padx=8, pady=(6, 8))
 
         self.status_items: dict[str, dict[str, str | bool]] = {}
+        self.status_header_actions: dict[int, tuple[str, str]] = {}
+        self.status_auto_stage_disabled = False
         self.status_focus_path = ""
         self.status_click_job: str | None = None
         self.status_click_path = ""
@@ -190,7 +192,8 @@ class CommitTabMixin:
         def success(entries: object) -> None:
             self.status_loading = False
             status_entries, head_hash = entries  # type: ignore[misc]
-            self._render_status_entries(list(status_entries))
+            normalized_entries = self._maybe_stage_entries_by_default(list(status_entries))
+            self._render_status_entries(normalized_entries)
             self._handle_status_head_update(str(head_hash))
 
         def error(exc: Exception) -> None:
@@ -203,6 +206,7 @@ class CommitTabMixin:
         self.status_listbox.delete(0, tk.END)
         self.status_items.clear()
         self.status_headers = set()
+        self.status_header_actions = {}
         signature = "|".join(
             f"{entry.get('status')}:{entry.get('path_for_git')}:{'1' if entry.get('staged') else '0'}"
             for entry in entries
@@ -223,19 +227,34 @@ class CommitTabMixin:
 
         total = len(entries)
         staged_count = 0
+        for entry in entries:
+            if bool(entry.get("staged", False)):
+                staged_count += 1
+
+        all_index = self.status_listbox.size()
+        all_marker = self._stage_marker(staged_count, total)
+        self.status_listbox.insert(tk.END, f"{all_marker} (todos)")
+        self.status_headers.add(all_index)
+        self.status_header_actions[all_index] = ("all", "")
 
         for folder in sorted_folders:
-            header_text = f"{folder}/" if folder else "(root)"
+            folder_entries = grouped[folder]
+            folder_total = len(folder_entries)
+            folder_staged = 0
+            for entry in folder_entries:
+                if bool(entry.get("staged", False)):
+                    folder_staged += 1
+            folder_marker = self._stage_marker(folder_staged, folder_total)
+            folder_text = f"{folder}/" if folder else "(root)"
+            header_text = f"{folder_marker} {folder_text}"
             header_index = self.status_listbox.size()
             self.status_listbox.insert(tk.END, header_text)
             self.status_headers.add(header_index)
+            self.status_header_actions[header_index] = ("folder", folder)
 
-            folder_entries = grouped[folder]
             folder_entries.sort(key=lambda item: str(item["path_for_git"]))
             for entry in folder_entries:
                 staged_label = "[x]" if entry["staged"] else "[ ]"
-                if entry["staged"]:
-                    staged_count += 1
                 display_path = str(entry["path"])
                 leaf = display_path.split("/")[-1]
                 if " -> " in display_path:
@@ -245,7 +264,9 @@ class CommitTabMixin:
                 self.status_listbox.insert(tk.END, line)
                 self.status_items[item_index] = entry
         if hasattr(self, "stage_count_var"):
-            self.stage_count_var.set(f"Staged: {staged_count}/{total}")
+            self.stage_count_var.set(f"Selecionados: {staged_count}/{total}")
+        if total == 0:
+            self.status_auto_stage_disabled = False
         selected_index: int | None = None
         preferred_path = self.status_focus_path.strip() if hasattr(self, "status_focus_path") else ""
         if preferred_path:
@@ -260,6 +281,14 @@ class CommitTabMixin:
         self._update_operation_preview()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
+
+    @staticmethod
+    def _stage_marker(staged_count: int, total_count: int) -> str:
+        if total_count <= 0 or staged_count <= 0:
+            return "[ ]"
+        if staged_count >= total_count:
+            return "[x]"
+        return "[~]"
 
     def _handle_status_head_update(self, head_hash: str) -> None:
         current_head = head_hash.strip()
@@ -304,7 +333,7 @@ class CommitTabMixin:
         y_bottom = y_top + bbox[3]
         if event.y < y_top or event.y > y_bottom:
             return None
-        if index not in self.status_items:
+        if index not in self.status_items and index not in self.status_header_actions:
             return None
         return index
 
@@ -329,6 +358,11 @@ class CommitTabMixin:
     def _on_status_list_single_click(self, event: tk.Event) -> str:
         index = self._status_entry_index_from_event(event)
         if index is None:
+            return "break"
+        header_action = self.status_header_actions.get(index)
+        if header_action is not None:
+            self._select_status_index(index)
+            self._toggle_status_group_stage(header_action)
             return "break"
         self._select_status_index(index)
         self._on_status_select(None)
@@ -374,6 +408,7 @@ class CommitTabMixin:
         path_for_git = str(entry.get("path_for_git", "")).strip()
         if not path_for_git:
             return
+        self.status_auto_stage_disabled = True
         staged = bool(entry.get("staged", False))
         perf_trigger = "stage:file_unstage" if staged else "stage:file_stage"
         refresh_trigger = "post_stage_file_unstage" if staged else "post_stage_file_stage"
@@ -391,6 +426,69 @@ class CommitTabMixin:
         finally:
             self._perf_end("Stage/Unstage arquivo", start, perf_trigger)
         self.status_focus_path = path_for_git
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
+        self._refresh_status(trigger=refresh_trigger)
+
+    def _collect_status_entries_for_folder(self, folder: str) -> list[dict[str, str | bool]]:
+        entries: list[dict[str, str | bool]] = []
+        for entry in self.status_items.values():
+            path_for_git = str(entry.get("path_for_git", "")).strip()
+            entry_folder = os.path.dirname(path_for_git) if path_for_git else ""
+            if entry_folder == folder:
+                entries.append(entry)
+        return entries
+
+    def _toggle_status_group_stage(self, action: tuple[str, str]) -> None:
+        action_type, folder = action
+        if action_type == "all":
+            has_unstaged = any(not bool(entry.get("staged", False)) for entry in self.status_items.values())
+            if has_unstaged:
+                self._stage_all_status_entries()
+            else:
+                self._unstage_all_status_entries()
+            return
+
+        entries = self._collect_status_entries_for_folder(folder)
+        if not entries:
+            return
+        paths = sorted(
+            {
+                str(entry.get("path_for_git", "")).strip()
+                for entry in entries
+                if str(entry.get("path_for_git", "")).strip()
+            }
+        )
+        if not paths:
+            return
+        all_staged = all(bool(entry.get("staged", False)) for entry in entries)
+        self.status_auto_stage_disabled = True
+        folder_label = f"{folder}/" if folder else "(root)"
+        if all_staged:
+            perf_trigger = "stage:folder_unstage"
+            start = self._perf_start("Unstage pasta", perf_trigger)
+            try:
+                run_git(self.repo_path, ["reset", "--", *paths])
+            except RuntimeError as exc:
+                messagebox.showerror("Unstage", str(exc))
+                return
+            finally:
+                self._perf_end("Unstage pasta", start, perf_trigger)
+            self._set_status(f"Pasta desselecionada: {folder_label}")
+            refresh_trigger = "post_unstage_folder"
+        else:
+            perf_trigger = "stage:folder_stage"
+            start = self._perf_start("Stage pasta", perf_trigger)
+            try:
+                run_git(self.repo_path, ["add", "--", *paths])
+            except RuntimeError as exc:
+                messagebox.showerror("Stage", str(exc))
+                return
+            finally:
+                self._perf_end("Stage pasta", start, perf_trigger)
+            self._set_status(f"Pasta selecionada: {folder_label}")
+            refresh_trigger = "post_stage_folder"
+        self.status_focus_path = ""
         if hasattr(self, "_bump_repo_state"):
             self._bump_repo_state()
         self._refresh_status(trigger=refresh_trigger)
@@ -436,6 +534,71 @@ class CommitTabMixin:
     def _apply_stage_from_selection(self) -> None:
         # Mantido por compatibilidade com fluxos antigos.
         return
+
+    def _maybe_stage_entries_by_default(self, entries: list[dict[str, str | bool]]) -> list[dict[str, str | bool]]:
+        if not entries:
+            self.status_auto_stage_disabled = False
+            return entries
+        if self.status_auto_stage_disabled:
+            return entries
+        if all(bool(entry.get("staged", False)) for entry in entries):
+            return entries
+        try:
+            run_git(self.repo_path, ["add", "-A"])
+        except RuntimeError:
+            return entries
+        try:
+            refreshed = self._get_status_entries()
+        except RuntimeError:
+            return entries
+        self._set_status("Arquivos modificados foram selecionados automaticamente.")
+        return refreshed
+
+    def _stage_all_status_entries(self) -> None:
+        if not self.repo_ready:
+            return
+        self.status_auto_stage_disabled = True
+        perf_trigger = "stage:all_stage"
+        start = self._perf_start("Stage todos", perf_trigger)
+        try:
+            run_git(self.repo_path, ["add", "-A"])
+        except RuntimeError as exc:
+            messagebox.showerror("Stage", str(exc))
+            return
+        finally:
+            self._perf_end("Stage todos", start, perf_trigger)
+        self.status_focus_path = ""
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
+        self._set_status("Todos os arquivos foram selecionados para commit.")
+        self._refresh_status(trigger="post_stage_all")
+
+    def _unstage_all_status_entries(self) -> None:
+        if not self.repo_ready:
+            return
+        self.status_auto_stage_disabled = True
+        try:
+            staged = run_git(self.repo_path, ["diff", "--cached", "--name-only"]).strip()
+        except RuntimeError as exc:
+            messagebox.showerror("Unstage", str(exc))
+            return
+        if not staged:
+            self._set_status("Nenhum arquivo selecionado para commit.")
+            return
+        perf_trigger = "stage:all_unstage"
+        start = self._perf_start("Unstage todos", perf_trigger)
+        try:
+            run_git(self.repo_path, ["reset"])
+        except RuntimeError as exc:
+            messagebox.showerror("Unstage", str(exc))
+            return
+        finally:
+            self._perf_end("Unstage todos", start, perf_trigger)
+        self.status_focus_path = ""
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
+        self._set_status("Todos os arquivos foram desselecionados do commit.")
+        self._refresh_status(trigger="post_unstage_all")
 
     def _update_worktree_diff_from_selection(self) -> None:
         if not hasattr(self, "worktree_diff_text"):
@@ -663,6 +826,7 @@ class CommitTabMixin:
         cmd = ["git", "-C", self.repo_path, "apply", "--recount", "--unidiff-zero", "--cached"]
         if reverse:
             cmd.append("-R")
+        self.status_auto_stage_disabled = True
         perf_trigger = "stage:apply_reverse" if reverse else "stage:apply_forward"
         start = self._perf_start("Stage/Unstage patch", perf_trigger)
         try:
