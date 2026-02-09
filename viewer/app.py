@@ -154,17 +154,17 @@ class CommitsViewer(
         self.settings_tab = ttk.Frame(self.tabs)
 
         self.tabs.add(self.repos_tab, text="Repositórios")
+        self.tabs.add(self.branch_tab, text="Commit")
         self.tabs.add(self.history_tab, text="Histórico")
         self.tabs.add(self.import_tab, text="Importar")
         self.tabs.add(self.branches_tab, text="Comparar")
-        self.tabs.add(self.branch_tab, text="Commit")
         self.tabs.add(self.settings_tab, text="Configurações")
 
         self._build_repos_tab()
+        self._build_branch_tab()
         self._build_history_tab()
         self._build_import_tab()
         self._build_branches_tab()
-        self._build_branch_tab()
         self._build_settings_tab()
         tab_count = self.tabs.index("end")
         if tab_count > 0:
