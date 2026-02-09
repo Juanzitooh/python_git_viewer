@@ -35,12 +35,14 @@ class GlobalBarMixin:
         self.repo_path_combo.bind("<ButtonPress-3>", self._on_repo_selector_context_menu, add=True)
         self.repo_path_combo.bind("<ButtonRelease-3>", self._on_repo_selector_context_menu, add=True)
         self.repo_path_combo_dropdown = None
+        self.repo_path_combo_dropdown_path = ""
         self._bind_repo_selector_dropdown_context_menu()
         self._repo_selector_lookup: dict[str, str] = {}
         self._repo_selector_visible = True
         self.repo_context_menu: tk.Menu | None = None
         self.bind_all("<ButtonPress-1>", self._dismiss_repo_context_menu, add=True)
         self.bind_all("<ButtonPress-2>", self._dismiss_repo_context_menu, add=True)
+        self.bind_all("<ButtonRelease-3>", self._on_global_right_click, add=True)
         self.bind_all("<Escape>", self._dismiss_repo_context_menu, add=True)
         self.bind("<FocusOut>", self._dismiss_repo_context_menu, add=True)
 
@@ -576,15 +578,38 @@ class GlobalBarMixin:
         try:
             popdown_path = str(self.tk.call("ttk::combobox::PopdownWindow", str(self.repo_path_combo)))
             listbox_path = f"{popdown_path}.f.l"
+            self.repo_path_combo_dropdown_path = listbox_path
+        except tk.TclError:
+            self.repo_path_combo_dropdown = None
+            self.repo_path_combo_dropdown_path = ""
+            return
+        try:
             listbox_widget = self.nametowidget(listbox_path)
         except (tk.TclError, KeyError):
+            self.repo_path_combo_dropdown = None
             return
         self.repo_path_combo_dropdown = listbox_widget
         listbox_widget.bind("<ButtonPress-3>", self._on_repo_selector_dropdown_context_menu, add=True)
         listbox_widget.bind("<ButtonRelease-3>", self._on_repo_selector_dropdown_context_menu, add=True)
 
+    def _on_global_right_click(self, event: tk.Event) -> None:
+        dropdown_path = str(getattr(self, "repo_path_combo_dropdown_path", "")).strip()
+        if not dropdown_path:
+            return
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return
+        if str(widget) != dropdown_path:
+            return
+        self._on_repo_selector_dropdown_context_menu(event)
+
     def _on_repo_selector_dropdown_context_menu(self, event: tk.Event) -> str:
-        dropdown = getattr(self, "repo_path_combo_dropdown", None)
+        dropdown = getattr(event, "widget", None)
+        dropdown_path = str(getattr(self, "repo_path_combo_dropdown_path", "")).strip()
+        if dropdown_path and str(dropdown) != dropdown_path:
+            dropdown = getattr(self, "repo_path_combo_dropdown", None)
+        if dropdown is not None:
+            self.repo_path_combo_dropdown = dropdown
         if dropdown is None:
             return "break"
         try:
