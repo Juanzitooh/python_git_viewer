@@ -39,14 +39,18 @@ class StashMixin:
             if message:
                 args.extend(["-m", message])
             try:
-                run_git(self.repo_path, args)
+                self._run_with_perf(
+                    "Stash",
+                    "stash_window:create",
+                    lambda: run_git(self.repo_path, args),
+                )
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
             if hasattr(self, "_bump_repo_state"):
                 self._bump_repo_state()
             stash_message_var.set("")
-            self._refresh_status()
+            self._refresh_status(trigger="post_stash_window_create")
             refresh_list()
 
         ttk.Button(top_bar, text="Criar stash", command=create_stash).grid(row=0, column=2, padx=(0, 6))
@@ -148,14 +152,15 @@ class StashMixin:
                 return
             cmd = ["stash", "pop" if pop else "apply", ref]
             try:
-                run_git(self.repo_path, cmd)
+                trigger = "stash_window:pop" if pop else "stash_window:apply"
+                self._run_with_perf("Stash", trigger, lambda: run_git(self.repo_path, cmd))
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
             if hasattr(self, "_bump_repo_state"):
                 self._bump_repo_state()
-            self._refresh_status()
-            self._reload_commits()
+            self._refresh_status(trigger="post_stash_window_apply")
+            self._reload_commits(trigger="post_stash_window_apply")
             refresh_list()
 
         def drop_stash() -> None:
@@ -164,7 +169,11 @@ class StashMixin:
                 messagebox.showinfo("Stash", "Selecione um stash.")
                 return
             try:
-                run_git(self.repo_path, ["stash", "drop", ref])
+                self._run_with_perf(
+                    "Stash",
+                    "stash_window:drop",
+                    lambda: run_git(self.repo_path, ["stash", "drop", ref]),
+                )
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return

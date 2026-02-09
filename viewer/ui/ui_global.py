@@ -91,7 +91,7 @@ class GlobalBarMixin:
         def error(exc: Exception) -> None:
             messagebox.showerror("Erro", str(exc))
 
-        self._run_async("fetch", "Fetch", task, success, error)
+        self._run_async("fetch", "Fetch", task, success, error, perf_trigger="fetch:manual_button")
 
     def _pull_repo(self) -> None:
         if not self.repo_ready:
@@ -104,15 +104,15 @@ class GlobalBarMixin:
             if hasattr(self, "_bump_repo_state"):
                 self._bump_repo_state()
             self._set_status("Pull concluído.")
-            self._reload_commits()
-            self._refresh_status()
-            self._refresh_branches()
+            self._reload_commits(trigger="post_pull")
+            self._refresh_status(trigger="post_pull")
+            self._refresh_branches(trigger="post_pull")
             self._update_pull_push_labels()
 
         def error(exc: Exception) -> None:
             messagebox.showerror("Erro", str(exc))
 
-        self._run_async("pull", "Pull", task, success, error)
+        self._run_async("pull", "Pull", task, success, error, perf_trigger="pull:manual_button")
 
     def _push_repo(self) -> None:
         if not self.repo_ready:
@@ -125,14 +125,14 @@ class GlobalBarMixin:
         def success(_result: object) -> None:
             self._set_status("Push concluído.")
             self._update_pull_push_labels()
-            self._refresh_status()
+            self._refresh_status(trigger="post_push")
             if self._is_dirty():
                 self._set_status("Push concluído, mas ainda há alterações locais.")
 
         def error(exc: Exception) -> None:
             messagebox.showerror("Erro", str(exc))
 
-        self._run_async("push", "Push", task, success, error)
+        self._run_async("push", "Push", task, success, error, perf_trigger="push:manual_button")
 
     def _on_push_button_hover(self, event: tk.Event) -> None:
         tooltip = self._get_push_tooltip_text()
@@ -158,10 +158,12 @@ class GlobalBarMixin:
             suffix = f"\n... e mais {len(commits) - limit} commit(s)."
         return "Commits que serão enviados:\n" + "\n".join(visible) + suffix
 
-    def _refresh_branches(self) -> None:
+    def _refresh_branches(self, trigger: str = "") -> None:
         if not self.repo_ready or self.branches_loading:
             return
         self.branches_loading = True
+        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
+        perf_trigger = f"branches:{normalized_trigger}"
 
         def task() -> tuple[list[str], str]:
             return self._get_branches(), self._get_current_branch()
@@ -175,7 +177,7 @@ class GlobalBarMixin:
             self.branches_loading = False
             messagebox.showerror("Erro", str(exc))
 
-        self._run_async("branches", "Atualizar branches", task, success, error)
+        self._run_async("branches", "Atualizar branches", task, success, error, perf_trigger=perf_trigger)
 
     def _render_branches(self, branches: list[str], current: str) -> None:
         self.branch_list = branches
@@ -218,9 +220,18 @@ class GlobalBarMixin:
         if not self._is_dirty():
             self._set_status("Nada para stash.")
             return
-        run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
-        self._set_status("Stash criado.")
-        self._refresh_status()
+        perf_trigger = "stash:quick"
+        start = self._perf_start("Stash", perf_trigger)
+        try:
+            try:
+                run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
+            except RuntimeError as exc:
+                messagebox.showerror("Stash", str(exc))
+                return
+            self._set_status("Stash criado.")
+            self._refresh_status(trigger="post_stash")
+        finally:
+            self._perf_end("Stash", start, perf_trigger)
 
     def _get_vscode_command(self) -> list[str] | None:
         for candidate in ("code", "code-insiders", "codium"):
@@ -284,29 +295,35 @@ class GlobalBarMixin:
         current = self._get_current_branch()
         if target == current:
             return True
+        choice = "checkout"
         if self._is_dirty():
             choice = self._prompt_dirty_checkout()
             if choice == "cancel":
                 self.branch_var.set(current)
                 return False
-            if choice == "stash":
-                run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
+        perf_trigger = f"checkout:{target}"
+        start = self._perf_start("Checkout branch", perf_trigger)
         try:
-            run_git(self.repo_path, ["checkout", target])
-        except RuntimeError as exc:
-            messagebox.showerror("Checkout", str(exc))
-            return False
-        self.branch_var.set(target)
-        self._set_status(f"Checkout para {target}.")
-        if hasattr(self, "_update_window_title"):
-            self._update_window_title()
-        if hasattr(self, "_bump_repo_state"):
-            self._bump_repo_state()
-        self._reload_commits()
-        self._refresh_status()
-        self._refresh_branches()
-        self._update_pull_push_labels()
-        return True
+            try:
+                if choice == "stash":
+                    run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
+                run_git(self.repo_path, ["checkout", target])
+            except RuntimeError as exc:
+                messagebox.showerror("Checkout", str(exc))
+                return False
+            self.branch_var.set(target)
+            self._set_status(f"Checkout para {target}.")
+            if hasattr(self, "_update_window_title"):
+                self._update_window_title()
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
+            self._reload_commits(trigger="post_checkout")
+            self._refresh_status(trigger="post_checkout")
+            self._refresh_branches(trigger="post_checkout")
+            self._update_pull_push_labels()
+            return True
+        finally:
+            self._perf_end("Checkout branch", start, perf_trigger)
 
     def _prompt_create_branch(self, base_branch: str = "") -> bool:
         if not self.repo_ready:
@@ -336,16 +353,21 @@ class GlobalBarMixin:
         args = ["branch", branch_name]
         if base:
             args.append(base)
+        perf_trigger = f"create_branch:{branch_name}"
+        start = self._perf_start("Criar branch", perf_trigger)
         try:
-            run_git(self.repo_path, args)
-        except RuntimeError as exc:
-            messagebox.showerror("Nova branch", str(exc))
-            return False
-        if base:
-            self._set_status(f"Branch criada: {branch_name} (base: {base}).")
-        else:
-            self._set_status(f"Branch criada: {branch_name}.")
-        self._refresh_branches()
+            try:
+                run_git(self.repo_path, args)
+            except RuntimeError as exc:
+                messagebox.showerror("Nova branch", str(exc))
+                return False
+            if base:
+                self._set_status(f"Branch criada: {branch_name} (base: {base}).")
+            else:
+                self._set_status(f"Branch criada: {branch_name}.")
+            self._refresh_branches(trigger="post_create_branch")
+        finally:
+            self._perf_end("Criar branch", start, perf_trigger)
         if messagebox.askyesno("Nova branch", f"Branch '{branch_name}' criada. Deseja fazer checkout agora?"):
             return self._checkout_to_branch(branch_name)
         return True
@@ -559,6 +581,8 @@ class GlobalBarMixin:
             return False
         self.repo_path = repo_path
         self.repo_ready = True
+        if hasattr(self, "status_head_hash"):
+            self.status_head_hash = ""
         self._update_repo_display_path()
         if hasattr(self, "_register_recent_repo"):
             self._register_recent_repo(repo_path, promote=False)
@@ -570,7 +594,7 @@ class GlobalBarMixin:
         self.patch_cache.clear()
         self.full_patch_cache.clear()
         self.selected_file_by_commit.clear()
-        self._reload_commits()
+        self._reload_commits(trigger="repo_switch")
 
         # Limpa seletores de branch da aba Comparar para evitar refs do repo anterior.
         self.branch_list = []
@@ -587,8 +611,8 @@ class GlobalBarMixin:
             self._clear_branch_comparison("Atualizando branches do repositório...")
 
         self._set_action_visibility(self.fetch_button, True)
-        self._refresh_branches()
-        self._refresh_status()
+        self._refresh_branches(trigger="repo_switch")
+        self._refresh_status(trigger="repo_switch")
         self._update_operation_preview()
         self._schedule_auto_fetch()
         self._schedule_auto_status()
@@ -597,6 +621,8 @@ class GlobalBarMixin:
     def _set_repo_ui_no_repo(self) -> None:
         self.repo_ready = False
         self.repo_path = ""
+        if hasattr(self, "status_head_hash"):
+            self.status_head_hash = ""
         self._update_repo_display_path()
         if self.auto_fetch_job is not None:
             try:
@@ -757,25 +783,30 @@ class GlobalBarMixin:
         else:
             button.grid_remove()
 
-    def _fetch_repo_internal(self, show_errors: bool) -> bool:
+    def _fetch_repo_internal(self, show_errors: bool, trigger: str = "") -> bool:
         if not self.repo_ready:
             return False
+        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
+        perf_trigger = f"fetch:{normalized_trigger}"
+        start = self._perf_start("Fetch", perf_trigger)
         try:
             run_git(self.repo_path, ["fetch", "--all", "--prune"])
         except RuntimeError as exc:
             if show_errors:
                 messagebox.showerror("Erro", str(exc))
+            self._perf_end("Fetch", start, perf_trigger)
             return False
+        self._perf_end("Fetch", start, perf_trigger)
         self._set_status("Fetch concluído.")
         self._update_pull_push_labels()
         return True
 
     def _auto_fetch(self) -> None:
-        self._fetch_repo_internal(show_errors=False)
+        self._fetch_repo_internal(show_errors=False, trigger="auto_timer")
         self._schedule_auto_fetch()
 
     def _auto_status(self) -> None:
-        self._refresh_status()
+        self._refresh_status(trigger="auto_timer")
         self._schedule_auto_status()
 
     def _schedule_auto_fetch(self) -> None:

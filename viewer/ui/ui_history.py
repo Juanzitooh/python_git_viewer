@@ -1027,51 +1027,66 @@ class HistoryTabMixin:
             if not self._checkout_to_branch(target):
                 return
             applied: list[str] = []
-            for commit in commits:
-                try:
-                    run_git(self.repo_path, ["cherry-pick", commit.commit_hash])
-                except RuntimeError as exc:
-                    messagebox.showerror(
-                        "Cherry-pick",
-                        f"Falha ao aplicar {commit.commit_hash[:7]}.\n{exc}\n"
-                        "Resolva conflitos e finalize ou aborte o cherry-pick.",
-                    )
-                    self._show_conflicts_window()
-                    break
-                applied.append(commit.commit_hash)
-            if applied:
-                if hasattr(self, "_bump_repo_state"):
-                    self._bump_repo_state()
-                self._reload_commits()
-                self._refresh_status()
-                self._update_pull_push_labels()
-                self._set_status(f"Cherry-pick aplicado em {target}.")
-            window.destroy()
+            perf_trigger = "history_cherry_pick:run"
+            start = self._perf_start("Cherry-pick", perf_trigger)
+            try:
+                for commit in commits:
+                    try:
+                        run_git(self.repo_path, ["cherry-pick", commit.commit_hash])
+                    except RuntimeError as exc:
+                        messagebox.showerror(
+                            "Cherry-pick",
+                            f"Falha ao aplicar {commit.commit_hash[:7]}.\n{exc}\n"
+                            "Resolva conflitos e finalize ou aborte o cherry-pick.",
+                        )
+                        self._show_conflicts_window()
+                        break
+                    applied.append(commit.commit_hash)
+                if applied:
+                    if hasattr(self, "_bump_repo_state"):
+                        self._bump_repo_state()
+                    self._reload_commits(trigger="post_history_cherry_pick")
+                    self._refresh_status(trigger="post_history_cherry_pick")
+                    self._update_pull_push_labels()
+                    self._set_status(f"Cherry-pick aplicado em {target}.")
+                window.destroy()
+            finally:
+                self._perf_end("Cherry-pick", start, perf_trigger)
 
         def abort_cherry_pick() -> None:
+            perf_trigger = "history_cherry_pick:abort"
+            start = self._perf_start("Cherry-pick", perf_trigger)
             try:
-                run_git(self.repo_path, ["cherry-pick", "--abort"])
-            except RuntimeError as exc:
-                messagebox.showerror("Cherry-pick", str(exc))
-                return
-            if hasattr(self, "_bump_repo_state"):
-                self._bump_repo_state()
-            self._set_status("Cherry-pick abortado.")
-            self._refresh_status()
-            self._update_pull_push_labels()
+                try:
+                    run_git(self.repo_path, ["cherry-pick", "--abort"])
+                except RuntimeError as exc:
+                    messagebox.showerror("Cherry-pick", str(exc))
+                    return
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
+                self._set_status("Cherry-pick abortado.")
+                self._refresh_status(trigger="post_history_cherry_pick_abort")
+                self._update_pull_push_labels()
+            finally:
+                self._perf_end("Cherry-pick", start, perf_trigger)
 
         def continue_cherry_pick() -> None:
+            perf_trigger = "history_cherry_pick:continue"
+            start = self._perf_start("Cherry-pick", perf_trigger)
             try:
-                run_git(self.repo_path, ["cherry-pick", "--continue"])
-            except RuntimeError as exc:
-                messagebox.showerror("Cherry-pick", str(exc))
-                return
-            if hasattr(self, "_bump_repo_state"):
-                self._bump_repo_state()
-            self._set_status("Cherry-pick continuado.")
-            self._reload_commits()
-            self._refresh_status()
-            self._update_pull_push_labels()
+                try:
+                    run_git(self.repo_path, ["cherry-pick", "--continue"])
+                except RuntimeError as exc:
+                    messagebox.showerror("Cherry-pick", str(exc))
+                    return
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
+                self._set_status("Cherry-pick continuado.")
+                self._reload_commits(trigger="post_history_cherry_pick_continue")
+                self._refresh_status(trigger="post_history_cherry_pick_continue")
+                self._update_pull_push_labels()
+            finally:
+                self._perf_end("Cherry-pick", start, perf_trigger)
 
         ttk.Button(actions, text="Copiar hashes", command=copy_hashes).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(actions, text="Cherry-pick", command=run_cherry_pick).grid(row=0, column=1, padx=(0, 6))
@@ -1160,64 +1175,69 @@ class HistoryTabMixin:
                 "Working tree com alterações locais. Limpe a árvore antes de reordenar.",
             )
             return False
+        perf_trigger = "history_reorder:apply"
+        start = self._perf_start("Reordenar commits", perf_trigger)
         try:
-            current_branch = self._get_current_branch()
-        except RuntimeError as exc:
-            messagebox.showerror("Reordenar commits", str(exc))
-            return False
-        backup_branch = self._build_reorder_backup_branch(current_branch)
-        try:
-            run_git(self.repo_path, ["branch", backup_branch, "HEAD"])
-        except RuntimeError as exc:
-            messagebox.showerror("Reordenar commits", f"Falha ao criar branch de backup:\n{exc}")
-            return False
+            try:
+                current_branch = self._get_current_branch()
+            except RuntimeError as exc:
+                messagebox.showerror("Reordenar commits", str(exc))
+                return False
+            backup_branch = self._build_reorder_backup_branch(current_branch)
+            try:
+                run_git(self.repo_path, ["branch", backup_branch, "HEAD"])
+            except RuntimeError as exc:
+                messagebox.showerror("Reordenar commits", f"Falha ao criar branch de backup:\n{exc}")
+                return False
 
-        try:
-            run_git(self.repo_path, ["reset", "--hard", upstream])
-            for summary in ordered_commits:
-                run_git(self.repo_path, ["cherry-pick", summary.commit_hash])
-        except RuntimeError as exc:
             try:
-                run_git(self.repo_path, ["cherry-pick", "--abort"])
-            except RuntimeError:
-                pass
-            try:
-                run_git(self.repo_path, ["reset", "--hard", backup_branch])
-            except RuntimeError as restore_exc:
+                run_git(self.repo_path, ["reset", "--hard", upstream])
+                for summary in ordered_commits:
+                    run_git(self.repo_path, ["cherry-pick", summary.commit_hash])
+            except RuntimeError as exc:
+                try:
+                    run_git(self.repo_path, ["cherry-pick", "--abort"])
+                except RuntimeError:
+                    pass
+                try:
+                    run_git(self.repo_path, ["reset", "--hard", backup_branch])
+                except RuntimeError as restore_exc:
+                    messagebox.showerror(
+                        "Reordenar commits",
+                        (
+                            f"Falha ao reordenar commits:\n{exc}\n\n"
+                            f"Também falhou ao restaurar backup automaticamente:\n{restore_exc}\n\n"
+                            f"Backup disponível em: {backup_branch}"
+                        ),
+                    )
+                    return False
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
+                self._reload_commits(trigger="post_history_reorder_restore")
+                self._refresh_status(trigger="post_history_reorder_restore")
+                self._refresh_branches(trigger="post_history_reorder_restore")
+                self._update_pull_push_labels()
+                self._set_status(f"Reordenação falhou. Estado restaurado a partir de {backup_branch}.")
                 messagebox.showerror(
                     "Reordenar commits",
-                    (
-                        f"Falha ao reordenar commits:\n{exc}\n\n"
-                        f"Também falhou ao restaurar backup automaticamente:\n{restore_exc}\n\n"
-                        f"Backup disponível em: {backup_branch}"
-                    ),
+                    f"Falha ao reordenar commits:\n{exc}\n\nEstado restaurado com backup: {backup_branch}",
                 )
                 return False
+
             if hasattr(self, "_bump_repo_state"):
                 self._bump_repo_state()
-            self._reload_commits()
-            self._refresh_status()
-            self._refresh_branches()
+            self._reload_commits(trigger="post_history_reorder_apply")
+            self._refresh_status(trigger="post_history_reorder_apply")
+            self._refresh_branches(trigger="post_history_reorder_apply")
             self._update_pull_push_labels()
-            self._set_status(f"Reordenação falhou. Estado restaurado a partir de {backup_branch}.")
-            messagebox.showerror(
+            self._set_status(f"Commits locais reordenados. Backup: {backup_branch}")
+            messagebox.showinfo(
                 "Reordenar commits",
-                f"Falha ao reordenar commits:\n{exc}\n\nEstado restaurado com backup: {backup_branch}",
+                f"Reordenação concluída com sucesso.\nBackup criado em: {backup_branch}",
             )
-            return False
-
-        if hasattr(self, "_bump_repo_state"):
-            self._bump_repo_state()
-        self._reload_commits()
-        self._refresh_status()
-        self._refresh_branches()
-        self._update_pull_push_labels()
-        self._set_status(f"Commits locais reordenados. Backup: {backup_branch}")
-        messagebox.showinfo(
-            "Reordenar commits",
-            f"Reordenação concluída com sucesso.\nBackup criado em: {backup_branch}",
-        )
-        return True
+            return True
+        finally:
+            self._perf_end("Reordenar commits", start, perf_trigger)
 
     def _open_reorder_local_commits_window(self) -> None:
         if not self.repo_ready:
@@ -1477,30 +1497,40 @@ class HistoryTabMixin:
                     return
 
         def abort_cherry_pick() -> None:
+            perf_trigger = "history_conflicts:abort"
+            start = self._perf_start("Cherry-pick", perf_trigger)
             try:
-                run_git(self.repo_path, ["cherry-pick", "--abort"])
-            except RuntimeError as exc:
-                messagebox.showerror("Cherry-pick", str(exc))
-                return
-            if hasattr(self, "_bump_repo_state"):
-                self._bump_repo_state()
-            self._set_status("Cherry-pick abortado.")
-            self._refresh_status()
-            self._update_pull_push_labels()
+                try:
+                    run_git(self.repo_path, ["cherry-pick", "--abort"])
+                except RuntimeError as exc:
+                    messagebox.showerror("Cherry-pick", str(exc))
+                    return
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
+                self._set_status("Cherry-pick abortado.")
+                self._refresh_status(trigger="post_history_conflicts_abort")
+                self._update_pull_push_labels()
+            finally:
+                self._perf_end("Cherry-pick", start, perf_trigger)
 
         def continue_cherry_pick() -> None:
+            perf_trigger = "history_conflicts:continue"
+            start = self._perf_start("Cherry-pick", perf_trigger)
             try:
-                run_git(self.repo_path, ["cherry-pick", "--continue"])
-            except RuntimeError as exc:
-                messagebox.showerror("Cherry-pick", str(exc))
-                return
-            if hasattr(self, "_bump_repo_state"):
-                self._bump_repo_state()
-            self._set_status("Cherry-pick continuado.")
-            self._reload_commits()
-            self._refresh_status()
-            self._update_pull_push_labels()
-            window.destroy()
+                try:
+                    run_git(self.repo_path, ["cherry-pick", "--continue"])
+                except RuntimeError as exc:
+                    messagebox.showerror("Cherry-pick", str(exc))
+                    return
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
+                self._set_status("Cherry-pick continuado.")
+                self._reload_commits(trigger="post_history_conflicts_continue")
+                self._refresh_status(trigger="post_history_conflicts_continue")
+                self._update_pull_push_labels()
+                window.destroy()
+            finally:
+                self._perf_end("Cherry-pick", start, perf_trigger)
 
         ttk.Button(actions, text="Abrir no VS Code", command=open_in_vscode).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(actions, text="Abortar", command=abort_cherry_pick).grid(row=0, column=1, padx=(0, 6))
@@ -1577,9 +1607,11 @@ class HistoryTabMixin:
         if self.filter_repo_status_combo is not None:
             self.filter_repo_status_combo.configure(state="readonly")
 
-    def _reload_commits(self) -> None:
+    def _reload_commits(self, trigger: str = "") -> None:
         if not self.repo_ready:
             return
+        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
+        perf_trigger = f"commit_list:{normalized_trigger}"
         self.commit_list_epoch += 1
         epoch = self.commit_list_epoch
         self.loading_commits = True
@@ -1614,7 +1646,7 @@ class HistoryTabMixin:
             messagebox.showerror("Erro", str(exc))
             self._update_filter_status()
 
-        self._run_async("commit_list", "Recarregar commits", task, success, error)
+        self._run_async("commit_list", "Recarregar commits", task, success, error, perf_trigger=perf_trigger)
 
     def _refresh_history_patch_view(self) -> None:
         selection = self.files_listbox.curselection()

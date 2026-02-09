@@ -524,25 +524,31 @@ class BranchesTabMixin:
             return
         if not self._checkout_to_branch(dest):
             return
+        action_key = action.lower().replace(" ", "_")
+        perf_trigger = f"branch_action:{action_key}"
+        start = self._perf_start("Ação de branch", perf_trigger)
         try:
-            if action == "Merge":
-                run_git(self.repo_path, ["merge", origin])
-            elif action == "Rebase":
-                run_git(self.repo_path, ["rebase", origin])
-            else:
-                run_git(self.repo_path, ["merge", "--squash", origin])
-                run_git(self.repo_path, ["commit", "-m", message])
-        except RuntimeError as exc:
-            messagebox.showerror("Ação", str(exc))
-            self._show_conflicts_window()
-            return
-        if hasattr(self, "_bump_repo_state"):
-            self._bump_repo_state()
-        self._reload_commits()
-        self._refresh_status()
-        self._refresh_branches()
-        self._update_pull_push_labels()
-        self._refresh_branch_comparison()
+            try:
+                if action == "Merge":
+                    run_git(self.repo_path, ["merge", origin])
+                elif action == "Rebase":
+                    run_git(self.repo_path, ["rebase", origin])
+                else:
+                    run_git(self.repo_path, ["merge", "--squash", origin])
+                    run_git(self.repo_path, ["commit", "-m", message])
+            except RuntimeError as exc:
+                messagebox.showerror("Ação", str(exc))
+                self._show_conflicts_window()
+                return
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
+            self._reload_commits(trigger=f"post_{action_key}")
+            self._refresh_status(trigger=f"post_{action_key}")
+            self._refresh_branches(trigger=f"post_{action_key}")
+            self._update_pull_push_labels()
+            self._refresh_branch_comparison()
+        finally:
+            self._perf_end("Ação de branch", start, perf_trigger)
 
     def _confirm_branch_action(self, origin: str, dest: str, action: str) -> bool:
         commits = self._load_compare_commits(origin, dest)

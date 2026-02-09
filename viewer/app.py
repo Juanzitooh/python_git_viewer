@@ -333,9 +333,9 @@ class CommitsViewer(
         if not self.repo_ready:
             self._set_status("Selecione um repositório antes de atualizar.")
             return
-        self._reload_commits()
-        self._refresh_status()
-        self._refresh_branches()
+        self._reload_commits(trigger="manual_refresh_all")
+        self._refresh_status(trigger="manual_refresh_all")
+        self._refresh_branches(trigger="manual_refresh_all")
         self._update_pull_push_labels()
         if hasattr(self, "_refresh_branch_comparison"):
             self._refresh_branch_comparison()
@@ -373,26 +373,40 @@ class CommitsViewer(
         if hasattr(self, "_refresh_compare_diff"):
             self._refresh_compare_diff()
 
-    def _perf_start(self, label: str) -> float:
+    @staticmethod
+    def _normalize_perf_trigger(trigger: str | None) -> str:
+        if trigger is None:
+            return ""
+        return str(trigger).strip()
+
+    def _format_perf_label(self, label: str, trigger: str = "") -> str:
+        normalized_trigger = self._normalize_perf_trigger(trigger)
+        if not normalized_trigger:
+            return label
+        return f"{label} [{normalized_trigger}]"
+
+    def _perf_start(self, label: str, trigger: str = "") -> float:
         if not getattr(self, "perf_enabled", False):
             return 0.0
         if not hasattr(self, "perf_var"):
             return 0.0
-        self.perf_var.set(f"{label}...")
+        display_label = self._format_perf_label(label, trigger)
+        self.perf_var.set(f"{display_label}...")
         try:
             self.update_idletasks()
         except tk.TclError:
             pass
         return time.perf_counter()
 
-    def _perf_end(self, label: str, start: float) -> None:
+    def _perf_end(self, label: str, start: float, trigger: str = "") -> None:
         if not getattr(self, "perf_enabled", False):
             return
         if not start or not hasattr(self, "perf_var"):
             return
         elapsed_ms = (time.perf_counter() - start) * 1000.0
-        self.perf_var.set(f"{label}: {elapsed_ms:.0f} ms")
-        self._append_perf_log(label, elapsed_ms)
+        display_label = self._format_perf_label(label, trigger)
+        self.perf_var.set(f"{display_label}: {elapsed_ms:.0f} ms")
+        self._append_perf_log(label, elapsed_ms, trigger)
 
     def _resolve_perf_log_path(self) -> Path:
         project_root = Path(__file__).resolve().parent.parent
@@ -409,7 +423,7 @@ class CommitsViewer(
             return candidate
         return candidates[0]
 
-    def _append_perf_log(self, label: str, elapsed_ms: float) -> None:
+    def _append_perf_log(self, label: str, elapsed_ms: float, trigger: str = "") -> None:
         if not getattr(self, "perf_enabled", False):
             return
         log_path = getattr(self, "perf_log_path", None)
@@ -419,7 +433,9 @@ class CommitsViewer(
         repo_name = "(nenhum)"
         if self.repo_path:
             repo_name = os.path.basename(self.repo_path.rstrip(os.sep)) or self.repo_path
-        line = f"{timestamp} | repo={repo_name} | {label} | {elapsed_ms:.0f} ms\n"
+        normalized_trigger = self._normalize_perf_trigger(trigger)
+        trigger_suffix = f" | trigger={normalized_trigger}" if normalized_trigger else ""
+        line = f"{timestamp} | repo={repo_name} | {label} | {elapsed_ms:.0f} ms{trigger_suffix}\n"
         try:
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(line)
@@ -502,11 +518,13 @@ class CommitsViewer(
         func: Callable[[], Any],
         on_success: Callable[[Any], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
+        perf_trigger: str = "",
     ) -> int:
         token = self._async_tokens.get(key, 0) + 1
         self._async_tokens[key] = token
         self._begin_async_busy()
-        start = self._perf_start(label) if label else 0.0
+        normalized_trigger = self._normalize_perf_trigger(perf_trigger) or key
+        start = self._perf_start(label, normalized_trigger) if label else 0.0
 
         def finish_success(result: object) -> None:
             self._end_async_busy()
@@ -515,7 +533,7 @@ class CommitsViewer(
             if on_success:
                 on_success(result)
             if label:
-                self._perf_end(label, start)
+                self._perf_end(label, start, normalized_trigger)
 
         def finish_error(exc: Exception) -> None:
             self._end_async_busy()
@@ -526,7 +544,7 @@ class CommitsViewer(
             else:
                 messagebox.showerror("Erro", str(exc))
             if label:
-                self._perf_end(label, start)
+                self._perf_end(label, start, normalized_trigger)
 
         def worker() -> None:
             try:
@@ -539,6 +557,14 @@ class CommitsViewer(
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
         return token
+
+    def _run_with_perf(self, label: str, trigger: str, func: Callable[[], Any]) -> Any:
+        normalized_trigger = self._normalize_perf_trigger(trigger)
+        start = self._perf_start(label, normalized_trigger)
+        try:
+            return func()
+        finally:
+            self._perf_end(label, start, normalized_trigger)
 
     def _bump_repo_state(self) -> None:
         self.repo_state_token += 1

@@ -40,7 +40,11 @@ class CommitTabMixin:
 
         controls_row = ttk.Frame(status_frame)
         controls_row.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 4))
-        ttk.Button(controls_row, text="Atualizar status", command=self._refresh_status).grid(
+        ttk.Button(
+            controls_row,
+            text="Atualizar status",
+            command=lambda: self._refresh_status(trigger="manual_button"),
+        ).grid(
             row=0,
             column=0,
             sticky="w",
@@ -166,25 +170,34 @@ class CommitTabMixin:
         self.diff_click_job: str | None = None
         self.diff_click_line_no = 0
         self._refresh_branches()
-        self._refresh_status()
+        self._refresh_status(trigger="commit_tab_init")
 
-    def _refresh_status(self) -> None:
+    def _refresh_status(self, trigger: str = "") -> None:
         if not self.repo_ready or self.status_loading:
             return
         self.status_loading = True
+        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
+        perf_trigger = f"status:{normalized_trigger}"
 
-        def task() -> list[dict[str, str | bool]]:
-            return self._get_status_entries()
+        def task() -> tuple[list[dict[str, str | bool]], str]:
+            entries = self._get_status_entries()
+            try:
+                head_hash = run_git(self.repo_path, ["rev-parse", "HEAD"]).strip()
+            except RuntimeError:
+                head_hash = ""
+            return entries, head_hash
 
         def success(entries: object) -> None:
             self.status_loading = False
-            self._render_status_entries(list(entries))  # type: ignore[list-item]
+            status_entries, head_hash = entries  # type: ignore[misc]
+            self._render_status_entries(list(status_entries))
+            self._handle_status_head_update(str(head_hash))
 
         def error(exc: Exception) -> None:
             self.status_loading = False
             messagebox.showerror("Erro", str(exc))
 
-        self._run_async("status", "Atualizar status", task, success, error)
+        self._run_async("status", "Atualizar status", task, success, error, perf_trigger=perf_trigger)
 
     def _render_status_entries(self, entries: list[dict[str, str | bool]]) -> None:
         self.status_listbox.delete(0, tk.END)
@@ -247,6 +260,22 @@ class CommitTabMixin:
         self._update_operation_preview()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
+
+    def _handle_status_head_update(self, head_hash: str) -> None:
+        current_head = head_hash.strip()
+        previous_head = str(getattr(self, "status_head_hash", "")).strip()
+        if current_head == previous_head:
+            return
+        self.status_head_hash = current_head
+        if not previous_head:
+            # Primeira leitura de HEAD para o repo atual: evita recarga redundante.
+            return
+        if hasattr(self, "_reload_commits"):
+            self._reload_commits()
+        if hasattr(self, "_refresh_branches"):
+            self._refresh_branches()
+        if hasattr(self, "_update_pull_push_labels"):
+            self._update_pull_push_labels()
 
     def _find_status_index_by_path(self, path_for_git: str) -> int | None:
         if not path_for_git:
@@ -346,6 +375,9 @@ class CommitTabMixin:
         if not path_for_git:
             return
         staged = bool(entry.get("staged", False))
+        perf_trigger = "stage:file_unstage" if staged else "stage:file_stage"
+        refresh_trigger = "post_stage_file_unstage" if staged else "post_stage_file_stage"
+        start = self._perf_start("Stage/Unstage arquivo", perf_trigger)
         try:
             if staged:
                 run_git(self.repo_path, ["reset", "--", path_for_git])
@@ -356,10 +388,12 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Stage", str(exc))
             return
+        finally:
+            self._perf_end("Stage/Unstage arquivo", start, perf_trigger)
         self.status_focus_path = path_for_git
         if hasattr(self, "_bump_repo_state"):
             self._bump_repo_state()
-        self._refresh_status()
+        self._refresh_status(trigger=refresh_trigger)
 
     def _move_status_selection(self, delta: int) -> None:
         if not hasattr(self, "status_listbox"):
@@ -629,12 +663,17 @@ class CommitTabMixin:
         cmd = ["git", "-C", self.repo_path, "apply", "--recount", "--unidiff-zero", "--cached"]
         if reverse:
             cmd.append("-R")
-        result = subprocess.run(
-            cmd,
-            input=patch,
-            text=True,
-            capture_output=True,
-        )
+        perf_trigger = "stage:apply_reverse" if reverse else "stage:apply_forward"
+        start = self._perf_start("Stage/Unstage patch", perf_trigger)
+        try:
+            result = subprocess.run(
+                cmd,
+                input=patch,
+                text=True,
+                capture_output=True,
+            )
+        finally:
+            self._perf_end("Stage/Unstage patch", start, perf_trigger)
         if result.returncode != 0:
             stderr = result.stderr.strip() or "falha ao aplicar patch"
             raise RuntimeError(stderr)
@@ -657,7 +696,7 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Stage", str(exc))
             return
-        self._refresh_status()
+        self._refresh_status(trigger="post_stage_hunk_stage")
         self._update_worktree_diff_from_selection()
 
     def _unstage_selected_hunk(self) -> None:
@@ -678,7 +717,7 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Unstage", str(exc))
             return
-        self._refresh_status()
+        self._refresh_status(trigger="post_stage_hunk_unstage")
         self._update_worktree_diff_from_selection()
 
     def _stage_selected_line(self) -> None:
@@ -700,7 +739,7 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Stage", str(exc))
             return
-        self._refresh_status()
+        self._refresh_status(trigger="post_stage_line_stage")
         self._update_worktree_diff_from_selection()
 
     def _unstage_selected_line(self) -> None:
@@ -722,7 +761,7 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("Unstage", str(exc))
             return
-        self._refresh_status()
+        self._refresh_status(trigger="post_stage_line_unstage")
         self._update_worktree_diff_from_selection()
 
     def _update_worktree_diff_actions(self) -> None:
@@ -794,35 +833,40 @@ class CommitTabMixin:
         if not title:
             messagebox.showwarning("Commit", "Informe o título do commit.")
             return False
+        perf_trigger = "commit:create"
+        start = self._perf_start("Commit", perf_trigger)
         try:
-            staged = run_git(self.repo_path, ["diff", "--cached", "--name-only"]).strip()
-        except RuntimeError as exc:
-            messagebox.showerror("Erro", str(exc))
-            return False
-        if not staged:
-            messagebox.showwarning("Commit", "Nenhum arquivo staged.")
-            return False
-        try:
-            if body:
-                run_git(self.repo_path, ["commit", "-m", title, "-m", body])
-            else:
-                run_git(self.repo_path, ["commit", "-m", title])
-        except RuntimeError as exc:
-            messagebox.showerror("Erro", str(exc))
-            return False
-        self.commit_title_var.set("")
-        self.commit_body_text.delete("1.0", tk.END)
-        if hasattr(self, "_bump_repo_state"):
-            self._bump_repo_state()
-        self._set_status("Commit criado.")
-        self._refresh_status()
-        self._reload_commits()
-        if self._is_dirty():
-            self._set_status("Commit criado, mas ainda há alterações locais.")
-        return True
+            try:
+                staged = run_git(self.repo_path, ["diff", "--cached", "--name-only"]).strip()
+            except RuntimeError as exc:
+                messagebox.showerror("Erro", str(exc))
+                return False
+            if not staged:
+                messagebox.showwarning("Commit", "Nenhum arquivo staged.")
+                return False
+            try:
+                if body:
+                    run_git(self.repo_path, ["commit", "-m", title, "-m", body])
+                else:
+                    run_git(self.repo_path, ["commit", "-m", title])
+            except RuntimeError as exc:
+                messagebox.showerror("Erro", str(exc))
+                return False
+            self.commit_title_var.set("")
+            self.commit_body_text.delete("1.0", tk.END)
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
+            self._set_status("Commit criado.")
+            self._refresh_status(trigger="post_commit")
+            self._reload_commits(trigger="post_commit")
+            if self._is_dirty():
+                self._set_status("Commit criado, mas ainda há alterações locais.")
+            return True
+        finally:
+            self._perf_end("Commit", start, perf_trigger)
 
     def _commit_and_push(self) -> None:
-        if not self._fetch_repo_internal(show_errors=True):
+        if not self._fetch_repo_internal(show_errors=True, trigger="pre_commit_push"):
             return
         if not self._get_upstream():
             messagebox.showwarning(
@@ -904,19 +948,24 @@ class CommitTabMixin:
             )
             if not hard_confirm:
                 return False
+        perf_trigger = f"undo_commit:{mode}"
+        start = self._perf_start("Undo commit", perf_trigger)
         try:
-            run_git(self.repo_path, ["reset", reset_flag, "HEAD~1"])
-        except RuntimeError as exc:
-            messagebox.showerror("Undo commit", str(exc))
-            return False
-        if hasattr(self, "_bump_repo_state"):
-            self._bump_repo_state()
-        self._refresh_status()
-        self._reload_commits()
-        self._refresh_branches()
-        self._update_pull_push_labels()
-        self._set_status(f"Último commit desfeito ({mode}).")
-        return True
+            try:
+                run_git(self.repo_path, ["reset", reset_flag, "HEAD~1"])
+            except RuntimeError as exc:
+                messagebox.showerror("Undo commit", str(exc))
+                return False
+            if hasattr(self, "_bump_repo_state"):
+                self._bump_repo_state()
+            self._refresh_status(trigger=f"post_undo_{mode}")
+            self._reload_commits(trigger=f"post_undo_{mode}")
+            self._refresh_branches(trigger=f"post_undo_{mode}")
+            self._update_pull_push_labels()
+            self._set_status(f"Último commit desfeito ({mode}).")
+            return True
+        finally:
+            self._perf_end("Undo commit", start, perf_trigger)
 
     def _open_undo_commit_window(self) -> None:
         self._hide_hover_tooltip()

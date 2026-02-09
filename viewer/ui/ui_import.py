@@ -413,47 +413,52 @@ class ImportTabMixin:
         applied = 0
         failing_hash = ""
         self.import_status_var.set("Importando commits...")
-        for summary in ordered:
-            commit_hash = summary.commit_hash
-            failing_hash = commit_hash
-            try:
-                if not source_is_target:
-                    run_git(self.repo_path, ["fetch", source_repo, commit_hash])
-                run_git(self.repo_path, ["cherry-pick", commit_hash])
-            except RuntimeError as exc:
-                if applied > 0:
-                    if hasattr(self, "_bump_repo_state"):
-                        self._bump_repo_state()
-                    self._reload_commits()
-                    self._refresh_status()
-                    self._refresh_branches()
-                    self._update_pull_push_labels()
-                messagebox.showerror(
-                    "Importar",
-                    (
-                        f"Falha ao importar {failing_hash[:7]}.\n{exc}\n"
-                        "Resolva conflitos e finalize ou aborte o cherry-pick antes de continuar."
-                    ),
-                )
-                if self._has_unmerged_conflicts() and hasattr(self, "_show_conflicts_window"):
-                    self._show_conflicts_window()
-                self.import_status_var.set(f"Importação interrompida após {applied} commit(s).")
-                self._update_import_controls_state()
-                return
-            applied += 1
+        perf_trigger = "import:selected_commits"
+        start = self._perf_start("Importar commits", perf_trigger)
+        try:
+            for summary in ordered:
+                commit_hash = summary.commit_hash
+                failing_hash = commit_hash
+                try:
+                    if not source_is_target:
+                        run_git(self.repo_path, ["fetch", source_repo, commit_hash])
+                    run_git(self.repo_path, ["cherry-pick", commit_hash])
+                except RuntimeError as exc:
+                    if applied > 0:
+                        if hasattr(self, "_bump_repo_state"):
+                            self._bump_repo_state()
+                        self._reload_commits(trigger="post_import_partial")
+                        self._refresh_status(trigger="post_import_partial")
+                        self._refresh_branches(trigger="post_import_partial")
+                        self._update_pull_push_labels()
+                    messagebox.showerror(
+                        "Importar",
+                        (
+                            f"Falha ao importar {failing_hash[:7]}.\n{exc}\n"
+                            "Resolva conflitos e finalize ou aborte o cherry-pick antes de continuar."
+                        ),
+                    )
+                    if self._has_unmerged_conflicts() and hasattr(self, "_show_conflicts_window"):
+                        self._show_conflicts_window()
+                    self.import_status_var.set(f"Importação interrompida após {applied} commit(s).")
+                    self._update_import_controls_state()
+                    return
+                applied += 1
 
-        if applied > 0:
-            if hasattr(self, "_bump_repo_state"):
-                self._bump_repo_state()
-            self._reload_commits()
-            self._refresh_status()
-            self._refresh_branches()
-            self._update_pull_push_labels()
-            self._set_status(f"Importado em {target_branch}: {applied} commit(s).")
-            self.import_status_var.set(f"Importação concluída: {applied} commit(s) em {target_branch}.")
-        else:
-            self.import_status_var.set("Nenhum commit foi importado.")
-        self._update_import_controls_state()
+            if applied > 0:
+                if hasattr(self, "_bump_repo_state"):
+                    self._bump_repo_state()
+                self._reload_commits(trigger="post_import_success")
+                self._refresh_status(trigger="post_import_success")
+                self._refresh_branches(trigger="post_import_success")
+                self._update_pull_push_labels()
+                self._set_status(f"Importado em {target_branch}: {applied} commit(s).")
+                self.import_status_var.set(f"Importação concluída: {applied} commit(s) em {target_branch}.")
+            else:
+                self.import_status_var.set("Nenhum commit foi importado.")
+            self._update_import_controls_state()
+        finally:
+            self._perf_end("Importar commits", start, perf_trigger)
 
     def _update_import_controls_state(self) -> None:
         if not hasattr(self, "import_run_button"):

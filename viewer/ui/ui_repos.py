@@ -897,36 +897,41 @@ class ReposTabMixin:
             self.workspace_card_detail_ts.pop(normalized_repo, None)
             self._schedule_workspace_cards_refresh(0)
             return
+        perf_trigger = "workspace_card:checkout_other_repo"
+        start = self._perf_start("Checkout branch", perf_trigger)
         try:
-            status_output = run_git(normalized_repo, ["status", "--porcelain"])
-        except RuntimeError as exc:
-            messagebox.showerror("Checkout", str(exc))
-            if previous_branch:
-                branch_var.set(previous_branch)
-            return
-        if status_output.strip():
-            repo_name = os.path.basename(normalized_repo.rstrip(os.sep)) or normalized_repo
-            proceed = messagebox.askyesno(
-                "Checkout",
-                f"O repositório '{repo_name}' possui alterações locais.\nContinuar checkout para '{target}'?",
-            )
-            if not proceed:
+            try:
+                status_output = run_git(normalized_repo, ["status", "--porcelain"])
+            except RuntimeError as exc:
+                messagebox.showerror("Checkout", str(exc))
                 if previous_branch:
                     branch_var.set(previous_branch)
                 return
-        try:
-            run_git(normalized_repo, ["checkout", target])
-        except RuntimeError as exc:
-            messagebox.showerror("Checkout", str(exc))
-            if previous_branch:
-                branch_var.set(previous_branch)
-            return
-        refreshed = self._collect_workspace_card_details(normalized_repo)
-        self.workspace_card_detail_cache[normalized_repo] = refreshed
-        self.workspace_card_detail_ts[normalized_repo] = time.time()
-        if hasattr(self, "_set_status"):
-            self._set_status(f"Checkout em {os.path.basename(normalized_repo)}: {target}")
-        self._schedule_workspace_cards_refresh(0)
+            if status_output.strip():
+                repo_name = os.path.basename(normalized_repo.rstrip(os.sep)) or normalized_repo
+                proceed = messagebox.askyesno(
+                    "Checkout",
+                    f"O repositório '{repo_name}' possui alterações locais.\nContinuar checkout para '{target}'?",
+                )
+                if not proceed:
+                    if previous_branch:
+                        branch_var.set(previous_branch)
+                    return
+            try:
+                run_git(normalized_repo, ["checkout", target])
+            except RuntimeError as exc:
+                messagebox.showerror("Checkout", str(exc))
+                if previous_branch:
+                    branch_var.set(previous_branch)
+                return
+            refreshed = self._collect_workspace_card_details(normalized_repo)
+            self.workspace_card_detail_cache[normalized_repo] = refreshed
+            self.workspace_card_detail_ts[normalized_repo] = time.time()
+            if hasattr(self, "_set_status"):
+                self._set_status(f"Checkout em {os.path.basename(normalized_repo)}: {target}")
+            self._schedule_workspace_cards_refresh(0)
+        finally:
+            self._perf_end("Checkout branch", start, perf_trigger)
 
     def _open_repo_from_dialog(self) -> None:
         path = filedialog.askdirectory()
