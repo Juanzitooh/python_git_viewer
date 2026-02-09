@@ -125,6 +125,7 @@ class GlobalBarMixin:
         def success(_result: object) -> None:
             self._set_status("Push concluído.")
             self._update_pull_push_labels()
+            self._reload_commits(trigger="post_push")
             self._refresh_status(trigger="post_push")
             if self._is_dirty():
                 self._set_status("Push concluído, mas ainda há alterações locais.")
