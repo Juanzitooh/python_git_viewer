@@ -719,7 +719,17 @@ class ReposTabMixin:
         for widget in (card, path_label, branch_row, sync_label, status_label):
             widget.bind("<Button-1>", lambda _e, idx=index: self._open_workspace_card_repo(idx), add=True)
             widget.bind("<Double-Button-1>", lambda _e, idx=index: self._open_workspace_card_repo_vscode(idx), add=True)
+            widget.bind(
+                "<Button-3>",
+                lambda event, path=repo_path: self._on_repo_context_menu_request(event, path),
+                add=True,
+            )
             self._bind_workspace_scroll_events(widget)
+        branch_combo.bind(
+            "<Button-3>",
+            lambda event, path=repo_path: self._on_repo_context_menu_request(event, path),
+            add=True,
+        )
         self._bind_workspace_scroll_events(branch_combo)
 
     def _get_workspace_card_repo_path(self, index: int) -> str:

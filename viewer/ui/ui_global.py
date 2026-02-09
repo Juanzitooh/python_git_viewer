@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ..core.git_client import is_git_repo, run_git
@@ -31,22 +32,9 @@ class GlobalBarMixin:
         self.repo_path_combo = ttk.Combobox(self.repo_selector_frame, textvariable=self.repo_var, state="readonly")
         self.repo_path_combo.grid(row=0, column=0, sticky="ew")
         self.repo_path_combo.bind("<<ComboboxSelected>>", self._on_repo_selected)
+        self.repo_path_combo.bind("<Button-3>", self._on_repo_selector_context_menu, add=True)
         self._repo_selector_lookup: dict[str, str] = {}
         self._repo_selector_visible = True
-
-        ttk.Button(self.repo_left_actions, text="Copiar caminho", command=self._copy_repo_path).grid(
-            row=0, column=1, padx=(6, 0)
-        )
-
-        ttk.Button(self.repo_left_actions, text="Abrir no VS Code", command=self._open_repo_in_vscode).grid(
-            row=0, column=2, padx=(6, 0)
-        )
-        self.repo_favorite_button = ttk.Button(
-            self.repo_left_actions,
-            text="Adicionar favorito",
-            command=self._toggle_current_repo_favorite,
-        )
-        self.repo_favorite_button.grid(row=0, column=3, padx=(6, 0))
 
         # Vars kept at global scope because they are shared across tabs.
         self.branch_var = tk.StringVar(value="")
@@ -259,14 +247,15 @@ class GlobalBarMixin:
             return False
         return True
 
-    def _open_repo_in_vscode(self) -> None:
-        if not self.repo_ready or not self.repo_path:
+    def _open_repo_in_vscode(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
             messagebox.showinfo("VS Code", "Selecione um repositório válido antes de abrir.")
-            return
-        if not os.path.isdir(self.repo_path):
+            return False
+        if not os.path.isdir(resolved_repo):
             messagebox.showwarning("VS Code", "Caminho do repositório inválido.")
-            return
-        self._open_path_in_vscode(self.repo_path, use_goto=False)
+            return False
+        return self._open_path_in_vscode(resolved_repo, use_goto=False)
 
     def _open_repo_file_in_vscode(self, repo_relative_path: str) -> bool:
         if not self.repo_ready or not self.repo_path:
@@ -547,13 +536,163 @@ class GlobalBarMixin:
             self._add_favorite_repo(current)
         self._refresh_repo_selector()
 
-    def _copy_repo_path(self) -> None:
-        if not self.repo_ready or not self.repo_path:
+    def _resolve_repo_action_path(self, repo_path: str = "") -> str:
+        candidate = repo_path.strip()
+        if candidate:
+            normalized = self._normalize_repo_path_candidate(candidate)
+            if os.path.isdir(normalized) and is_git_repo(normalized):
+                return normalized
+            return ""
+        if self.repo_ready and self.repo_path:
+            normalized = self._normalize_repo_path_candidate(self.repo_path)
+            if os.path.isdir(normalized) and is_git_repo(normalized):
+                return normalized
+        if hasattr(self, "repo_var") and hasattr(self, "_repo_selector_lookup"):
+            label = self.repo_var.get().strip()
+            selected = str(self._repo_selector_lookup.get(label, "")).strip()
+            if selected:
+                normalized = self._normalize_repo_path_candidate(selected)
+                if os.path.isdir(normalized) and is_git_repo(normalized):
+                    return normalized
+        return ""
+
+    def _on_repo_selector_context_menu(self, event: tk.Event) -> str:
+        selected = self._resolve_repo_action_path("")
+        self._show_repo_context_menu(event, selected)
+        return "break"
+
+    def _on_repo_context_menu_request(self, event: tk.Event, repo_path: str = "") -> str:
+        self._show_repo_context_menu(event, repo_path)
+        return "break"
+
+    def _show_repo_context_menu(self, event: tk.Event, repo_path: str = "") -> None:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            return
+        normalized_repo = self._normalize_repo_path_candidate(resolved_repo)
+        current_repo = self._normalize_repo_path_candidate(self.repo_path) if self.repo_ready and self.repo_path else ""
+        is_current = normalized_repo == current_repo
+        favorite_set = {self._normalize_repo_path_candidate(path) for path in getattr(self, "favorite_repos", [])}
+        is_favorite = normalized_repo in favorite_set
+        menu = tk.Menu(self, tearoff=0)
+        if is_current:
+            menu.add_command(label="Repositório atual", state="disabled")
+        else:
+            menu.add_command(
+                label="Abrir no Git Viewer",
+                command=lambda path=normalized_repo: self._set_repo_path(path, initial=False),
+            )
+        menu.add_command(
+            label="Abrir no VS Code",
+            command=lambda path=normalized_repo: self._open_repo_in_vscode(path),
+        )
+        menu.add_command(
+            label="Abrir na Pasta",
+            command=lambda path=normalized_repo: self._open_repo_in_file_manager(path),
+        )
+        menu.add_command(
+            label="Abrir no GitHub",
+            command=lambda path=normalized_repo: self._open_repo_in_github(path),
+        )
+        menu.add_command(
+            label="Copiar caminho",
+            command=lambda path=normalized_repo: self._copy_repo_path(path),
+        )
+        menu.add_separator()
+        if is_favorite:
+            menu.add_command(
+                label="Remover dos favoritos",
+                command=lambda path=normalized_repo: self._remove_favorite_repo(path),
+            )
+        else:
+            menu.add_command(
+                label="Adicionar aos favoritos",
+                command=lambda path=normalized_repo: self._add_favorite_repo(path),
+            )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _copy_repo_path(self, repo_path: str = "") -> None:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
             messagebox.showinfo("Repo", "Selecione um repositório antes de copiar o caminho.")
             return
         self.clipboard_clear()
-        self.clipboard_append(self.repo_path)
+        self.clipboard_append(resolved_repo)
         self.update()
+
+    def _open_repo_in_file_manager(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("Pasta", "Selecione um repositório válido antes de abrir a pasta.")
+            return False
+        try:
+            if os.name == "nt":
+                os.startfile(resolved_repo)  # type: ignore[attr-defined]
+            elif shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", resolved_repo])
+            elif shutil.which("open"):
+                subprocess.Popen(["open", resolved_repo])
+            else:
+                messagebox.showwarning("Pasta", "Não foi encontrado um comando para abrir a pasta.")
+                return False
+        except OSError as exc:
+            messagebox.showerror("Pasta", f"Falha ao abrir a pasta: {exc}")
+            return False
+        return True
+
+    @staticmethod
+    def _normalize_remote_url_for_browser(remote_url: str) -> str:
+        value = remote_url.strip()
+        if not value:
+            return ""
+        if value.startswith("git@"):
+            prefix, sep, path = value.partition(":")
+            if not sep or "@" not in prefix:
+                return ""
+            host = prefix.split("@", 1)[1]
+            clean_path = path.removesuffix(".git").strip("/")
+            if not host or not clean_path:
+                return ""
+            return f"https://{host}/{clean_path}"
+        if value.startswith("ssh://"):
+            payload = value[len("ssh://") :]
+            if "@" in payload:
+                payload = payload.split("@", 1)[1]
+            host, sep, path = payload.partition("/")
+            clean_path = path.removesuffix(".git").strip("/")
+            if not sep or not host or not clean_path:
+                return ""
+            return f"https://{host}/{clean_path}"
+        if value.startswith("http://") or value.startswith("https://"):
+            return value.removesuffix(".git")
+        return ""
+
+    def _open_repo_in_github(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositório válido antes de abrir no GitHub.")
+            return False
+        try:
+            remote_url_raw = run_git(resolved_repo, ["remote", "get-url", "origin"]).strip()
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", f"Falha ao obter remote origin:\n{exc}")
+            return False
+        remote_url = self._normalize_remote_url_for_browser(remote_url_raw)
+        if not remote_url or "github.com/" not in remote_url:
+            messagebox.showwarning("GitHub", f"Remote origin não aponta para GitHub:\n{remote_url_raw}")
+            return False
+        try:
+            opened = webbrowser.open(remote_url, new=2)
+        except webbrowser.Error as exc:
+            messagebox.showerror("GitHub", f"Falha ao abrir navegador: {exc}")
+            return False
+        if not opened:
+            messagebox.showwarning("GitHub", f"Não foi possível abrir automaticamente:\n{remote_url}")
+            return False
+        return True
 
     def _apply_repo_from_entry(self) -> None:
         if not hasattr(self, "repo_var"):
