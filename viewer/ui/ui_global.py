@@ -603,13 +603,34 @@ class GlobalBarMixin:
             return
         self._on_repo_selector_dropdown_context_menu(event)
 
-    def _on_repo_selector_dropdown_context_menu(self, event: tk.Event) -> str:
-        dropdown = getattr(event, "widget", None)
+    def _resolve_repo_selector_dropdown_widget(self, widget: object | None) -> object | None:
+        if widget is not None and hasattr(widget, "nearest") and hasattr(widget, "get"):
+            return widget
+        if isinstance(widget, str):
+            try:
+                resolved = self.nametowidget(widget)
+            except (tk.TclError, KeyError):
+                resolved = None
+            if resolved is not None and hasattr(resolved, "nearest") and hasattr(resolved, "get"):
+                self.repo_path_combo_dropdown = resolved
+                return resolved
+        cached = getattr(self, "repo_path_combo_dropdown", None)
+        if cached is not None and hasattr(cached, "nearest") and hasattr(cached, "get"):
+            return cached
         dropdown_path = str(getattr(self, "repo_path_combo_dropdown_path", "")).strip()
-        if dropdown_path and str(dropdown) != dropdown_path:
-            dropdown = getattr(self, "repo_path_combo_dropdown", None)
-        if dropdown is not None:
-            self.repo_path_combo_dropdown = dropdown
+        if not dropdown_path:
+            return None
+        try:
+            resolved = self.nametowidget(dropdown_path)
+        except (tk.TclError, KeyError):
+            return None
+        if resolved is None or not hasattr(resolved, "nearest") or not hasattr(resolved, "get"):
+            return None
+        self.repo_path_combo_dropdown = resolved
+        return resolved
+
+    def _on_repo_selector_dropdown_context_menu(self, event: tk.Event) -> str:
+        dropdown = self._resolve_repo_selector_dropdown_widget(getattr(event, "widget", None))
         if dropdown is None:
             return "break"
         try:
