@@ -51,6 +51,9 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Cada card agora exibe status local do repositório com arquivos modificados quando houver alterações.
 - Log de performance em `performance.log` na raiz com timestamp, repositório e duração das operações monitoradas.
 - Novo argumento `--perf`: quando ativo, mostra bloco de performance na UI e grava métricas no `performance.log`; em execução padrão o bloco fica oculto e sem logging.
+- Log de performance agora inclui `trigger=` para indicar origem da ação (ex.: `status:auto_timer`, `status:repo_switch`) e passou a registrar também o `fetch` automático e o `fetch` de pré-commit+push.
+- Cobertura de performance ampliada para ações síncronas de usuário: stage/unstage (arquivo, linha, hunk), commit/undo, stash (rápido e janela), checkout/criação de branch, cherry-pick/reordenação no histórico, importação de commits e ação de merge/rebase/squash na aba Comparar.
+- Taxonomia de `trigger` padronizada para facilitar leitura no log: eventos principais em `area:acao` e recargas derivadas em `post_*`.
 - Otimizado painel de cards do workspace com cache e atualização leve de seleção para evitar recálculo completo a cada troca de repositório.
 - Cards do workspace agora têm combobox de branch por repositório para checkout rápido, clique simples para selecionar no app e duplo clique para selecionar + abrir no VS Code.
 - Nova barra fina de atividade no rodapé (fio azul) durante operações assíncronas para indicar carregamento em andamento.
