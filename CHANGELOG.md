@@ -46,6 +46,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Aba Repositórios ganhou painel de cards (2x4) com visão geral de favoritos/recentes, branch atual e ahead/behind por repositório.
 - Combobox de repositório voltou para a barra superior com visibilidade contextual: aparece fora da aba Repositórios e fica oculto dentro dela.
 - Barra superior reorganizada com ações de repositório no lado esquerdo e ações globais (Fetch/Pull/Push, Ahead/Behind e Perf) ancoradas à direita.
+- Ações de repositório migradas para menu de contexto (clique direito) no combobox global e nos cards da aba Repositórios, com abrir no VS Code, copiar caminho, abrir pasta e abrir no GitHub.
 - Cards da aba Repositórios agora têm rolagem contínua (sem limite fixo de 8) e card final "+1" para adicionar repositório.
 - Fluxo de clonagem saiu da barra superior e foi para modal aberto pelo card de adicionar repositório.
 - Cada card agora exibe status local do repositório com arquivos modificados quando houver alterações.
