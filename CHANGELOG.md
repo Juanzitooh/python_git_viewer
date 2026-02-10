@@ -29,6 +29,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com fluxo basico de Historico no PySide6: lista de commits com filtro por texto, detalhes do commit, arquivos alterados e patch por commit/arquivo com alternancia de diff por palavra.
 - M7 avancou com fluxo basico de Comparar no PySide6 e extensao de `viewer/core/branch_compare.py`, com origem/destino, resumo de diffs, commits, arquivos e patch por arquivo (incluindo diff por palavra).
 - M7 avancou com fluxo basico de Importar no PySide6: selecao de origem/branch, lista de commits e importacao por cherry-pick com atualizacao de status/historico/comparacao.
+- M7 avancou com Configuracoes basicas no PySide6: tema claro/escuro, limite de commits e raiz do workspace com persistencia em `settings.json` e aplicacao imediata.
 
 ## [0.2.0] - 2026-02-10
 

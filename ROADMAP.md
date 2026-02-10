@@ -204,6 +204,9 @@ Legenda
 - [x] R7.3.5 Portar fluxo basico de importacao para PySide6 (2026-02-10)
   Escopo: implementar na aba Importar do shell PySide6 selecao de repositorio/branch de origem, lista de commits e acao de importacao por cherry-pick no repositorio atual.
   Aceite: usuario consegue importar commits selecionados no PySide6 com feedback de progresso/erro e atualizacao das abas relacionadas.
+- [x] R7.3.6 Portar configuracoes basicas para PySide6 (2026-02-10)
+  Escopo: implementar na aba Configuracoes do shell PySide6 controles para tema, limite de commits e raiz do workspace com persistencia em settings.
+  Aceite: usuario consegue salvar configuracoes no PySide6 e ver efeito imediato no tema e no workspace.
 - [ ] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
