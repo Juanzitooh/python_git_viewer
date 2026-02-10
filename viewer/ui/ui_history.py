@@ -11,6 +11,14 @@ from ..core.cherry_pick_ops import (
     fetch_commit_from_source as core_fetch_commit_from_source,
     load_unmerged_conflict_files as core_load_unmerged_conflict_files,
 )
+from ..core.conflict_ops import (
+    abort_conflict_operation as core_abort_conflict_operation,
+    continue_conflict_operation as core_continue_conflict_operation,
+    git_ref_exists as core_git_ref_exists,
+    is_conflict_operation_in_progress as core_is_conflict_operation_in_progress,
+    is_rebase_in_progress as core_is_rebase_in_progress,
+    resolve_active_conflict_operation as core_resolve_active_conflict_operation,
+)
 from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
 from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
 from ..core.models import CommitFilters, CommitInfo, CommitSummary, FileStat
@@ -1819,48 +1827,20 @@ class HistoryTabMixin:
         return core_load_unmerged_conflict_files(self.repo_path)
 
     def _git_ref_exists(self, ref_name: str) -> bool:
-        try:
-            output = run_git(self.repo_path, ["rev-parse", "-q", "--verify", ref_name]).strip()
-        except RuntimeError:
-            return False
-        return bool(output)
+        return core_git_ref_exists(self.repo_path, ref_name)
 
     def _is_rebase_in_progress(self) -> bool:
-        try:
-            git_dir_output = run_git(self.repo_path, ["rev-parse", "--git-dir"]).strip()
-        except RuntimeError:
-            return False
-        if not git_dir_output:
-            return False
-        git_dir = git_dir_output
-        if not os.path.isabs(git_dir):
-            git_dir = os.path.normpath(os.path.join(self.repo_path, git_dir))
-        return os.path.isdir(os.path.join(git_dir, "rebase-merge")) or os.path.isdir(
-            os.path.join(git_dir, "rebase-apply")
-        )
+        return core_is_rebase_in_progress(self.repo_path)
 
     def _is_conflict_operation_in_progress(self, operation: str) -> bool:
         key = operation.strip().lower()
         if not self.repo_ready or not key:
             return False
-        if key == "cherry-pick":
-            return self._git_ref_exists("CHERRY_PICK_HEAD")
-        if key == "rebase":
-            return self._is_rebase_in_progress()
-        if key in {"merge", "squash_merge"}:
-            return self._git_ref_exists("MERGE_HEAD")
-        return False
+        return core_is_conflict_operation_in_progress(self.repo_path, key)
 
     def _resolve_active_conflict_operation(self) -> str:
         preferred = self.conflict_operation_key.strip().lower()
-        if preferred and self._is_conflict_operation_in_progress(preferred):
-            return preferred
-        for candidate in ("cherry-pick", "rebase", "merge"):
-            if self._is_conflict_operation_in_progress(candidate):
-                if candidate == "merge" and preferred == "squash_merge":
-                    return "squash_merge"
-                return candidate
-        return ""
+        return core_resolve_active_conflict_operation(self.repo_path, preferred=preferred)
 
     @staticmethod
     def _conflict_operation_display_label(operation: str) -> str:
@@ -1993,24 +1973,16 @@ class HistoryTabMixin:
         perf_trigger = f"conflicts:{operation}:continue"
         start = self._perf_start("Continuar conflitos", perf_trigger)
         try:
+            message = ""
+            if operation == "squash_merge":
+                message = self.conflict_continue_message.strip()
+                if not message and hasattr(self, "branch_message_var"):
+                    message = self.branch_message_var.get().strip()
+                if not message:
+                    messagebox.showwarning("Conflitos", "Informe a mensagem do commit de squash.")
+                    return
             try:
-                if operation == "cherry-pick":
-                    run_git(self.repo_path, ["cherry-pick", "--continue"])
-                elif operation == "rebase":
-                    run_git(self.repo_path, ["rebase", "--continue"])
-                elif operation == "merge":
-                    try:
-                        run_git(self.repo_path, ["merge", "--continue"])
-                    except RuntimeError:
-                        run_git(self.repo_path, ["commit", "--no-edit"])
-                else:
-                    message = self.conflict_continue_message.strip()
-                    if not message and hasattr(self, "branch_message_var"):
-                        message = self.branch_message_var.get().strip()
-                    if not message:
-                        messagebox.showwarning("Conflitos", "Informe a mensagem do commit de squash.")
-                        return
-                    run_git(self.repo_path, ["commit", "-m", message])
+                core_continue_conflict_operation(self.repo_path, operation, squash_message=message)
             except RuntimeError as exc:
                 messagebox.showerror("Conflitos", str(exc))
                 self._refresh_conflicts_tab(select_tab=False)
@@ -2036,12 +2008,7 @@ class HistoryTabMixin:
         start = self._perf_start("Abortar conflitos", perf_trigger)
         try:
             try:
-                if operation == "cherry-pick":
-                    run_git(self.repo_path, ["cherry-pick", "--abort"])
-                elif operation == "rebase":
-                    run_git(self.repo_path, ["rebase", "--abort"])
-                else:
-                    run_git(self.repo_path, ["merge", "--abort"])
+                core_abort_conflict_operation(self.repo_path, operation)
             except RuntimeError as exc:
                 messagebox.showerror("Conflitos", str(exc))
                 self._refresh_conflicts_tab(select_tab=False)
