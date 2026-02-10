@@ -222,7 +222,7 @@ class QtShellWindow(QMainWindow):
         self._build_history_tab()
         self._build_import_tab()
         self._build_compare_tab()
-        self._build_placeholder_tab(self.settings_tab, "Configuracoes")
+        self._build_settings_tab()
         self.tabs.currentChanged.connect(self._on_tab_changed)
         root_layout.addWidget(self.tabs, stretch=1)
 
@@ -1176,6 +1176,128 @@ class QtShellWindow(QMainWindow):
             self.compare_patch_view.setPlainText("")
             return
         self.compare_patch_view.setPlainText(patch or "(sem diff para este arquivo)")
+
+    def _build_settings_tab(self) -> None:
+        layout = QVBoxLayout(self.settings_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        theme_row = QWidget(self.settings_tab)
+        theme_layout = QHBoxLayout(theme_row)
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.setSpacing(6)
+        theme_layout.addWidget(QLabel("Tema:", theme_row))
+        self.settings_theme_combo = QComboBox(theme_row)
+        self.settings_theme_combo.addItem("Claro", "light")
+        self.settings_theme_combo.addItem("Escuro", "dark")
+        theme_layout.addWidget(self.settings_theme_combo)
+        theme_layout.addStretch(1)
+        layout.addWidget(theme_row)
+
+        limit_row = QWidget(self.settings_tab)
+        limit_layout = QHBoxLayout(limit_row)
+        limit_layout.setContentsMargins(0, 0, 0, 0)
+        limit_layout.setSpacing(6)
+        limit_layout.addWidget(QLabel("Limite padrão de commits:", limit_row))
+        self.settings_commit_limit_combo = QComboBox(limit_row)
+        for value in (50, 100, 200, 500, 1000):
+            self.settings_commit_limit_combo.addItem(str(value), value)
+        limit_layout.addWidget(self.settings_commit_limit_combo)
+        limit_layout.addStretch(1)
+        layout.addWidget(limit_row)
+
+        workspace_row = QWidget(self.settings_tab)
+        workspace_layout = QHBoxLayout(workspace_row)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(6)
+        workspace_layout.addWidget(QLabel("Raiz do workspace:", workspace_row))
+        self.settings_workspace_root_edit = QLineEdit(workspace_row)
+        workspace_layout.addWidget(self.settings_workspace_root_edit, stretch=1)
+        self.settings_workspace_root_pick_button = QPushButton("Pasta...", workspace_row)
+        self.settings_workspace_root_pick_button.clicked.connect(self._pick_settings_workspace_root)
+        workspace_layout.addWidget(self.settings_workspace_root_pick_button)
+        layout.addWidget(workspace_row)
+
+        actions_row = QWidget(self.settings_tab)
+        actions_layout = QHBoxLayout(actions_row)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
+        self.settings_save_button = QPushButton("Salvar configurações", actions_row)
+        self.settings_save_button.clicked.connect(self._save_settings_from_tab)
+        actions_layout.addWidget(self.settings_save_button)
+        actions_layout.addStretch(1)
+        layout.addWidget(actions_row)
+
+        self.settings_status_label = QLabel("Ajuste e salve as configurações.", self.settings_tab)
+        layout.addWidget(self.settings_status_label)
+        layout.addStretch(1)
+
+        self._load_settings_into_tab()
+
+    def _load_settings_into_tab(self) -> None:
+        if not hasattr(self, "settings_theme_combo"):
+            return
+        theme = str(self.settings_data.get("theme", "light"))
+        theme_index = self.settings_theme_combo.findData(theme)
+        if theme_index < 0:
+            theme_index = self.settings_theme_combo.findData("light")
+        if theme_index >= 0:
+            self.settings_theme_combo.setCurrentIndex(theme_index)
+
+        commit_limit_raw = self.settings_data.get("commit_limit", 100)
+        try:
+            commit_limit = int(commit_limit_raw)
+        except (TypeError, ValueError):
+            commit_limit = 100
+        limit_index = self.settings_commit_limit_combo.findData(commit_limit)
+        if limit_index < 0:
+            limit_index = self.settings_commit_limit_combo.findData(100)
+        if limit_index >= 0:
+            self.settings_commit_limit_combo.setCurrentIndex(limit_index)
+
+        workspace_root = str(self.settings_data.get("repo_scan_root", self.repo_scan_root)).strip()
+        if workspace_root:
+            workspace_root = normalize_repo_path(workspace_root)
+        else:
+            workspace_root = normalize_repo_path(default_repo_scan_root())
+        self.settings_workspace_root_edit.setText(workspace_root)
+
+    def _pick_settings_workspace_root(self) -> None:
+        current = self.settings_workspace_root_edit.text().strip() or self.repo_scan_root
+        selected = QFileDialog.getExistingDirectory(self, "Selecionar raiz do workspace", current)
+        if not selected:
+            return
+        normalized = normalize_repo_path(selected)
+        self.settings_workspace_root_edit.setText(normalized)
+
+    def _save_settings_from_tab(self) -> None:
+        theme_data = self.settings_theme_combo.currentData()
+        theme = str(theme_data).strip() if theme_data is not None else "light"
+        if theme not in ("light", "dark"):
+            theme = "light"
+
+        limit_data = self.settings_commit_limit_combo.currentData()
+        try:
+            commit_limit = int(limit_data)
+        except (TypeError, ValueError):
+            commit_limit = 100
+        commit_limit = max(1, commit_limit)
+
+        workspace_text = self.settings_workspace_root_edit.text().strip()
+        workspace_root = normalize_repo_path(workspace_text) if workspace_text else normalize_repo_path(default_repo_scan_root())
+
+        self.settings_data["theme"] = theme
+        self.settings_data["commit_limit"] = commit_limit
+        self.settings_data["repo_scan_root"] = workspace_root
+        self.repo_scan_root = workspace_root
+
+        self._persist_state()
+        self._apply_theme_from_settings()
+        self.workspace_root_edit.setText(self.repo_scan_root)
+        self._scan_workspace_repos()
+        self._reload_history_commits()
+        self.settings_status_label.setText("Configurações salvas.")
+        self._set_status("Configurações salvas.")
 
     def _collect_repo_paths_from_settings(self, key: str) -> list[str]:
         items = self.settings_data.get(key, [])
