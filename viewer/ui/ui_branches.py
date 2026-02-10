@@ -538,7 +538,25 @@ class BranchesTabMixin:
                     run_git(self.repo_path, ["commit", "-m", message])
             except RuntimeError as exc:
                 messagebox.showerror("Ação", str(exc))
-                self._show_conflicts_window()
+                has_conflicts = False
+                if hasattr(self, "_load_unmerged_conflict_files"):
+                    try:
+                        has_conflicts = bool(self._load_unmerged_conflict_files())
+                    except RuntimeError:
+                        has_conflicts = False
+                if has_conflicts:
+                    conflict_operation = "merge"
+                    conflict_message = ""
+                    if action == "Rebase":
+                        conflict_operation = "rebase"
+                    elif action == "Squash merge":
+                        conflict_operation = "squash_merge"
+                        conflict_message = message
+                    self._show_conflicts_window(
+                        operation=conflict_operation,
+                        source_label="Comparar",
+                        continue_message=conflict_message,
+                    )
                 return
             if hasattr(self, "_bump_repo_state"):
                 self._bump_repo_state()

@@ -1021,6 +1021,8 @@ class GlobalBarMixin:
     def _set_repo_path(self, path: str, initial: bool) -> bool:
         if hasattr(self, "_hide_hover_tooltip"):
             self._hide_hover_tooltip()
+        if hasattr(self, "_hide_conflicts_tab"):
+            self._hide_conflicts_tab(select_history=False)
         repo_path = os.path.abspath(path)
         if not os.path.isdir(repo_path) or not is_git_repo(repo_path):
             if not initial:
@@ -1068,6 +1070,8 @@ class GlobalBarMixin:
         return True
 
     def _set_repo_ui_no_repo(self) -> None:
+        if hasattr(self, "_hide_conflicts_tab"):
+            self._hide_conflicts_tab(select_history=False)
         self.repo_ready = False
         self.repo_path = ""
         if hasattr(self, "status_head_hash"):

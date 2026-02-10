@@ -150,6 +150,11 @@ class HistoryTabMixin:
         self._build_right_panel()
         paned.add(self.left_frame, weight=1)
         paned.add(self.right_frame, weight=3)
+        self.conflicts_refresh_job: str | None = None
+        self.conflict_operation_key = ""
+        self.conflict_source_label = ""
+        self.conflict_continue_message = ""
+        self._build_conflicts_tab()
 
     def _on_export_button_hover(self, event: tk.Event) -> None:
         self._show_hover_tooltip(
@@ -248,6 +253,67 @@ class HistoryTabMixin:
 
         details_paned.add(meta_frame, weight=1)
         details_paned.add(patch_frame, weight=3)
+
+    def _build_conflicts_tab(self) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        self.conflicts_tab = ttk.Frame(self.tabs)
+        self.conflicts_tab.grid_columnconfigure(0, weight=1)
+        self.conflicts_tab.grid_rowconfigure(2, weight=1)
+
+        header = ttk.Frame(self.conflicts_tab)
+        header.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        header.grid_columnconfigure(1, weight=1)
+        self.conflict_header_var = tk.StringVar(value="Conflitos")
+        ttk.Label(header, textvariable=self.conflict_header_var).grid(row=0, column=0, sticky="w")
+        self.conflict_count_var = tk.StringVar(value="Conflitos: 0")
+        ttk.Label(header, textvariable=self.conflict_count_var).grid(row=0, column=1, sticky="w", padx=(12, 0))
+        ttk.Button(header, text="Atualizar", command=self._refresh_conflicts_tab_manual).grid(row=0, column=2, sticky="e")
+
+        self.conflict_status_var = tk.StringVar(value="Sem conflitos ativos.")
+        ttk.Label(self.conflicts_tab, textvariable=self.conflict_status_var).grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=8,
+            pady=(0, 4),
+        )
+
+        list_frame = ttk.Frame(self.conflicts_tab)
+        list_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 4))
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(0, weight=1)
+        self.conflict_files_listbox = tk.Listbox(list_frame, activestyle="dotbox", exportselection=False)
+        self.conflict_files_listbox.grid(row=0, column=0, sticky="nsew")
+        self.conflict_files_listbox.bind("<<ListboxSelect>>", self._on_conflict_file_select)
+        self.conflict_files_listbox.bind("<Double-Button-1>", self._on_conflict_file_double_click)
+        conflict_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.conflict_files_listbox.yview)
+        conflict_scroll.grid(row=0, column=1, sticky="ns")
+        self.conflict_files_listbox.configure(yscrollcommand=conflict_scroll.set)
+
+        actions = ttk.Frame(self.conflicts_tab)
+        actions.grid(row=3, column=0, sticky="w", padx=8, pady=(0, 8))
+        self.conflicts_open_vscode_button = ttk.Button(
+            actions,
+            text="Abrir no VS Code",
+            command=self._open_selected_conflict_files_in_vscode,
+            state="disabled",
+        )
+        self.conflicts_open_vscode_button.grid(row=0, column=0, padx=(0, 6))
+        self.conflicts_abort_button = ttk.Button(
+            actions,
+            text="Abortar",
+            command=self._abort_conflict_operation,
+            state="disabled",
+        )
+        self.conflicts_abort_button.grid(row=0, column=1, padx=(0, 6))
+        self.conflicts_continue_button = ttk.Button(
+            actions,
+            text="Continuar",
+            command=self._continue_conflict_operation,
+            state="disabled",
+        )
+        self.conflicts_continue_button.grid(row=0, column=2, padx=(0, 6))
 
     def _open_filter_modal(self) -> None:
         existing = getattr(self, "filter_modal", None)
@@ -1074,19 +1140,28 @@ class HistoryTabMixin:
 
     def _open_cherry_pick_window(self) -> None:
         if not self.repo_ready:
-            messagebox.showinfo("Cherry-pick", "Selecione um repositório primeiro.")
+            messagebox.showinfo("Exportar", "Selecione um repositório primeiro.")
             return
         commits = self._get_selected_commits()
         if not commits:
-            messagebox.showinfo("Cherry-pick", "Selecione commits na aba Histórico.")
+            messagebox.showinfo("Exportar", "Selecione commits na aba Histórico.")
+            return
+        try:
+            branches = self._get_branches()
+        except RuntimeError as exc:
+            messagebox.showerror("Exportar", str(exc))
+            return
+        if len(branches) < 2:
+            messagebox.showinfo("Exportar", "É necessário ter pelo menos duas branches para exportar commits.")
             return
         current = self._get_current_branch()
-        branch_options = [branch for branch in self.branch_list if branch != current]
-        if not branch_options and current:
-            branch_options = [current]
+        branch_options = [branch for branch in branches if branch != current]
+        if not branch_options:
+            messagebox.showinfo("Exportar", "Selecione uma branch de destino diferente da branch atual.")
+            return
 
         window = tk.Toplevel(self)
-        window.title("Cherry-pick")
+        window.title("Exportar commits")
         window.geometry("700x500")
 
         frame = ttk.Frame(window)
@@ -1124,12 +1199,8 @@ class HistoryTabMixin:
                 badge_var.set("Destino não definido")
                 badge_label.configure(fg="#b42318")
                 return
-            if current and target == current:
-                badge_var.set("Aviso: destino = origem")
-                badge_label.configure(fg="#b42318")
-            else:
-                badge_var.set(f"Destino atual: {target}")
-                badge_label.configure(fg="#1a7f37")
+            badge_var.set(f"Destino atual: {target}")
+            badge_label.configure(fg="#1a7f37")
 
         update_badge()
         target_combo.bind("<<ComboboxSelected>>", lambda _e: update_badge())
@@ -1143,27 +1214,27 @@ class HistoryTabMixin:
             window.clipboard_append(hashes)
             window.update()
 
-        def run_cherry_pick() -> None:
+        def run_export() -> None:
             target = target_var.get().strip()
             if not target:
-                messagebox.showwarning("Cherry-pick", "Selecione a branch de destino.")
+                messagebox.showwarning("Exportar", "Selecione a branch de destino.")
                 return
             if not self._checkout_to_branch(target):
                 return
             applied: list[str] = []
-            perf_trigger = "history_cherry_pick:run"
-            start = self._perf_start("Cherry-pick", perf_trigger)
+            perf_trigger = "history_export:run"
+            start = self._perf_start("Exportar commits", perf_trigger)
             try:
                 for commit in commits:
                     try:
                         run_git(self.repo_path, ["cherry-pick", commit.commit_hash])
                     except RuntimeError as exc:
                         messagebox.showerror(
-                            "Cherry-pick",
-                            f"Falha ao aplicar {commit.commit_hash[:7]}.\n{exc}\n"
+                            "Exportar",
+                            f"Falha ao exportar {commit.commit_hash[:7]}.\n{exc}\n"
                             "Resolva conflitos e finalize ou aborte o cherry-pick.",
                         )
-                        self._show_conflicts_window()
+                        self._show_conflicts_window(operation="cherry-pick", source_label="Exportar")
                         break
                     applied.append(commit.commit_hash)
                 if applied:
@@ -1172,51 +1243,13 @@ class HistoryTabMixin:
                     self._reload_commits(trigger="post_history_cherry_pick")
                     self._refresh_status(trigger="post_history_cherry_pick")
                     self._update_pull_push_labels()
-                    self._set_status(f"Cherry-pick aplicado em {target}.")
+                    self._set_status(f"Exportação aplicada em {target}.")
                 window.destroy()
             finally:
-                self._perf_end("Cherry-pick", start, perf_trigger)
-
-        def abort_cherry_pick() -> None:
-            perf_trigger = "history_cherry_pick:abort"
-            start = self._perf_start("Cherry-pick", perf_trigger)
-            try:
-                try:
-                    run_git(self.repo_path, ["cherry-pick", "--abort"])
-                except RuntimeError as exc:
-                    messagebox.showerror("Cherry-pick", str(exc))
-                    return
-                if hasattr(self, "_bump_repo_state"):
-                    self._bump_repo_state()
-                self._set_status("Cherry-pick abortado.")
-                self._refresh_status(trigger="post_history_cherry_pick_abort")
-                self._update_pull_push_labels()
-            finally:
-                self._perf_end("Cherry-pick", start, perf_trigger)
-
-        def continue_cherry_pick() -> None:
-            perf_trigger = "history_cherry_pick:continue"
-            start = self._perf_start("Cherry-pick", perf_trigger)
-            try:
-                try:
-                    run_git(self.repo_path, ["cherry-pick", "--continue"])
-                except RuntimeError as exc:
-                    messagebox.showerror("Cherry-pick", str(exc))
-                    return
-                if hasattr(self, "_bump_repo_state"):
-                    self._bump_repo_state()
-                self._set_status("Cherry-pick continuado.")
-                self._reload_commits(trigger="post_history_cherry_pick_continue")
-                self._refresh_status(trigger="post_history_cherry_pick_continue")
-                self._update_pull_push_labels()
-            finally:
-                self._perf_end("Cherry-pick", start, perf_trigger)
+                self._perf_end("Exportar commits", start, perf_trigger)
 
         ttk.Button(actions, text="Copiar hashes", command=copy_hashes).grid(row=0, column=0, padx=(0, 6))
-        ttk.Button(actions, text="Cherry-pick", command=run_cherry_pick).grid(row=0, column=1, padx=(0, 6))
-        ttk.Button(actions, text="Abortar", command=abort_cherry_pick).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(actions, text="Continuar", command=continue_cherry_pick).grid(row=0, column=3, padx=(0, 6))
-        ttk.Button(actions, text="Fechar", command=window.destroy).grid(row=0, column=4)
+        ttk.Button(actions, text="Confirmar exportação", command=run_export).grid(row=0, column=1, padx=(0, 6))
 
     def _load_reorderable_local_commits(self) -> tuple[str, list[CommitSummary]]:
         if not self.repo_ready:
@@ -1554,7 +1587,7 @@ class HistoryTabMixin:
                         f"Falha ao aplicar {commit_hash[:7]}.\n{exc}\n"
                         "Resolva conflitos e finalize ou aborte o cherry-pick.",
                     )
-                    self._show_conflicts_window()
+                    self._show_conflicts_window(operation="cherry-pick", source_label="Importar")
                     break
                 applied.append(commit_hash)
 
@@ -1576,90 +1609,319 @@ class HistoryTabMixin:
     def _is_git_repo(self, path: str) -> bool:
         return is_git_repo(path)
 
-    def _show_conflicts_window(self) -> None:
+    def _is_conflicts_tab_visible(self) -> bool:
+        if not hasattr(self, "tabs") or not hasattr(self, "conflicts_tab"):
+            return False
         try:
-            output = run_git(self.repo_path, ["diff", "--name-only", "--diff-filter=U"])
+            tab_ids = tuple(str(tab_id) for tab_id in self.tabs.tabs())
+        except tk.TclError:
+            return False
+        return str(self.conflicts_tab) in tab_ids
+
+    def _ensure_conflicts_tab_visible(self, select: bool = True) -> None:
+        if not hasattr(self, "tabs") or not hasattr(self, "conflicts_tab"):
+            return
+        if not self._is_conflicts_tab_visible():
+            self.tabs.add(self.conflicts_tab, text="Conflitos")
+        if select:
+            self.tabs.select(self.conflicts_tab)
+            if hasattr(self, "_on_notebook_tab_changed"):
+                self._on_notebook_tab_changed()
+
+    def _hide_conflicts_tab(self, select_history: bool = True) -> None:
+        if self.conflicts_refresh_job is not None:
+            try:
+                self.after_cancel(self.conflicts_refresh_job)
+            except tk.TclError:
+                pass
+            self.conflicts_refresh_job = None
+        was_selected = False
+        if self._is_conflicts_tab_visible():
+            try:
+                was_selected = str(self.tabs.select()) == str(self.conflicts_tab)
+            except tk.TclError:
+                was_selected = False
+            try:
+                self.tabs.forget(self.conflicts_tab)
+            except tk.TclError:
+                pass
+        self.conflict_operation_key = ""
+        self.conflict_source_label = ""
+        self.conflict_continue_message = ""
+        if hasattr(self, "conflict_files_listbox"):
+            self.conflict_files_listbox.delete(0, tk.END)
+        if hasattr(self, "conflict_header_var"):
+            self.conflict_header_var.set("Conflitos")
+        if hasattr(self, "conflict_count_var"):
+            self.conflict_count_var.set("Conflitos: 0")
+        if hasattr(self, "conflict_status_var"):
+            self.conflict_status_var.set("Sem conflitos ativos.")
+        if hasattr(self, "conflicts_open_vscode_button"):
+            self.conflicts_open_vscode_button.configure(state="disabled")
+        if hasattr(self, "conflicts_abort_button"):
+            self.conflicts_abort_button.configure(state="disabled")
+        if hasattr(self, "conflicts_continue_button"):
+            self.conflicts_continue_button.configure(state="disabled")
+        if was_selected and select_history and hasattr(self, "_open_history_tab"):
+            self._open_history_tab()
+
+    def _schedule_conflicts_refresh(self, delay_ms: int = 1400) -> None:
+        if self.conflicts_refresh_job is not None:
+            try:
+                self.after_cancel(self.conflicts_refresh_job)
+            except tk.TclError:
+                pass
+            self.conflicts_refresh_job = None
+        if not self._is_conflicts_tab_visible():
+            return
+        self.conflicts_refresh_job = self.after(delay_ms, self._on_conflicts_refresh_timer)
+
+    def _on_conflicts_refresh_timer(self) -> None:
+        self.conflicts_refresh_job = None
+        if not self._is_conflicts_tab_visible():
+            return
+        self._refresh_conflicts_tab(select_tab=False)
+
+    def _refresh_conflicts_tab_manual(self) -> None:
+        self._refresh_conflicts_tab(select_tab=False)
+
+    def _load_unmerged_conflict_files(self) -> list[str]:
+        output = run_git(self.repo_path, ["diff", "--name-only", "--diff-filter=U"])
+        return [line.strip() for line in output.splitlines() if line.strip()]
+
+    def _git_ref_exists(self, ref_name: str) -> bool:
+        try:
+            output = run_git(self.repo_path, ["rev-parse", "-q", "--verify", ref_name]).strip()
+        except RuntimeError:
+            return False
+        return bool(output)
+
+    def _is_rebase_in_progress(self) -> bool:
+        try:
+            git_dir_output = run_git(self.repo_path, ["rev-parse", "--git-dir"]).strip()
+        except RuntimeError:
+            return False
+        if not git_dir_output:
+            return False
+        git_dir = git_dir_output
+        if not os.path.isabs(git_dir):
+            git_dir = os.path.normpath(os.path.join(self.repo_path, git_dir))
+        return os.path.isdir(os.path.join(git_dir, "rebase-merge")) or os.path.isdir(
+            os.path.join(git_dir, "rebase-apply")
+        )
+
+    def _is_conflict_operation_in_progress(self, operation: str) -> bool:
+        key = operation.strip().lower()
+        if not self.repo_ready or not key:
+            return False
+        if key == "cherry-pick":
+            return self._git_ref_exists("CHERRY_PICK_HEAD")
+        if key == "rebase":
+            return self._is_rebase_in_progress()
+        if key in {"merge", "squash_merge"}:
+            return self._git_ref_exists("MERGE_HEAD")
+        return False
+
+    def _resolve_active_conflict_operation(self) -> str:
+        preferred = self.conflict_operation_key.strip().lower()
+        if preferred and self._is_conflict_operation_in_progress(preferred):
+            return preferred
+        for candidate in ("cherry-pick", "rebase", "merge"):
+            if self._is_conflict_operation_in_progress(candidate):
+                if candidate == "merge" and preferred == "squash_merge":
+                    return "squash_merge"
+                return candidate
+        return ""
+
+    @staticmethod
+    def _conflict_operation_display_label(operation: str) -> str:
+        labels = {
+            "cherry-pick": "Cherry-pick",
+            "rebase": "Rebase",
+            "merge": "Merge",
+            "squash_merge": "Squash merge",
+        }
+        return labels.get(operation.strip().lower(), "Operação")
+
+    def _update_conflict_header(self, operation: str) -> None:
+        label = self._conflict_operation_display_label(operation)
+        source = self.conflict_source_label.strip()
+        if source:
+            self.conflict_header_var.set(f"Conflitos - {label} ({source})")
+        else:
+            self.conflict_header_var.set(f"Conflitos - {label}")
+
+    def _render_conflict_files(self, files: list[str]) -> None:
+        self.conflict_files_listbox.delete(0, tk.END)
+        for path in files:
+            self.conflict_files_listbox.insert(tk.END, path)
+        self._on_conflict_file_select(None)
+
+    def _refresh_conflicts_tab(self, select_tab: bool = False) -> None:
+        if not self.repo_ready:
+            self._hide_conflicts_tab(select_history=False)
+            return
+        try:
+            files = self._load_unmerged_conflict_files()
         except RuntimeError as exc:
+            self.conflict_status_var.set("Falha ao atualizar conflitos.")
             messagebox.showerror("Conflitos", str(exc))
             return
-        files = [line.strip() for line in output.splitlines() if line.strip()]
-        if not files:
-            messagebox.showinfo("Conflitos", "Nenhum conflito detectado.")
+        operation = self._resolve_active_conflict_operation()
+        if operation:
+            self.conflict_operation_key = operation
+        elif not self.conflict_operation_key:
+            self.conflict_operation_key = "cherry-pick"
+        in_progress = bool(operation)
+        self._ensure_conflicts_tab_visible(select=select_tab)
+        self._update_conflict_header(self.conflict_operation_key)
+        self.conflict_count_var.set(f"Conflitos: {len(files)}")
+        self._render_conflict_files(files)
+        if files:
+            self.conflict_status_var.set(
+                f"{len(files)} arquivo(s) em conflito. Resolva e use duplo clique para abrir no VS Code."
+            )
+        elif in_progress:
+            self.conflict_status_var.set("Sem conflitos pendentes. Clique em Continuar para finalizar a operação.")
+        else:
+            self.conflict_status_var.set("Sem conflitos ativos.")
+            self._hide_conflicts_tab(select_history=True)
             return
+        self.conflicts_abort_button.configure(state="normal" if in_progress else "disabled")
+        self.conflicts_continue_button.configure(state="normal" if in_progress and not files else "disabled")
+        self._schedule_conflicts_refresh()
 
-        window = tk.Toplevel(self)
-        window.title("Conflitos")
-        window.geometry("600x400")
+    def _show_conflicts_window(
+        self,
+        operation: str = "cherry-pick",
+        source_label: str = "",
+        continue_message: str = "",
+    ) -> None:
+        if not self.repo_ready:
+            return
+        normalized_operation = operation.strip().lower() or "cherry-pick"
+        if normalized_operation not in {"cherry-pick", "rebase", "merge", "squash_merge"}:
+            normalized_operation = "cherry-pick"
+        self.conflict_operation_key = normalized_operation
+        self.conflict_source_label = source_label.strip()
+        self.conflict_continue_message = continue_message.strip()
+        self._refresh_conflicts_tab(select_tab=True)
 
-        frame = ttk.Frame(window)
-        frame.pack(fill="both", expand=True, padx=8, pady=8)
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(1, weight=1)
+    def _on_conflict_file_select(self, _event: tk.Event | None) -> None:
+        if not hasattr(self, "conflicts_open_vscode_button"):
+            return
+        selected = bool(self._selected_conflict_files())
+        self.conflicts_open_vscode_button.configure(state="normal" if selected else "disabled")
 
-        ttk.Label(frame, text=f"Conflitos: {len(files)}").grid(row=0, column=0, sticky="w")
+    def _selected_conflict_files(self) -> list[str]:
+        if not hasattr(self, "conflict_files_listbox"):
+            return []
+        selected_files: list[str] = []
+        for index in self.conflict_files_listbox.curselection():
+            selected_files.append(str(self.conflict_files_listbox.get(index)))
+        return selected_files
 
-        listbox = tk.Listbox(frame, selectmode="extended")
-        listbox.grid(row=1, column=0, sticky="nsew")
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=listbox.yview)
-        scroll.grid(row=1, column=1, sticky="ns")
-        listbox.configure(yscrollcommand=scroll.set)
+    def _on_conflict_file_double_click(self, event: tk.Event) -> None:
+        if not hasattr(self, "conflict_files_listbox"):
+            return
+        size = self.conflict_files_listbox.size()
+        if size <= 0:
+            return
+        index = self.conflict_files_listbox.nearest(event.y)
+        if index < 0 or index >= size:
+            return
+        path = str(self.conflict_files_listbox.get(index)).strip()
+        if not path:
+            return
+        self._open_repo_file_in_vscode(path)
 
-        for item in files:
-            listbox.insert(tk.END, item)
-
-        actions = ttk.Frame(frame)
-        actions.grid(row=2, column=0, sticky="w", pady=(8, 0))
-
-        def open_in_vscode() -> None:
-            selection = listbox.curselection()
-            if not selection:
-                messagebox.showinfo("Conflitos", "Selecione arquivos para abrir.")
+    def _open_selected_conflict_files_in_vscode(self) -> None:
+        paths = self._selected_conflict_files()
+        if not paths:
+            messagebox.showinfo("Conflitos", "Selecione arquivos para abrir.")
+            return
+        for path in paths:
+            if not self._open_repo_file_in_vscode(path):
                 return
-            for index in selection:
-                path = listbox.get(index)
-                if not self._open_repo_file_in_vscode(path):
-                    return
 
-        def abort_cherry_pick() -> None:
-            perf_trigger = "history_conflicts:abort"
-            start = self._perf_start("Cherry-pick", perf_trigger)
-            try:
-                try:
-                    run_git(self.repo_path, ["cherry-pick", "--abort"])
-                except RuntimeError as exc:
-                    messagebox.showerror("Cherry-pick", str(exc))
-                    return
-                if hasattr(self, "_bump_repo_state"):
-                    self._bump_repo_state()
-                self._set_status("Cherry-pick abortado.")
-                self._refresh_status(trigger="post_history_conflicts_abort")
-                self._update_pull_push_labels()
-            finally:
-                self._perf_end("Cherry-pick", start, perf_trigger)
+    def _sync_after_conflict_operation(self, trigger: str) -> None:
+        if hasattr(self, "_bump_repo_state"):
+            self._bump_repo_state()
+        self._reload_commits(trigger=trigger)
+        self._refresh_status(trigger=trigger)
+        self._refresh_branches(trigger=trigger)
+        self._update_pull_push_labels()
+        if hasattr(self, "_refresh_branch_comparison"):
+            self._refresh_branch_comparison()
+        if hasattr(self, "_update_import_controls_state"):
+            self._update_import_controls_state()
 
-        def continue_cherry_pick() -> None:
-            perf_trigger = "history_conflicts:continue"
-            start = self._perf_start("Cherry-pick", perf_trigger)
+    def _continue_conflict_operation(self) -> None:
+        operation = self._resolve_active_conflict_operation()
+        if not operation:
+            self._refresh_conflicts_tab(select_tab=False)
+            return
+        perf_trigger = f"conflicts:{operation}:continue"
+        start = self._perf_start("Continuar conflitos", perf_trigger)
+        try:
             try:
-                try:
+                if operation == "cherry-pick":
                     run_git(self.repo_path, ["cherry-pick", "--continue"])
-                except RuntimeError as exc:
-                    messagebox.showerror("Cherry-pick", str(exc))
-                    return
-                if hasattr(self, "_bump_repo_state"):
-                    self._bump_repo_state()
-                self._set_status("Cherry-pick continuado.")
-                self._reload_commits(trigger="post_history_conflicts_continue")
-                self._refresh_status(trigger="post_history_conflicts_continue")
-                self._update_pull_push_labels()
-                window.destroy()
-            finally:
-                self._perf_end("Cherry-pick", start, perf_trigger)
+                elif operation == "rebase":
+                    run_git(self.repo_path, ["rebase", "--continue"])
+                elif operation == "merge":
+                    try:
+                        run_git(self.repo_path, ["merge", "--continue"])
+                    except RuntimeError:
+                        run_git(self.repo_path, ["commit", "--no-edit"])
+                else:
+                    message = self.conflict_continue_message.strip()
+                    if not message and hasattr(self, "branch_message_var"):
+                        message = self.branch_message_var.get().strip()
+                    if not message:
+                        messagebox.showwarning("Conflitos", "Informe a mensagem do commit de squash.")
+                        return
+                    run_git(self.repo_path, ["commit", "-m", message])
+            except RuntimeError as exc:
+                messagebox.showerror("Conflitos", str(exc))
+                self._refresh_conflicts_tab(select_tab=False)
+                return
+            self._set_status(f"{self._conflict_operation_display_label(operation)} continuado.")
+            self._sync_after_conflict_operation(trigger=f"post_conflicts_continue_{operation}")
+            self._refresh_conflicts_tab(select_tab=False)
+        finally:
+            self._perf_end("Continuar conflitos", start, perf_trigger)
 
-        ttk.Button(actions, text="Abrir no VS Code", command=open_in_vscode).grid(row=0, column=0, padx=(0, 6))
-        ttk.Button(actions, text="Abortar", command=abort_cherry_pick).grid(row=0, column=1, padx=(0, 6))
-        ttk.Button(actions, text="Continuar", command=continue_cherry_pick).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(actions, text="Fechar", command=window.destroy).grid(row=0, column=3)
+    def _abort_conflict_operation(self) -> None:
+        operation = self._resolve_active_conflict_operation()
+        if not operation:
+            self._refresh_conflicts_tab(select_tab=False)
+            return
+        confirm = messagebox.askyesno(
+            "Conflitos",
+            f"Abortar {self._conflict_operation_display_label(operation)} em andamento?",
+        )
+        if not confirm:
+            return
+        perf_trigger = f"conflicts:{operation}:abort"
+        start = self._perf_start("Abortar conflitos", perf_trigger)
+        try:
+            try:
+                if operation == "cherry-pick":
+                    run_git(self.repo_path, ["cherry-pick", "--abort"])
+                elif operation == "rebase":
+                    run_git(self.repo_path, ["rebase", "--abort"])
+                else:
+                    run_git(self.repo_path, ["merge", "--abort"])
+            except RuntimeError as exc:
+                messagebox.showerror("Conflitos", str(exc))
+                self._refresh_conflicts_tab(select_tab=False)
+                return
+            self._set_status(f"{self._conflict_operation_display_label(operation)} abortado.")
+            self._sync_after_conflict_operation(trigger=f"post_conflicts_abort_{operation}")
+            self._refresh_conflicts_tab(select_tab=False)
+        finally:
+            self._perf_end("Abortar conflitos", start, perf_trigger)
 
     def _get_tags(self) -> list[str]:
         output = run_git(self.repo_path, ["tag", "--list"])

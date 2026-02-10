@@ -439,7 +439,7 @@ class ImportTabMixin:
                         ),
                     )
                     if self._has_unmerged_conflicts() and hasattr(self, "_show_conflicts_window"):
-                        self._show_conflicts_window()
+                        self._show_conflicts_window(operation="cherry-pick", source_label="Importar")
                     self.import_status_var.set(f"Importação interrompida após {applied} commit(s).")
                     self._update_import_controls_state()
                     return

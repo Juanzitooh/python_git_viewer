@@ -238,6 +238,8 @@ class CommitsViewer(
             self._startup_poll_job = None
         if hasattr(self, "_dismiss_repo_context_menu"):
             self._dismiss_repo_context_menu(close_dropdown=True)
+        if hasattr(self, "_hide_conflicts_tab"):
+            self._hide_conflicts_tab(select_history=False)
         self._hide_hover_tooltip()
         if hasattr(self, "tabs"):
             try:
