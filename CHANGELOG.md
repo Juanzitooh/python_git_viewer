@@ -9,6 +9,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Fluxos GitHub ganharam utilitários para abrir repositório, commit e página de PR com URL montada a partir do `origin`.
 - Menu de contexto de repositorios (cards e combobox) agora inclui atalhos de navegacao GitHub para branch atual, commits da branch, issues, actions e releases.
 - Menus de contexto agora permitem copiar URL do repositorio, URL da branch atual e URL do commit selecionado no GitHub.
+- Acoes de GitHub no menu de repositorio foram consolidadas em submenu unico para cards e combobox, reduzindo ruido visual e mantendo consistencia.
 
 ## [0.2.0] - 2026-02-10
 

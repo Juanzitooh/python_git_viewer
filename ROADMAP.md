@@ -126,7 +126,7 @@ Legenda
 - [x] R6.9.1 Copiar links GitHub prontos (repo/branch/commit) (2026-02-10)
   Escopo: incluir acoes de copia para URL do repositorio, URL da branch atual e URL de commit selecionado, aproveitando os utilitarios existentes de normalizacao do `origin`.
   Aceite: links copiados para clipboard funcionam diretamente no navegador e refletem o repo/branch/commit correto.
-- [ ] R6.9.2 Menu GitHub consolidado nas acoes de repositorio
+- [x] R6.9.2 Menu GitHub consolidado nas acoes de repositorio (2026-02-10)
   Escopo: organizar atalhos de navegador em um grupo consistente no menu de contexto de cards e combobox de repositorio, evitando duplicacao de comandos na barra superior.
   Aceite: menus de contexto ficam consistentes entre abas e centralizam todas as acoes de GitHub sem poluir a UI.
 - [x] R6.7 Aba Commit com stage/unstage por interacao direta (2026-02-08)
