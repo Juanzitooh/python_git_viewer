@@ -27,6 +27,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na migracao de abas com Repositorios funcional no PySide6: raiz de workspace configuravel, scan/reescanear, lista com branch+ahead/behind+status e selecao direta do repositorio ativo.
 - M7 avancou com fluxo basico de Commit no PySide6 e novo `viewer/core/commit_ops.py`: lista de arquivos modificados com selecao, titulo obrigatorio, descricao opcional e criacao de commit via core.
 - M7 avancou com fluxo basico de Historico no PySide6: lista de commits com filtro por texto, detalhes do commit, arquivos alterados e patch por commit/arquivo com alternancia de diff por palavra.
+- M7 avancou com fluxo basico de Comparar no PySide6 e extensao de `viewer/core/branch_compare.py`, com origem/destino, resumo de diffs, commits, arquivos e patch por arquivo (incluindo diff por palavra).
 
 ## [0.2.0] - 2026-02-10
 

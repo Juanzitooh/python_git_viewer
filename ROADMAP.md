@@ -198,6 +198,9 @@ Legenda
 - [x] R7.3.3 Portar fluxo basico de historico para PySide6 (2026-02-10)
   Escopo: implementar na aba Historico do shell PySide6 a lista de commits com filtro por texto, painel de detalhes, arquivos do commit e visualizacao de patch com opcao de diff por palavra.
   Aceite: usuario consegue navegar commits, filtrar por texto e inspecionar patch por commit/arquivo no PySide6.
+- [x] R7.3.4 Portar fluxo basico de comparacao para PySide6 (2026-02-10)
+  Escopo: implementar na aba Comparar do shell PySide6 selecao de origem/destino, resumo de diferencas, lista de commits, lista de arquivos e patch por arquivo com opcao de diff por palavra.
+  Aceite: usuario consegue comparar branches no PySide6 com visao de commits/arquivos/patch e indicadores basicos de ahead-behind e possivel conflito.
 - [ ] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
