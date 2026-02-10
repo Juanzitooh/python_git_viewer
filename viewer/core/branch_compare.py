@@ -43,6 +43,27 @@ def load_compare_file_stats(repo_path: str, origin: str, dest: str) -> tuple[lis
     return stats, totals
 
 
+def load_compare_file_patch(
+    repo_path: str,
+    origin: str,
+    dest: str,
+    *,
+    path: str = "",
+    word_diff: bool = False,
+    unified_zero: bool = False,
+) -> str:
+    args = ["diff"]
+    if unified_zero:
+        args.append("--unified=0")
+    if word_diff:
+        args.append("--word-diff=plain")
+    args.append(f"{dest}...{origin}")
+    relative = path.strip()
+    if relative:
+        args.extend(["--", relative])
+    return run_git(repo_path, args)
+
+
 def get_ahead_behind_between(repo_path: str, origin: str, dest: str) -> tuple[int, int]:
     try:
         output = run_git(repo_path, ["rev-list", "--left-right", "--count", f"{origin}...{dest}"])
