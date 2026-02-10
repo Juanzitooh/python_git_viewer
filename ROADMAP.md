@@ -168,6 +168,9 @@ Legenda
 - [x] R7.1.7 Extrair operacoes de cherry-pick/conflito para o core (2026-02-10)
   Escopo: mover fetch de commit para importacao, cherry-pick unitario e leitura de arquivos em conflito para modulo `viewer/core`.
   Aceite: Historico e Importar reutilizam operacoes de cherry-pick/conflito sem comandos Git inline nessas rotas principais.
+- [x] R7.1.8 Extrair controle de continuidade/abort de conflito para o core (2026-02-10)
+  Escopo: mover deteccao de operacao em conflito e comandos de continuar/abortar (cherry-pick, rebase, merge/squash) para modulo central em `viewer/core`.
+  Aceite: aba Historico delega o ciclo de conflito ao core e mantém somente validação de UX/feedback.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
