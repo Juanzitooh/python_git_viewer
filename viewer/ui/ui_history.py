@@ -786,6 +786,10 @@ class HistoryTabMixin:
             command=lambda selected_hash=commit_hash: self._copy_selected_commit_hash(selected_hash),
         )
         menu.add_command(
+            label="Abrir commit no GitHub",
+            command=lambda selected_hash=commit_hash: self._open_commit_in_github(selected_hash, self.repo_path),
+        )
+        menu.add_command(
             label="Copiar lista de arquivos",
             command=lambda selected_hash=commit_hash: self._copy_files_list(selected_hash),
         )

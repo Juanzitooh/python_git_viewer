@@ -95,6 +95,9 @@ class CommitTabMixin:
         )
         self.undo_commit_button.bind("<Enter>", self._on_undo_commit_button_hover, add=True)
         self.undo_commit_button.bind("<Leave>", self._hide_hover_tooltip, add=True)
+        self.open_pr_button = ttk.Button(commit_buttons, text="Abrir PR", command=self._open_commit_pr_in_github)
+        self.open_pr_button.grid(row=0, column=4, padx=(6, 0))
+        self.open_pr_button.grid_remove()
 
         diff_frame = ttk.Frame(paned)
         diff_frame.grid_columnconfigure(0, weight=1)
@@ -267,6 +270,7 @@ class CommitTabMixin:
                 self.status_toggle_columns[item_index] = (0, len(staged_label))
         if hasattr(self, "stage_count_var"):
             self.stage_count_var.set(f"Selecionados: {staged_count}/{total}")
+        self._update_open_pr_button_visibility(total)
         if total == 0:
             self.status_auto_stage_disabled = False
         selected_index: int | None = None
@@ -343,6 +347,20 @@ class CommitTabMixin:
             self._refresh_branches()
         if hasattr(self, "_update_pull_push_labels"):
             self._update_pull_push_labels()
+
+    def _update_open_pr_button_visibility(self, total_entries: int | None = None) -> None:
+        if not hasattr(self, "open_pr_button"):
+            return
+        if not self.repo_ready:
+            self.open_pr_button.grid_remove()
+            return
+        if total_entries is None:
+            total_entries = len(getattr(self, "status_items", {}))
+        if total_entries == 0:
+            self.open_pr_button.grid()
+            self.open_pr_button.configure(state="normal")
+            return
+        self.open_pr_button.grid_remove()
 
     def _find_status_index_by_path(self, path_for_git: str) -> int | None:
         if not path_for_git:
@@ -1606,3 +1624,21 @@ class CommitTabMixin:
 
         ttk.Button(actions, text="Cancelar", command=window.destroy).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(actions, text="Desfazer commit", command=execute).grid(row=0, column=1)
+
+    def _open_commit_pr_in_github(self) -> None:
+        if not self.repo_ready:
+            messagebox.showinfo("PR", "Selecione um repositório válido antes de abrir PR.")
+            return
+        try:
+            if self._is_dirty():
+                messagebox.showinfo("PR", "Finalize o stage/commit antes de abrir a PR.")
+                self._update_open_pr_button_visibility(len(self.status_items))
+                return
+        except RuntimeError as exc:
+            messagebox.showerror("PR", str(exc))
+            return
+        opened = False
+        if hasattr(self, "_open_pr_on_github"):
+            opened = self._open_pr_on_github(self.repo_path)
+        if opened:
+            self._set_status("Página de PR aberta no GitHub.")
