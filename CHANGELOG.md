@@ -18,6 +18,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com `viewer/core/repo_state.py`, centralizando estado de repositorio (branches, branch atual, dirty, upstream e ahead/behind) consumido pela barra global.
 - M7 avancou com `viewer/core/branch_ops.py`, centralizando checkout/criacao de branch e stash previo para checkout fora da camada de UI.
 - M7 avancou com `viewer/core/commit_content.py`, centralizando resolucao de hash e leitura de arquivos/patch de commits para Historico, Importar e Comparar.
+- M7 avancou com `viewer/core/cherry_pick_ops.py`, centralizando fetch/cherry-pick de commits e leitura de arquivos em conflito para Historico e Importar.
 
 ## [0.2.0] - 2026-02-10
 
