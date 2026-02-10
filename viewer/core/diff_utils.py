@@ -107,10 +107,12 @@ def parse_diff_data(diff_text: str) -> DiffData:
     return DiffData(header_lines=header_lines, hunks=hunks)
 
 
-def build_line_map(diff_data: DiffData) -> dict[int, DiffLineInfo]:
+def build_line_map(diff_data: DiffData, include_hunk_headers: bool = False) -> dict[int, DiffLineInfo]:
     line_map: dict[int, DiffLineInfo] = {}
     line_index = 1
     for hunk in diff_data.hunks:
+        if include_hunk_headers:
+            line_index += 1
         for info in hunk.lines:
             line_map[line_index] = info
             line_index += 1
@@ -235,9 +237,15 @@ def render_patch_to_widget(
     read_only: bool,
     show_file_headers: bool,
     word_diff: bool,
+    line_marker: str = "",
+    show_hunk_headers: bool = False,
+    hunk_marker: str = "",
+    hunk_markers: list[str] | None = None,
+    append: bool = False,
 ) -> None:
     widget.configure(state="normal")
-    widget.delete("1.0", tk.END)
+    if not append:
+        widget.delete("1.0", tk.END)
 
     if not patch.strip():
         widget.insert(tk.END, "(sem diff)")
@@ -248,6 +256,11 @@ def render_patch_to_widget(
     old_line = 0
     new_line = 0
     in_hunk = False
+
+    marker_prefix = f"{line_marker} " if line_marker else ""
+    marker_padding = " " * len(marker_prefix)
+    fallback_hunk_prefix = f"{hunk_marker} " if hunk_marker else marker_padding
+    hunk_index = 0
 
     for raw_line in patch.splitlines():
         if raw_line.startswith("diff --git"):
@@ -265,6 +278,16 @@ def render_patch_to_widget(
         if raw_line.startswith("@@"):
             old_line, new_line = parse_hunk_header(raw_line)
             in_hunk = True
+            if show_hunk_headers:
+                current_hunk_marker = hunk_marker
+                if hunk_markers is not None and hunk_index < len(hunk_markers):
+                    current_hunk_marker = hunk_markers[hunk_index]
+                if current_hunk_marker:
+                    hunk_prefix = f"{current_hunk_marker} "
+                else:
+                    hunk_prefix = fallback_hunk_prefix
+                widget.insert(tk.END, f"{hunk_prefix}\n", "meta")
+            hunk_index += 1
             continue
         if raw_line.startswith("\\ No newline at end of file"):
             continue
@@ -273,7 +296,7 @@ def render_patch_to_widget(
             content = raw_line[1:]
             insert_line_with_word_diff(
                 widget,
-                f"{old_line:>6} - ",
+                f"{marker_prefix}{old_line:>6} - ",
                 content,
                 base_tag="removed",
                 word_diff=word_diff,
@@ -284,7 +307,7 @@ def render_patch_to_widget(
             content = raw_line[1:]
             insert_line_with_word_diff(
                 widget,
-                f"{new_line:>6} + ",
+                f"{marker_prefix}{new_line:>6} + ",
                 content,
                 base_tag="added",
                 word_diff=word_diff,
@@ -295,7 +318,7 @@ def render_patch_to_widget(
             content = raw_line[1:]
             insert_line_with_word_diff(
                 widget,
-                f"{old_line:>6}   ",
+                f"{marker_padding}{old_line:>6}   ",
                 content,
                 base_tag="",
                 word_diff=word_diff,
@@ -307,7 +330,7 @@ def render_patch_to_widget(
         if word_diff and in_hunk and line_has_word_markers(raw_line):
             insert_line_with_word_diff(
                 widget,
-                f"{old_line:>6}   ",
+                f"{marker_padding}{old_line:>6}   ",
                 raw_line,
                 base_tag="",
                 word_diff=True,

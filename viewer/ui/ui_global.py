@@ -1096,6 +1096,20 @@ class GlobalBarMixin:
         self.load_patch_button.grid_remove()
         self.worktree_diff_data = None
         self.worktree_line_map.clear()
+        if hasattr(self, "worktree_hunk_marker_map"):
+            self.worktree_hunk_marker_map.clear()
+        if hasattr(self, "worktree_line_scope_map"):
+            self.worktree_line_scope_map.clear()
+        if hasattr(self, "worktree_diff_data_by_scope"):
+            self.worktree_diff_data_by_scope.clear()
+        if hasattr(self, "status_refresh_debounce_job") and self.status_refresh_debounce_job is not None:
+            try:
+                self.after_cancel(self.status_refresh_debounce_job)
+            except tk.TclError:
+                pass
+            self.status_refresh_debounce_job = None
+        if hasattr(self, "status_refresh_debounce_trigger"):
+            self.status_refresh_debounce_trigger = ""
         self.worktree_diff_scope = ""
         self._update_worktree_diff_actions()
         if hasattr(self, "stage_count_var"):

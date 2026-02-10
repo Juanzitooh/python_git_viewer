@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from collections import Counter
 import os
 import subprocess
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import messagebox, ttk
 
 from ..core.diff_utils import build_line_map, build_patch_for_hunk, build_patch_for_line, parse_diff_data, render_patch_to_widget
@@ -120,21 +122,12 @@ class CommitTabMixin:
         diff_header.grid(row=0, column=0, sticky="ew")
         diff_header.grid_columnconfigure(0, weight=1)
         ttk.Label(diff_header, text="Diff do arquivo selecionado:").grid(row=0, column=0, sticky="w")
-        self.diff_scope_combo = ttk.Combobox(
-            diff_header,
-            textvariable=self.diff_scope_var,
-            state="readonly",
-            width=10,
-            values=["Unstaged", "Staged"],
-        )
-        self.diff_scope_combo.grid(row=0, column=1, padx=(8, 0))
-        self.diff_scope_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_worktree_diff_from_selection())
         ttk.Checkbutton(
             diff_header,
             text="Diff por palavra",
             variable=self.word_diff_var,
             command=self._toggle_word_diff,
-        ).grid(row=0, column=2, padx=(8, 0))
+        ).grid(row=0, column=1, padx=(8, 0))
         self.worktree_diff_text = tk.Text(diff_frame, wrap="none")
         self.worktree_diff_text.grid(row=1, column=0, sticky="nsew")
         diff_scroll = ttk.Scrollbar(diff_frame, orient="vertical", command=self.worktree_diff_text.yview)
@@ -165,6 +158,17 @@ class CommitTabMixin:
 
         self.status_items: dict[str, dict[str, str | bool]] = {}
         self.status_header_actions: dict[int, tuple[str, str]] = {}
+        self.status_toggle_columns: dict[int, tuple[int, int]] = {}
+        self.worktree_hunk_marker_map: dict[int, tuple[str, int]] = {}
+        self.worktree_hunk_patch_map: dict[int, str] = {}
+        self.worktree_line_scope_map: dict[int, str] = {}
+        self.worktree_line_patch_map: dict[int, str] = {}
+        self.worktree_diff_data_by_scope: dict[str, DiffData] = {}
+        self.preserve_worktree_diff_on_status_refresh = False
+        self.worktree_toggle_busy = False
+        self.status_refresh_pending_trigger = ""
+        self.status_refresh_debounce_job: str | None = None
+        self.status_refresh_debounce_trigger = ""
         self.status_auto_stage_disabled = False
         self.status_focus_path = ""
         self.status_click_job: str | None = None
@@ -175,10 +179,13 @@ class CommitTabMixin:
         self._refresh_status(trigger="commit_tab_init")
 
     def _refresh_status(self, trigger: str = "") -> None:
-        if not self.repo_ready or self.status_loading:
+        if not self.repo_ready:
+            return
+        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
+        if self.status_loading:
+            self.status_refresh_pending_trigger = normalized_trigger
             return
         self.status_loading = True
-        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
         perf_trigger = f"status:{normalized_trigger}"
 
         def task() -> tuple[list[dict[str, str | bool]], str]:
@@ -191,13 +198,24 @@ class CommitTabMixin:
 
         def success(entries: object) -> None:
             self.status_loading = False
+            preserve_flag = bool(getattr(self, "preserve_worktree_diff_on_status_refresh", False))
             status_entries, head_hash = entries  # type: ignore[misc]
             normalized_entries = self._maybe_stage_entries_by_default(list(status_entries))
             self._render_status_entries(normalized_entries)
             self._handle_status_head_update(str(head_hash))
+            pending = self.status_refresh_pending_trigger.strip()
+            self.status_refresh_pending_trigger = ""
+            if pending:
+                if preserve_flag:
+                    self.preserve_worktree_diff_on_status_refresh = True
+                self._refresh_status(trigger=pending)
 
         def error(exc: Exception) -> None:
             self.status_loading = False
+            pending = self.status_refresh_pending_trigger.strip()
+            self.status_refresh_pending_trigger = ""
+            if pending:
+                self._refresh_status(trigger=pending)
             messagebox.showerror("Erro", str(exc))
 
         self._run_async("status", "Atualizar status", task, success, error, perf_trigger=perf_trigger)
@@ -207,6 +225,7 @@ class CommitTabMixin:
         self.status_items.clear()
         self.status_headers = set()
         self.status_header_actions = {}
+        self.status_toggle_columns: dict[int, tuple[int, int]] = {}
         signature = "|".join(
             f"{entry.get('status')}:{entry.get('path_for_git')}:{'1' if entry.get('staged') else '0'}"
             for entry in entries
@@ -228,23 +247,18 @@ class CommitTabMixin:
         total = len(entries)
         staged_count = 0
         for entry in entries:
-            if bool(entry.get("staged", False)):
+            if self._entry_has_staged_part(entry):
                 staged_count += 1
 
         all_index = self.status_listbox.size()
-        all_marker = self._stage_marker(staged_count, total)
+        all_marker = self._entries_stage_marker(entries)
         self.status_listbox.insert(tk.END, f"{all_marker} (todos)")
         self.status_headers.add(all_index)
         self.status_header_actions[all_index] = ("all", "")
 
         for folder in sorted_folders:
             folder_entries = grouped[folder]
-            folder_total = len(folder_entries)
-            folder_staged = 0
-            for entry in folder_entries:
-                if bool(entry.get("staged", False)):
-                    folder_staged += 1
-            folder_marker = self._stage_marker(folder_staged, folder_total)
+            folder_marker = self._entries_stage_marker(folder_entries)
             folder_text = f"{folder}/" if folder else "(root)"
             header_text = f"{folder_marker} {folder_text}"
             header_index = self.status_listbox.size()
@@ -253,16 +267,22 @@ class CommitTabMixin:
             self.status_header_actions[header_index] = ("folder", folder)
 
             folder_entries.sort(key=lambda item: str(item["path_for_git"]))
+            visible_chars = self._status_list_visible_char_capacity()
             for entry in folder_entries:
-                staged_label = "[x]" if entry["staged"] else "[ ]"
+                staged_label = self._entry_stage_marker(entry)
                 display_path = str(entry["path"])
                 leaf = display_path.split("/")[-1]
                 if " -> " in display_path:
                     leaf = display_path
-                line = f"  {entry['status']:>2} {staged_label} {leaf}"
+                line_prefix = f"{staged_label} {entry['status']:>2} "
+                max_leaf_chars = max(8, visible_chars - len(line_prefix))
+                if len(leaf) > max_leaf_chars:
+                    leaf = leaf[: max(3, max_leaf_chars - 3)] + "..."
+                line = f"{line_prefix}{leaf}"
                 item_index = self.status_listbox.size()
                 self.status_listbox.insert(tk.END, line)
                 self.status_items[item_index] = entry
+                self.status_toggle_columns[item_index] = (0, len(staged_label))
         if hasattr(self, "stage_count_var"):
             self.stage_count_var.set(f"Selecionados: {staged_count}/{total}")
         if total == 0:
@@ -277,7 +297,12 @@ class CommitTabMixin:
             self._select_status_index(selected_index)
         else:
             self.status_listbox.selection_clear(0, tk.END)
-        self._update_worktree_diff_from_selection()
+        preserve_diff = bool(getattr(self, "preserve_worktree_diff_on_status_refresh", False))
+        self.preserve_worktree_diff_on_status_refresh = False
+        if preserve_diff:
+            self._update_worktree_diff_actions()
+        else:
+            self._update_worktree_diff_from_selection()
         self._update_operation_preview()
         if hasattr(self, "_refresh_repo_status_panel"):
             self._refresh_repo_status_panel()
@@ -288,6 +313,37 @@ class CommitTabMixin:
             return "[ ]"
         if staged_count >= total_count:
             return "[x]"
+        return "[~]"
+
+    @staticmethod
+    def _entry_has_staged_part(entry: dict[str, str | bool]) -> bool:
+        return bool(entry.get("staged", False))
+
+    @staticmethod
+    def _entry_has_unstaged_part(entry: dict[str, str | bool]) -> bool:
+        return bool(entry.get("unstaged", False))
+
+    def _entry_is_fully_staged(self, entry: dict[str, str | bool]) -> bool:
+        return self._entry_has_staged_part(entry) and not self._entry_has_unstaged_part(entry)
+
+    def _entry_stage_marker(self, entry: dict[str, str | bool]) -> str:
+        staged = self._entry_has_staged_part(entry)
+        unstaged = self._entry_has_unstaged_part(entry)
+        if staged and unstaged:
+            return "[~]"
+        if staged:
+            return "[x]"
+        return "[ ]"
+
+    def _entries_stage_marker(self, entries: list[dict[str, str | bool]]) -> str:
+        if not entries:
+            return "[ ]"
+        all_fully_staged = all(self._entry_is_fully_staged(entry) for entry in entries)
+        if all_fully_staged:
+            return "[x]"
+        has_any_staged = any(self._entry_has_staged_part(entry) for entry in entries)
+        if not has_any_staged:
+            return "[ ]"
         return "[~]"
 
     def _handle_status_head_update(self, head_hash: str) -> None:
@@ -337,6 +393,38 @@ class CommitTabMixin:
             return None
         return index
 
+    def _status_click_hits_toggle_marker(self, event: tk.Event, index: int) -> bool:
+        if index not in self.status_items:
+            return False
+        marker_range = self.status_toggle_columns.get(index)
+        if not marker_range:
+            return False
+        bbox = self.status_listbox.bbox(index)
+        if not bbox:
+            return False
+        relative_x = event.x - bbox[0]
+        if relative_x < 0:
+            return False
+        try:
+            font = tkfont.nametofont(str(self.status_listbox.cget("font")))
+            char_width = max(1, font.measure("0"))
+        except tk.TclError:
+            return False
+        char_index = relative_x // char_width
+        marker_start, marker_end = marker_range
+        return marker_start <= char_index < marker_end
+
+    def _status_list_visible_char_capacity(self) -> int:
+        try:
+            font = tkfont.nametofont(str(self.status_listbox.cget("font")))
+            char_width = max(1, font.measure("0"))
+        except tk.TclError:
+            return 80
+        width_px = int(self.status_listbox.winfo_width())
+        if width_px <= 1:
+            width_px = int(self.status_listbox.winfo_reqwidth())
+        return max(24, (width_px // char_width) - 1)
+
     def _on_status_select(self, _event: tk.Event) -> None:
         if self.suspend_stage_sync:
             return
@@ -359,6 +447,13 @@ class CommitTabMixin:
         index = self._status_entry_index_from_event(event)
         if index is None:
             return "break"
+        if self.status_click_job is not None:
+            try:
+                self.after_cancel(self.status_click_job)
+            except tk.TclError:
+                pass
+            self.status_click_job = None
+        self.status_click_path = ""
         header_action = self.status_header_actions.get(index)
         if header_action is not None:
             self._select_status_index(index)
@@ -369,13 +464,9 @@ class CommitTabMixin:
         entry = self.status_items.get(index)
         if not entry:
             return "break"
+        if not self._status_click_hits_toggle_marker(event, index):
+            return "break"
         self.status_click_path = str(entry.get("path_for_git", "")).strip()
-        if self.status_click_job is not None:
-            try:
-                self.after_cancel(self.status_click_job)
-            except tk.TclError:
-                pass
-            self.status_click_job = None
         self.status_click_job = self.after(220, self._execute_status_single_click)
         return "break"
 
@@ -409,12 +500,12 @@ class CommitTabMixin:
         if not path_for_git:
             return
         self.status_auto_stage_disabled = True
-        staged = bool(entry.get("staged", False))
-        perf_trigger = "stage:file_unstage" if staged else "stage:file_stage"
-        refresh_trigger = "post_stage_file_unstage" if staged else "post_stage_file_stage"
+        fully_staged = self._entry_is_fully_staged(entry)
+        perf_trigger = "stage:file_unstage" if fully_staged else "stage:file_stage"
+        refresh_trigger = "post_stage_file_unstage" if fully_staged else "post_stage_file_stage"
         start = self._perf_start("Stage/Unstage arquivo", perf_trigger)
         try:
-            if staged:
+            if fully_staged:
                 run_git(self.repo_path, ["reset", "--", path_for_git])
                 self._set_status(f"Arquivo removido do stage: {path_for_git}")
             else:
@@ -442,7 +533,7 @@ class CommitTabMixin:
     def _toggle_status_group_stage(self, action: tuple[str, str]) -> None:
         action_type, folder = action
         if action_type == "all":
-            has_unstaged = any(not bool(entry.get("staged", False)) for entry in self.status_items.values())
+            has_unstaged = any(self._entry_has_unstaged_part(entry) for entry in self.status_items.values())
             if has_unstaged:
                 self._stage_all_status_entries()
             else:
@@ -461,7 +552,7 @@ class CommitTabMixin:
         )
         if not paths:
             return
-        all_staged = all(bool(entry.get("staged", False)) for entry in entries)
+        all_staged = all(self._entry_is_fully_staged(entry) for entry in entries)
         self.status_auto_stage_disabled = True
         folder_label = f"{folder}/" if folder else "(root)"
         if all_staged:
@@ -541,7 +632,7 @@ class CommitTabMixin:
             return entries
         if self.status_auto_stage_disabled:
             return entries
-        if all(bool(entry.get("staged", False)) for entry in entries):
+        if all(self._entry_is_fully_staged(entry) for entry in entries):
             return entries
         try:
             run_git(self.repo_path, ["add", "-A"])
@@ -608,6 +699,11 @@ class CommitTabMixin:
             self._set_text(self.worktree_diff_text, "Selecione um arquivo para ver o diff.")
             self.worktree_diff_data = None
             self.worktree_line_map.clear()
+            self.worktree_hunk_marker_map.clear()
+            self.worktree_hunk_patch_map.clear()
+            self.worktree_line_scope_map.clear()
+            self.worktree_line_patch_map.clear()
+            self.worktree_diff_data_by_scope.clear()
             self._clear_worktree_selection_highlight()
             self._update_worktree_diff_actions()
             return
@@ -620,55 +716,61 @@ class CommitTabMixin:
         if not path:
             self._set_text(self.worktree_diff_text, "Diff indisponível.")
             return
+        sections: list[tuple[str, str, DiffData, list[str]]] = []
+        raw_sections: list[tuple[str, str, DiffData]] = []
         try:
-            scope = self._resolve_diff_scope(status)
-            diff_raw = self._get_diff_for_scope(scope, path, word_diff=False)
-            diff_view = diff_raw
-            if self._word_diff_enabled():
-                diff_view = self._get_diff_for_scope(scope, path, word_diff=True)
+            for scope in self._diff_scopes_for_status(status):
+                diff_raw = self._get_diff_for_scope(scope, path, word_diff=False)
+                if not diff_raw.strip():
+                    continue
+                diff_view = diff_raw
+                if self._word_diff_enabled():
+                    rendered = self._get_diff_for_scope(scope, path, word_diff=True)
+                    if rendered.strip():
+                        diff_view = rendered
+                raw_sections.append((scope, diff_view, parse_diff_data(diff_raw)))
         except RuntimeError as exc:
             messagebox.showerror("Diff", str(exc))
             return
-        if not diff_view.strip():
+        if not raw_sections:
             self._set_text(self.worktree_diff_text, "(sem diff)")
             self.worktree_diff_data = None
             self.worktree_line_map.clear()
+            self.worktree_hunk_marker_map.clear()
+            self.worktree_hunk_patch_map.clear()
+            self.worktree_line_scope_map.clear()
+            self.worktree_line_patch_map.clear()
+            self.worktree_diff_data_by_scope.clear()
             self._clear_worktree_selection_highlight()
             self._update_worktree_diff_actions()
             return
-        self.worktree_diff_data = parse_diff_data(diff_raw)
-        self.worktree_diff_scope = scope
+        hunk_markers_by_scope = self._build_hunk_markers_by_scope(raw_sections)
+        for scope, diff_view, diff_data in raw_sections:
+            sections.append((scope, diff_view, diff_data, hunk_markers_by_scope.get(scope, [])))
+        self.worktree_diff_data = sections[0][2]
+        self.worktree_diff_scope = "mixed"
         self.worktree_line_map.clear()
-        self._render_worktree_diff(diff_view, self._word_diff_enabled())
+        self.worktree_hunk_marker_map.clear()
+        self.worktree_hunk_patch_map.clear()
+        self.worktree_line_scope_map.clear()
+        self.worktree_line_patch_map.clear()
+        self.worktree_diff_data_by_scope.clear()
+        self._render_worktree_diff_sections(sections, self._word_diff_enabled())
         self._clear_worktree_selection_highlight()
         self._update_worktree_diff_actions()
 
-    def _resolve_diff_scope(self, status: str) -> str:
+    @staticmethod
+    def _diff_scopes_for_status(status: str) -> list[str]:
         if status.startswith("??"):
-            if hasattr(self, "diff_scope_combo"):
-                self.diff_scope_combo.configure(state="disabled")
-            self.diff_scope_var.set("Unstaged")
-            return "untracked"
-        has_staged = status[0] not in (" ", "?")
-        has_unstaged = status[1] not in (" ", "?")
-        requested = self.diff_scope_var.get()
-        if requested == "Staged" and has_staged:
-            scope = "staged"
-        elif requested == "Unstaged" and has_unstaged:
-            scope = "unstaged"
-        elif has_unstaged:
-            scope = "unstaged"
-        elif has_staged:
-            scope = "staged"
-        else:
-            scope = "unstaged"
-        if hasattr(self, "diff_scope_combo"):
-            if has_staged and has_unstaged:
-                self.diff_scope_combo.configure(state="readonly")
-            else:
-                self.diff_scope_combo.configure(state="disabled")
-        self.diff_scope_var.set("Staged" if scope == "staged" else "Unstaged")
-        return scope
+            return ["untracked"]
+        scopes: list[str] = []
+        if len(status) >= 2 and status[1] != " ":
+            scopes.append("unstaged")
+        if len(status) >= 1 and status[0] not in (" ", "?"):
+            scopes.append("staged")
+        if not scopes:
+            scopes.append("unstaged")
+        return scopes
 
     def _get_diff_for_scope(self, scope: str, path: str, word_diff: bool) -> str:
         if scope == "untracked":
@@ -689,18 +791,256 @@ class CommitTabMixin:
             cache[cache_key] = diff
         return diff
 
-    def _render_worktree_diff(self, diff_text: str, word_diff: bool) -> None:
-        render_patch_to_widget(
-            self.worktree_diff_text,
-            diff_text,
-            read_only=True,
-            show_file_headers=False,
-            word_diff=word_diff,
+    @staticmethod
+    def _scope_marker(scope: str) -> str:
+        if scope == "staged":
+            return "[x]"
+        return "[ ]"
+
+    @staticmethod
+    def _hunk_signature(hunk: DiffHunk) -> tuple[int, int, int, int]:
+        return (hunk.old_start, hunk.old_count, hunk.new_start, hunk.new_count)
+
+    def _build_hunk_markers_by_scope(
+        self, sections: list[tuple[str, str, DiffData]]
+    ) -> dict[str, list[str]]:
+        hunks_by_scope: dict[str, list[DiffHunk]] = {}
+        for scope, _diff_view, diff_data in sections:
+            hunks_by_scope[scope] = list(diff_data.hunks)
+
+        unstaged_counter = Counter(self._hunk_signature(hunk) for hunk in hunks_by_scope.get("unstaged", []))
+        staged_counter = Counter(self._hunk_signature(hunk) for hunk in hunks_by_scope.get("staged", []))
+        shared_counter = Counter(
+            {signature: min(unstaged_counter[signature], staged_counter[signature]) for signature in unstaged_counter}
         )
-        if word_diff or not self.worktree_diff_data:
-            self.worktree_line_map.clear()
+        shared_counter = Counter({signature: count for signature, count in shared_counter.items() if count > 0})
+        shared_unstaged = Counter(shared_counter)
+        shared_staged = Counter(shared_counter)
+
+        markers_by_scope: dict[str, list[str]] = {}
+        for scope, hunks in hunks_by_scope.items():
+            scope_markers: list[str] = []
+            for hunk in hunks:
+                signature = self._hunk_signature(hunk)
+                if scope == "unstaged":
+                    marker = "[ ]"
+                    if shared_unstaged.get(signature, 0) > 0:
+                        marker = "[~]"
+                        shared_unstaged[signature] -= 1
+                elif scope == "staged":
+                    marker = "[x]"
+                    if shared_staged.get(signature, 0) > 0:
+                        marker = "[~]"
+                        shared_staged[signature] -= 1
+                else:
+                    marker = "[ ]"
+                scope_markers.append(marker)
+            markers_by_scope[scope] = scope_markers
+        return markers_by_scope
+
+    def _render_worktree_diff_sections(
+        self, sections: list[tuple[str, str, DiffData, list[str]]], word_diff: bool
+    ) -> None:
+        self.worktree_diff_text.configure(state="normal")
+        self.worktree_diff_text.delete("1.0", tk.END)
+        self.worktree_line_map.clear()
+        self.worktree_hunk_marker_map.clear()
+        self.worktree_hunk_patch_map.clear()
+        self.worktree_line_scope_map.clear()
+        self.worktree_line_patch_map.clear()
+        self.worktree_diff_data_by_scope.clear()
+
+        for idx, (scope, diff_view, diff_data, hunk_markers) in enumerate(sections):
+            before_end_line = int(self.worktree_diff_text.index("end-1c").split(".")[0])
+            render_patch_to_widget(
+                self.worktree_diff_text,
+                diff_view,
+                read_only=False,
+                show_file_headers=False,
+                word_diff=word_diff,
+                line_marker=self._scope_marker(scope),
+                show_hunk_headers=True,
+                hunk_marker="[ ]",
+                hunk_markers=hunk_markers,
+                append=idx > 0,
+            )
+            self.worktree_diff_data_by_scope[scope] = diff_data
+            after_end_line = int(self.worktree_diff_text.index("end-1c").split(".")[0])
+
+            scan_start = 1 if idx == 0 else before_end_line + 1
+            marker_lines = self._collect_hunk_marker_lines(scan_start, after_end_line)
+            for hunk_idx, marker_line in enumerate(marker_lines):
+                if hunk_idx >= len(diff_data.hunks):
+                    break
+                self.worktree_hunk_marker_map[marker_line] = (scope, hunk_idx)
+                patch = build_patch_for_hunk(diff_data, hunk_idx)
+                if patch:
+                    self.worktree_hunk_patch_map[marker_line] = patch
+
+            if word_diff or not diff_data.hunks:
+                continue
+            local_line_map = build_line_map(diff_data, include_hunk_headers=True)
+            if marker_lines:
+                line_offset = marker_lines[0] - 1
+            else:
+                line_offset = max(0, before_end_line)
+            for local_line_no, line_info in local_line_map.items():
+                global_line_no = line_offset + local_line_no
+                self.worktree_line_map[global_line_no] = line_info
+                self.worktree_line_scope_map[global_line_no] = scope
+                patch = build_patch_for_line(diff_data, line_info)
+                if patch:
+                    self.worktree_line_patch_map[global_line_no] = patch
+
+        self.worktree_diff_text.configure(state="disabled")
+
+    def _collect_hunk_marker_lines(self, start_line: int, end_line: int) -> list[int]:
+        if end_line < start_line:
+            return []
+        marker_lines: list[int] = []
+        for line_no in range(max(1, start_line), end_line + 1):
+            text = self.worktree_diff_text.get(f"{line_no}.0", f"{line_no}.end")
+            if text.strip() in {"[ ]", "[x]", "[~]"}:
+                marker_lines.append(line_no)
+        return marker_lines
+
+    def _worktree_line_marker_text(self, line_no: int) -> str:
+        text = self.worktree_diff_text.get(f"{line_no}.0", f"{line_no}.end")
+        if len(text) >= 3 and text[:3] in {"[ ]", "[x]", "[~]"}:
+            return text[:3]
+        return ""
+
+    def _set_worktree_line_marker_text(self, line_no: int, marker: str) -> None:
+        if marker not in {"[ ]", "[x]", "[~]"}:
             return
-        self.worktree_line_map = build_line_map(self.worktree_diff_data)
+        self.worktree_diff_text.configure(state="normal")
+        try:
+            text = self.worktree_diff_text.get(f"{line_no}.0", f"{line_no}.end")
+            if len(text) < 3 or text[:3] not in {"[ ]", "[x]", "[~]"}:
+                return
+            tags = list(self.worktree_diff_text.tag_names(f"{line_no}.4"))
+            tags = [tag for tag in tags if tag not in {"selected_line", "selected_hunk"}]
+            if line_no in self.worktree_hunk_marker_map:
+                tags = ["meta"]
+            self.worktree_diff_text.delete(f"{line_no}.0", f"{line_no}.3")
+            if tags:
+                self.worktree_diff_text.insert(f"{line_no}.0", marker, tuple(tags))
+            else:
+                self.worktree_diff_text.insert(f"{line_no}.0", marker)
+        finally:
+            self.worktree_diff_text.configure(state="disabled")
+
+    def _find_hunk_marker_line_for_line(self, line_no: int) -> int | None:
+        marker_lines = sorted(self.worktree_hunk_marker_map.keys())
+        candidate: int | None = None
+        for marker_line in marker_lines:
+            if marker_line <= line_no:
+                candidate = marker_line
+            else:
+                break
+        return candidate
+
+    def _refresh_hunk_marker_state(self, marker_line: int | None) -> None:
+        if marker_line is None:
+            return
+        marker_lines = sorted(self.worktree_hunk_marker_map.keys())
+        if marker_line not in marker_lines:
+            return
+        idx = marker_lines.index(marker_line)
+        next_marker = marker_lines[idx + 1] if idx + 1 < len(marker_lines) else None
+        start_line = marker_line + 1
+        if next_marker is None:
+            end_line = int(self.worktree_diff_text.index("end-1c").split(".")[0])
+        else:
+            end_line = next_marker - 1
+        line_markers: list[str] = []
+        for current_line in range(start_line, end_line + 1):
+            marker = self._worktree_line_marker_text(current_line)
+            if marker:
+                line_markers.append(marker)
+        if not line_markers:
+            return
+        if all(marker == "[x]" for marker in line_markers):
+            hunk_marker = "[x]"
+        elif all(marker == "[ ]" for marker in line_markers):
+            hunk_marker = "[ ]"
+        else:
+            hunk_marker = "[~]"
+        self._set_worktree_line_marker_text(marker_line, hunk_marker)
+
+    def _operation_scope_from_marker(self, marker: str, default_scope: str) -> str:
+        if marker == "[x]":
+            return "staged"
+        if marker in {"[ ]", "[~]"}:
+            return "unstaged"
+        return default_scope
+
+    def _acquire_worktree_toggle_lock(self) -> bool:
+        if self.worktree_toggle_busy:
+            self._set_status("Aguarde concluir a operação anterior de stage/unstage.")
+            return False
+        self.worktree_toggle_busy = True
+        return True
+
+    def _release_worktree_toggle_lock(self) -> None:
+        self.worktree_toggle_busy = False
+
+    @staticmethod
+    def _is_patch_outdated_error(exc: RuntimeError) -> bool:
+        message = str(exc).lower()
+        return "patch does not apply" in message or "falha no patch" in message
+
+    def _schedule_status_refresh(self, trigger: str, delay_ms: int = 220) -> None:
+        normalized_trigger = self._normalize_perf_trigger(trigger) or "internal"
+        self.status_refresh_debounce_trigger = normalized_trigger
+        if self.status_refresh_debounce_job is not None:
+            try:
+                self.after_cancel(self.status_refresh_debounce_job)
+            except tk.TclError:
+                pass
+            self.status_refresh_debounce_job = None
+        self.status_refresh_debounce_job = self.after(delay_ms, self._flush_scheduled_status_refresh)
+
+    def _flush_scheduled_status_refresh(self) -> None:
+        self.status_refresh_debounce_job = None
+        trigger = self.status_refresh_debounce_trigger.strip()
+        self.status_refresh_debounce_trigger = ""
+        self._refresh_status(trigger=trigger or "debounced")
+
+    def _worktree_marker_clickable(self, event: tk.Event, line_no: int) -> bool:
+        marker_width = 0
+        if line_no in self.worktree_hunk_marker_map:
+            marker_width = len("[~]") + 1
+        elif line_no in self.worktree_line_scope_map:
+            marker_width = len(self._scope_marker(self.worktree_line_scope_map[line_no])) + 1
+        if marker_width <= 0:
+            return False
+        try:
+            index = self.worktree_diff_text.index(f"@{event.x},{event.y}")
+            col = int(index.split(".")[1])
+        except (tk.TclError, ValueError):
+            return False
+        return col < marker_width
+
+    def _worktree_line_no_from_event(self, event: tk.Event) -> int | None:
+        try:
+            index = self.worktree_diff_text.index(f"@{event.x},{event.y}")
+            return int(index.split(".")[0])
+        except (tk.TclError, ValueError):
+            return None
+
+    def _resolve_hunk_meta_for_line(self, line_no: int) -> tuple[str, int] | None:
+        if line_no <= 0 or not self.worktree_hunk_marker_map:
+            return None
+        if line_no in self.worktree_hunk_marker_map:
+            return self.worktree_hunk_marker_map[line_no]
+        candidate_line: int | None = None
+        for marker_line in self.worktree_hunk_marker_map:
+            if marker_line <= line_no and (candidate_line is None or marker_line > candidate_line):
+                candidate_line = marker_line
+        if candidate_line is None:
+            return None
+        return self.worktree_hunk_marker_map.get(candidate_line)
 
     def _clear_worktree_selection_highlight(self) -> None:
         if not hasattr(self, "worktree_diff_text"):
@@ -708,22 +1048,20 @@ class CommitTabMixin:
         self.worktree_diff_text.tag_remove("selected_hunk", "1.0", tk.END)
         self.worktree_diff_text.tag_remove("selected_line", "1.0", tk.END)
 
-    def _highlight_selected_diff_line(self, line_info: DiffLineInfo) -> None:
+    def _highlight_selected_diff_line(self, line_no: int, line_info: DiffLineInfo) -> None:
         if not hasattr(self, "worktree_diff_text"):
             return
         self._clear_worktree_selection_highlight()
-        for line_no, info in self.worktree_line_map.items():
+        for mapped_line_no, info in self.worktree_line_map.items():
             if info.hunk_index == line_info.hunk_index:
-                self.worktree_diff_text.tag_add("selected_hunk", f"{line_no}.0", f"{line_no}.end")
-        self.worktree_diff_text.tag_add("selected_line", f"{line_info.line_no}.0", f"{line_info.line_no}.end")
+                self.worktree_diff_text.tag_add("selected_hunk", f"{mapped_line_no}.0", f"{mapped_line_no}.end")
+        self.worktree_diff_text.tag_add("selected_line", f"{line_no}.0", f"{line_no}.end")
 
     def _get_diff_line_info_from_event(self, event: tk.Event) -> DiffLineInfo | None:
         if not self.worktree_line_map:
             return None
-        try:
-            index = self.worktree_diff_text.index(f"@{event.x},{event.y}")
-            line_no = int(index.split(".")[0])
-        except (tk.TclError, ValueError):
+        line_no = self._worktree_line_no_from_event(event)
+        if line_no is None:
             return None
         return self.worktree_line_map.get(line_no)
 
@@ -737,77 +1075,170 @@ class CommitTabMixin:
         self.status_focus_path = str(entry.get("path_for_git", "")).strip()
 
     def _on_worktree_diff_single_click(self, event: tk.Event) -> str:
+        if self.worktree_toggle_busy:
+            return "break"
         if self.diff_click_job is not None:
             try:
                 self.after_cancel(self.diff_click_job)
             except tk.TclError:
                 pass
             self.diff_click_job = None
-        line_info = self._get_diff_line_info_from_event(event)
-        if not line_info:
+        self.diff_click_line_no = 0
+        line_no = self._worktree_line_no_from_event(event)
+        if line_no is None:
             return "break"
-        self._highlight_selected_diff_line(line_info)
-        self.diff_click_line_no = line_info.line_no
-        self.diff_click_job = self.after(220, self._execute_worktree_line_click)
+        line_info = self.worktree_line_map.get(line_no)
+        line_scope = self.worktree_line_scope_map.get(line_no, "")
+        marker_text = self._worktree_line_marker_text(line_no)
+        line_scope = self._operation_scope_from_marker(marker_text, line_scope)
+        hunk_meta = self.worktree_hunk_marker_map.get(line_no)
+        if line_info:
+            self._highlight_selected_diff_line(line_no, line_info)
+            self.worktree_diff_text.mark_set(tk.INSERT, f"{line_no}.0")
+            if hunk_meta is None and line_scope:
+                hunk_meta = (line_scope, line_info.hunk_index)
+        else:
+            self._clear_worktree_selection_highlight()
+            if self._word_diff_enabled():
+                hunk_meta = self._resolve_hunk_meta_for_line(line_no)
+        if not self._worktree_marker_clickable(event, line_no):
+            return "break"
+        self._remember_status_focus_from_selection()
+        if hunk_meta is None:
+            return "break"
+        if line_no in self.worktree_hunk_marker_map:
+            hunk_marker = self._worktree_line_marker_text(line_no)
+            operation_scope = self._operation_scope_from_marker(hunk_marker, hunk_meta[0])
+            self._toggle_selected_hunk_by_index(hunk_meta[0], operation_scope, hunk_meta[1], marker_line=line_no)
+            return "break"
+        if self._word_diff_enabled():
+            operation_scope = self._operation_scope_from_marker(marker_text, hunk_meta[0])
+            marker_line = self._find_hunk_marker_line_for_line(line_no)
+            self._toggle_selected_hunk_by_index(hunk_meta[0], operation_scope, hunk_meta[1], marker_line=marker_line)
+            return "break"
+        if line_info is None or not line_scope:
+            return "break"
+        operation_scope = self._operation_scope_from_marker(marker_text, line_scope)
+        self._toggle_selected_line_by_info(line_scope, operation_scope, line_no, line_info)
         return "break"
 
     def _on_worktree_diff_double_click(self, event: tk.Event) -> str:
-        if self.diff_click_job is not None:
-            try:
-                self.after_cancel(self.diff_click_job)
-            except tk.TclError:
-                pass
-            self.diff_click_job = None
-        line_info = self._get_diff_line_info_from_event(event)
-        if not line_info:
-            return "break"
-        self._highlight_selected_diff_line(line_info)
-        self.worktree_diff_text.mark_set(tk.INSERT, f"{line_info.line_no}.0")
-        self._remember_status_focus_from_selection()
-        if self._word_diff_enabled():
-            self._set_status("Desative Diff por palavra para stage/unstage por hunk.")
-            return "break"
-        if self.worktree_diff_scope == "unstaged":
-            self._stage_selected_hunk()
-        elif self.worktree_diff_scope == "staged":
-            self._unstage_selected_hunk()
-        elif self.worktree_diff_scope == "untracked":
-            selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
-            if selected:
-                entry = self.status_items.get(selected[-1])
-                if entry is not None:
-                    self._toggle_status_entry_stage(entry)
-        return "break"
+        return self._on_worktree_diff_single_click(event)
 
-    def _execute_worktree_line_click(self) -> None:
-        self.diff_click_job = None
-        line_no = self.diff_click_line_no
-        self.diff_click_line_no = 0
-        if line_no <= 0:
+    def _toggle_selected_line_by_info(
+        self,
+        patch_scope: str,
+        operation_scope: str,
+        line_no: int,
+        line_info: DiffLineInfo,
+    ) -> None:
+        if not self._acquire_worktree_toggle_lock():
             return
-        line_info = self.worktree_line_map.get(line_no)
-        if not line_info:
-            return
-        self.worktree_diff_text.mark_set(tk.INSERT, f"{line_info.line_no}.0")
-        self._remember_status_focus_from_selection()
-        if self._word_diff_enabled():
-            self._set_status("Desative Diff por palavra para stage/unstage por linha.")
-            return
-        if self.worktree_diff_scope == "unstaged":
-            self._stage_selected_line()
-            return
-        if self.worktree_diff_scope == "staged":
-            self._unstage_selected_line()
-            return
-        if self.worktree_diff_scope == "untracked":
-            selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
-            if not selected:
+        try:
+            if operation_scope == "untracked":
+                selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
+                if not selected:
+                    return
+                entry = self.status_items.get(selected[-1])
+                if entry is None:
+                    return
+                self._toggle_status_entry_stage(entry)
                 return
-            entry = self.status_items.get(selected[-1])
-            if entry is None:
+            patch = self.worktree_line_patch_map.get(line_no)
+            if not patch:
+                diff_data = self.worktree_diff_data_by_scope.get(patch_scope)
+                if diff_data is None:
+                    return
+                patch = build_patch_for_line(diff_data, line_info)
+            if not patch:
                 return
-            self._toggle_status_entry_stage(entry)
+            reverse = operation_scope == "staged"
+            try:
+                self._apply_patch(patch, reverse=reverse)
+            except RuntimeError as exc:
+                if self._is_patch_outdated_error(exc):
+                    self._set_status("Diff desatualizado; atualizando após clique rápido.")
+                    self._refresh_status(trigger="patch_mismatch_line")
+                    return
+                title = "Unstage" if reverse else "Stage"
+                messagebox.showerror(title, str(exc))
+                return
+            self.preserve_worktree_diff_on_status_refresh = True
+            new_marker = "[ ]" if reverse else "[x]"
+            self._set_worktree_line_marker_text(line_no, new_marker)
+            marker_line = self._find_hunk_marker_line_for_line(line_no)
+            self._refresh_hunk_marker_state(marker_line)
+            refresh_trigger = "post_stage_line_unstage" if reverse else "post_stage_line_stage"
+            self._schedule_status_refresh(trigger=refresh_trigger)
+        finally:
+            self._release_worktree_toggle_lock()
+
+    def _toggle_selected_hunk_by_index(
+        self,
+        patch_scope: str,
+        operation_scope: str,
+        hunk_index: int,
+        marker_line: int | None = None,
+    ) -> None:
+        if not self._acquire_worktree_toggle_lock():
             return
+        try:
+            if hunk_index < 0:
+                return
+            if operation_scope == "untracked":
+                selected = [index for index in self.status_listbox.curselection() if index in self.status_items]
+                if not selected:
+                    return
+                entry = self.status_items.get(selected[-1])
+                if entry is None:
+                    return
+                self._toggle_status_entry_stage(entry)
+                return
+            if operation_scope not in ("unstaged", "staged"):
+                return
+            patch = self.worktree_hunk_patch_map.get(marker_line or -1, "")
+            if not patch:
+                diff_data = self.worktree_diff_data_by_scope.get(patch_scope)
+                if diff_data is None:
+                    return
+                patch = build_patch_for_hunk(diff_data, hunk_index)
+            if not patch:
+                return
+            reverse = operation_scope == "staged"
+            try:
+                self._apply_patch(patch, reverse=reverse)
+            except RuntimeError as exc:
+                if self._is_patch_outdated_error(exc):
+                    self._set_status("Diff desatualizado; atualizando após clique rápido.")
+                    self._refresh_status(trigger="patch_mismatch_hunk")
+                    return
+                title = "Unstage" if reverse else "Stage"
+                messagebox.showerror(title, str(exc))
+                return
+            self.preserve_worktree_diff_on_status_refresh = True
+            if marker_line is not None:
+                target_marker = "[ ]" if reverse else "[x]"
+                self._set_worktree_line_marker_text(marker_line, target_marker)
+                marker_lines = sorted(self.worktree_hunk_marker_map.keys())
+                idx = marker_lines.index(marker_line) if marker_line in marker_lines else -1
+                next_marker = marker_lines[idx + 1] if idx >= 0 and idx + 1 < len(marker_lines) else None
+                start_line = marker_line + 1
+                if next_marker is None:
+                    end_line = int(self.worktree_diff_text.index("end-1c").split(".")[0])
+                else:
+                    end_line = next_marker - 1
+                for current_line in range(start_line, end_line + 1):
+                    if self._worktree_line_marker_text(current_line):
+                        self._set_worktree_line_marker_text(current_line, target_marker)
+                        if target_marker in {"[x]", "[ ]"}:
+                            self.worktree_line_scope_map[current_line] = (
+                                "staged" if target_marker == "[x]" else "unstaged"
+                            )
+                self._refresh_hunk_marker_state(marker_line)
+            refresh_trigger = "post_stage_hunk_unstage" if reverse else "post_stage_hunk_stage"
+            self._schedule_status_refresh(trigger=refresh_trigger)
+        finally:
+            self._release_worktree_toggle_lock()
 
     def _get_selected_diff_line(self) -> DiffLineInfo | None:
         if not self.worktree_line_map:
@@ -935,18 +1366,11 @@ class CommitTabMixin:
             self.diff_interaction_hint_var.set("Selecione um arquivo para usar stage/unstage por clique.")
             return
         if self._word_diff_enabled():
-            self.diff_interaction_hint_var.set("Desative Diff por palavra para stage/unstage por linha e hunk.")
+            self.diff_interaction_hint_var.set("Clique no marcador cinza do bloco para stage/unstage do bloco.")
             return
-        if self.worktree_diff_scope == "unstaged":
-            self.diff_interaction_hint_var.set("Clique: stage linha | duplo clique: stage hunk.")
-            return
-        if self.worktree_diff_scope == "staged":
-            self.diff_interaction_hint_var.set("Clique: unstage linha | duplo clique: unstage hunk.")
-            return
-        if self.worktree_diff_scope == "untracked":
-            self.diff_interaction_hint_var.set("Clique no diff para stagear o arquivo inteiro.")
-            return
-        self.diff_interaction_hint_var.set("")
+        self.diff_interaction_hint_var.set(
+            "Clique no marcador [ ]/[x] para alterar linha. Clique no marcador cinza para alterar bloco."
+        )
 
     def _get_untracked_diff(self, path: str, word_diff: bool) -> str:
         cmd = ["git", "-C", self.repo_path, "diff", "--no-index", "--unified=0"]
@@ -979,13 +1403,15 @@ class CommitTabMixin:
                 path = f"{path} -> {new_path}"
                 path_for_git = new_path
                 index += 1
-            staged = status[0] != " " and status[0] != "?"
+            staged = status[0] not in (" ", "?")
+            unstaged = status[1] != " "
             entries.append(
                 {
                     "status": status,
                     "path": path,
                     "path_for_git": path_for_git,
                     "staged": staged,
+                    "unstaged": unstaged,
                 }
             )
             index += 1
