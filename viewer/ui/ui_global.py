@@ -991,41 +991,44 @@ class GlobalBarMixin:
             label="Abrir na Pasta",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_in_file_manager(path)),
         )
-        menu.add_command(
-            label="Abrir no GitHub",
+        github_menu = tk.Menu(menu, tearoff=0)
+        github_menu.add_command(
+            label="Abrir repositorio",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_in_github(path)),
         )
-        menu.add_command(
-            label="Abrir branch atual no GitHub",
+        github_menu.add_command(
+            label="Abrir branch atual",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_branch_in_github(path)),
         )
-        menu.add_command(
-            label="Abrir commits da branch no GitHub",
+        github_menu.add_command(
+            label="Abrir commits da branch",
             command=lambda path=normalized_repo: run_repo_menu_action(
                 lambda: self._open_repo_branch_commits_in_github(path)
             ),
         )
-        menu.add_command(
-            label="Abrir issues no GitHub",
+        github_menu.add_command(
+            label="Abrir issues",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_issues_in_github(path)),
         )
-        menu.add_command(
-            label="Abrir actions no GitHub",
+        github_menu.add_command(
+            label="Abrir actions",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_actions_in_github(path)),
         )
-        menu.add_command(
-            label="Abrir releases no GitHub",
+        github_menu.add_command(
+            label="Abrir releases",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_releases_in_github(path)),
         )
-        menu.add_separator()
-        menu.add_command(
+        github_menu.add_separator()
+        github_menu.add_command(
             label="Copiar URL do repositorio",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_github_url(path)),
         )
-        menu.add_command(
+        github_menu.add_command(
             label="Copiar URL da branch atual",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_branch_github_url(path)),
         )
+        menu.add_cascade(label="GitHub", menu=github_menu)
+        menu.add_separator()
         menu.add_command(
             label="Copiar caminho",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_path(path)),
