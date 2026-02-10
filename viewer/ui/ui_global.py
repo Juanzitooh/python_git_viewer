@@ -732,8 +732,8 @@ class GlobalBarMixin:
         self._show_repo_context_menu(event, selected_path, close_dropdown=False)
         return "break"
 
-    def _on_repo_context_menu_request(self, event: tk.Event, repo_path: str = "") -> str:
-        self._show_repo_context_menu(event, repo_path)
+    def _on_repo_context_menu_request(self, event: tk.Event, repo_path: str = "", *, source: str = "") -> str:
+        self._show_repo_context_menu(event, repo_path, source=source)
         return "break"
 
     def _dismiss_repo_selector_dropdown(self) -> None:
@@ -857,7 +857,14 @@ class GlobalBarMixin:
         self._repo_context_selection_lock = False
         self.repo_context_menu = None
 
-    def _show_repo_context_menu(self, event: tk.Event, repo_path: str = "", *, close_dropdown: bool = True) -> None:
+    def _show_repo_context_menu(
+        self,
+        event: tk.Event,
+        repo_path: str = "",
+        *,
+        close_dropdown: bool = True,
+        source: str = "",
+    ) -> None:
         self._dismiss_repo_context_menu(clear_lock=False)
         resolved_repo = self._resolve_repo_action_path(repo_path)
         if not resolved_repo:
@@ -912,6 +919,12 @@ class GlobalBarMixin:
                 label="Adicionar aos favoritos",
                 command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._add_favorite_repo(path)),
             )
+        if source == "card":
+            menu.add_separator()
+            menu.add_command(
+                label="Excluir repositório...",
+                command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._delete_repo_directory(path)),
+            )
         self.repo_context_menu = menu
         menu.bind("<Unmap>", self._on_repo_context_menu_unmap, add=True)
         menu.bind("<FocusOut>", self._dismiss_repo_context_menu, add=True)
@@ -931,6 +944,72 @@ class GlobalBarMixin:
         self.clipboard_clear()
         self.clipboard_append(resolved_repo)
         self.update()
+
+    def _delete_repo_directory(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("Excluir repositório", "Selecione um repositório válido antes de excluir.")
+            return False
+        normalized_repo = self._normalize_repo_path_candidate(resolved_repo)
+        repo_name = os.path.basename(normalized_repo.rstrip(os.sep)) or normalized_repo
+        confirmed = messagebox.askyesno(
+            "Excluir repositório",
+            (
+                f"Excluir permanentemente '{repo_name}'?\n\n"
+                f"Caminho: {normalized_repo}\n\n"
+                "Esta ação remove a pasta local inteira e não pode ser desfeita."
+            ),
+            icon="warning",
+            default="no",
+        )
+        if not confirmed:
+            return False
+        current_repo = self._normalize_repo_path_candidate(self.repo_path) if self.repo_ready and self.repo_path else ""
+        is_current = normalized_repo == current_repo
+
+        def task() -> str:
+            if os.path.islink(normalized_repo):
+                os.unlink(normalized_repo)
+            else:
+                shutil.rmtree(normalized_repo)
+            return normalized_repo
+
+        def success(_result: object) -> None:
+            normalized = self._normalize_repo_path_candidate(normalized_repo)
+            self.favorite_repos = [
+                item for item in self.favorite_repos if self._normalize_repo_path_candidate(item) != normalized
+            ]
+            self.recent_repos = [
+                item for item in self.recent_repos if self._normalize_repo_path_candidate(item) != normalized
+            ]
+            if self._normalize_repo_path_candidate(getattr(self, "last_repo_path", "")) == normalized:
+                self.last_repo_path = ""
+            if hasattr(self, "workspace_card_detail_cache"):
+                self.workspace_card_detail_cache.pop(normalized, None)
+            if hasattr(self, "workspace_card_detail_ts"):
+                self.workspace_card_detail_ts.pop(normalized, None)
+            if is_current:
+                self._set_repo_ui_no_repo()
+            self._persist_settings()
+            if hasattr(self, "_refresh_repo_lists"):
+                self._refresh_repo_lists()
+            if hasattr(self, "repo_scan_status_var"):
+                self.repo_scan_status_var.set(f"Repositório excluído: {normalized}")
+            self._set_status(f"Repositório excluído: {repo_name}")
+
+        def error(exc: Exception) -> None:
+            messagebox.showerror("Excluir repositório", f"Falha ao excluir:\n{exc}")
+            self._set_status("Falha ao excluir repositório.")
+
+        self._set_status(f"Excluindo repositório: {repo_name}...")
+        if hasattr(self, "_run_async"):
+            self._run_async("delete_repo", "Excluir repo", task, success, error, perf_trigger="repo_delete:context_menu")
+        else:
+            try:
+                success(task())
+            except Exception as exc:
+                error(exc)
+        return True
 
     def _open_repo_in_file_manager(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)

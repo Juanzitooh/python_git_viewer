@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import getpass
 import os
+import shutil
 import socket
 import subprocess
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
 
@@ -62,23 +64,130 @@ def _derive_repo_name_from_url(repo_url: str) -> str:
     return cleaned
 
 
-def clone_repository(repo_url: str, destination_root: str, directory_name: str = "") -> str:
-    root = Path(destination_root).expanduser()
+def _parse_clone_target_path(
+    repo_url: str,
+    root: Path,
+    directory_name: str,
+) -> Path:
+    repo_name = _derive_repo_name_from_url(repo_url)
+    raw_target = directory_name.strip()
+    if not raw_target:
+        return (root / repo_name).resolve()
+
+    ends_with_separator = raw_target.endswith(("/", "\\"))
+    normalized_target = raw_target.rstrip("/\\")
+    if not normalized_target:
+        raise RuntimeError("Pasta de destino inválida.")
+
+    relative_target = Path(normalized_target.replace("\\", "/"))
+    if relative_target.is_absolute():
+        raise RuntimeError("Informe a pasta de destino como caminho relativo ao workspace.")
+    if any(part in ("", ".", "..") for part in relative_target.parts):
+        raise RuntimeError("Pasta de destino inválida.")
+
+    target_path = (root / relative_target).resolve()
+    try:
+        target_path.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError("Pasta de destino fora da raiz do workspace.") from exc
+
+    if ends_with_separator:
+        target_path = (target_path / repo_name).resolve()
+        try:
+            target_path.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeError("Pasta de destino fora da raiz do workspace.") from exc
+        return target_path
+
+    # Se o usuário informar uma pasta existente (ex.: "grupo"), clonamos dentro dela.
+    if target_path.exists() and target_path.is_dir():
+        nested_target = (target_path / repo_name).resolve()
+        try:
+            nested_target.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeError("Pasta de destino fora da raiz do workspace.") from exc
+        return nested_target
+    return target_path
+
+
+def clone_repository(
+    repo_url: str,
+    destination_root: str,
+    directory_name: str = "",
+    on_progress: Callable[[str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> str:
+    root = Path(destination_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    target_name = directory_name.strip() or _derive_repo_name_from_url(repo_url)
-    target_path = root / target_name
+    target_path = _parse_clone_target_path(repo_url, root, directory_name)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     if target_path.exists():
         raise RuntimeError(f"Destino ja existe: {target_path}")
-    result = subprocess.run(
-        ["git", "clone", repo_url, str(target_path)],
-        check=False,
-        capture_output=True,
+    command = ["git", "clone", "--progress", repo_url, str(target_path)]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         text=True,
         errors="replace",
+        bufsize=1,
     )
-    if result.returncode != 0:
-        stderr = result.stderr.strip() or "(sem detalhes)"
-        raise RuntimeError(f"Falha no clone: {stderr}")
+
+    def cancel_clone() -> None:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
+        shutil.rmtree(target_path, ignore_errors=True)
+        raise RuntimeError("Clone cancelado pelo usuario.")
+
+    stderr_buffer = ""
+    try:
+        if process.stderr is not None:
+            while True:
+                chunk = process.stderr.read(1)
+                if chunk == "":
+                    break
+                if chunk in ("\r", "\n"):
+                    line = stderr_buffer.strip().replace("\x1b[K", "")
+                    stderr_buffer = ""
+                    if line:
+                        if line.startswith("remote: "):
+                            line = line[8:].strip()
+                        if on_progress:
+                            on_progress(line)
+                    if is_cancelled and is_cancelled():
+                        cancel_clone()
+                    continue
+                stderr_buffer += chunk
+                if is_cancelled and is_cancelled():
+                    cancel_clone()
+        result_code = process.wait()
+    except RuntimeError:
+        raise
+    except Exception:
+        process.kill()
+        process.wait(timeout=5)
+        raise
+    if stderr_buffer.strip() and on_progress:
+        line = stderr_buffer.strip().replace("\x1b[K", "")
+        if line.startswith("remote: "):
+            line = line[8:].strip()
+        on_progress(line)
+    if result_code != 0:
+        shutil.rmtree(target_path, ignore_errors=True)
+        raise RuntimeError("Falha no clone: verifique URL/SSH e permissões.")
     return str(target_path.resolve())
 
 

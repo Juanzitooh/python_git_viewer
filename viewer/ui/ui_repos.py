@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tkinter as tk
 import time
 from pathlib import Path
@@ -378,25 +379,29 @@ class ReposTabMixin:
         *,
         repo_url: str = "",
         target_name: str = "",
-        on_finished: Callable[[bool], None] | None = None,
+        on_finished: Callable[[bool, str], None] | None = None,
+        on_progress: Callable[[str], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> None:
         repo_url = repo_url.strip()
         if not repo_url:
             messagebox.showwarning("Clone", "Informe a URL SSH/HTTPS do repositório.")
             if on_finished:
-                on_finished(False)
+                on_finished(False, "URL não informada.")
             return
         if not self._save_repo_scan_root(show_status=False):
             if on_finished:
-                on_finished(False)
+                on_finished(False, "Raiz do workspace inválida.")
             return
         target_name = target_name.strip()
         root = self.repo_scan_root
         if hasattr(self, "repo_scan_status_var"):
             self.repo_scan_status_var.set(f"Clonando em: {root}")
+        if on_progress:
+            on_progress(f"Clonando em: {root}")
 
         def task() -> str:
-            return clone_repository(repo_url, root, target_name)
+            return clone_repository(repo_url, root, target_name, on_progress=on_progress, is_cancelled=is_cancelled)
 
         def success(cloned_path: object) -> None:
             path = str(cloned_path)
@@ -405,14 +410,17 @@ class ReposTabMixin:
                 self.repo_scan_status_var.set(f"Clone concluido: {path}")
             self._open_repo_from_path(path)
             if on_finished:
-                on_finished(True)
+                on_finished(True, path)
 
         def error(exc: Exception) -> None:
-            messagebox.showerror("Clone", str(exc))
+            message = str(exc)
+            cancelled = "cancelado pelo usuario" in message.lower()
+            if not cancelled:
+                messagebox.showerror("Clone", message)
             if hasattr(self, "repo_scan_status_var"):
-                self.repo_scan_status_var.set("Falha no clone.")
+                self.repo_scan_status_var.set("Clone cancelado." if cancelled else "Falha no clone.")
             if on_finished:
-                on_finished(False)
+                on_finished(False, message)
 
         if hasattr(self, "_run_async"):
             self._run_async("clone_repo", "Clone", task, success, error)
@@ -421,6 +429,64 @@ class ReposTabMixin:
                 success(task())
             except Exception as exc:
                 error(exc)
+
+    def _set_clone_ui_locked(self, locked: bool) -> None:
+        if locked:
+            if getattr(self, "clone_ui_lock_active", False):
+                return
+            self.clone_ui_lock_active = True
+            self.clone_ui_saved_states: list[tuple[tk.Widget, str]] = []
+            self.clone_tabs_state: list[tuple[int, str]] = []
+            targets: list[tk.Widget] = []
+            for name in (
+                "repo_path_combo",
+                "fetch_button",
+                "pull_button",
+                "push_button",
+                "repo_scan_root_entry",
+            ):
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    targets.append(widget)
+            for widget in targets:
+                try:
+                    previous = str(widget.cget("state"))
+                except (tk.TclError, AttributeError):
+                    continue
+                self.clone_ui_saved_states.append((widget, previous))
+                try:
+                    widget.configure(state="disabled")
+                except tk.TclError:
+                    continue
+            tabs_widget = getattr(self, "tabs", None)
+            if tabs_widget is not None:
+                try:
+                    tab_count = tabs_widget.index("end")
+                    for index in range(tab_count):
+                        tab_state = str(tabs_widget.tab(index, "state"))
+                        self.clone_tabs_state.append((index, tab_state))
+                        if tab_state != "disabled":
+                            tabs_widget.tab(index, state="disabled")
+                except tk.TclError:
+                    self.clone_tabs_state = []
+            return
+        if not getattr(self, "clone_ui_lock_active", False):
+            return
+        self.clone_ui_lock_active = False
+        for widget, previous in getattr(self, "clone_ui_saved_states", []):
+            try:
+                widget.configure(state=previous)
+            except tk.TclError:
+                continue
+        self.clone_ui_saved_states = []
+        tabs_widget = getattr(self, "tabs", None)
+        if tabs_widget is not None:
+            for index, state in getattr(self, "clone_tabs_state", []):
+                try:
+                    tabs_widget.tab(index, state=state)
+                except tk.TclError:
+                    continue
+        self.clone_tabs_state = []
 
     def _refresh_repo_lists(self) -> None:
         if hasattr(self, "_refresh_repo_selector"):
@@ -721,13 +787,13 @@ class ReposTabMixin:
             widget.bind("<Double-Button-1>", lambda _e, idx=index: self._open_workspace_card_repo_vscode(idx), add=True)
             widget.bind(
                 "<Button-3>",
-                lambda event, path=repo_path: self._on_repo_context_menu_request(event, path),
+                lambda event, path=repo_path: self._on_repo_context_menu_request(event, path, source="card"),
                 add=True,
             )
             self._bind_workspace_scroll_events(widget)
         branch_combo.bind(
             "<Button-3>",
-            lambda event, path=repo_path: self._on_repo_context_menu_request(event, path),
+            lambda event, path=repo_path: self._on_repo_context_menu_request(event, path, source="card"),
             add=True,
         )
         self._bind_workspace_scroll_events(branch_combo)
@@ -817,7 +883,11 @@ class ReposTabMixin:
         root_var = tk.StringVar(value=self.repo_scan_root)
         clone_url_var = tk.StringVar(value="")
         clone_name_var = tk.StringVar(value="")
-        status_var = tk.StringVar(value="Informe a URL para clonar.")
+        status_var = tk.StringVar(value="Informe a URL para clonar (pasta aceita grupo/repositorio).")
+        progress_hint_var = tk.StringVar(value="Progresso reportado: 0%")
+        clone_running = False
+        clone_cancel_requested = False
+        clone_success_flash_job: str | None = None
 
         def choose_root() -> None:
             self._choose_repo_scan_root()
@@ -827,7 +897,8 @@ class ReposTabMixin:
         root_entry = ttk.Entry(dialog, textvariable=root_var)
         root_entry.grid(row=0, column=1, sticky="ew", padx=(0, 6), pady=(10, 4))
         root_entry.configure(state="readonly")
-        ttk.Button(dialog, text="Pasta...", command=choose_root).grid(row=0, column=2, sticky="w", padx=(0, 10), pady=(10, 4))
+        choose_root_button = ttk.Button(dialog, text="Pasta...", command=choose_root)
+        choose_root_button.grid(row=0, column=2, sticky="w", padx=(0, 10), pady=(10, 4))
 
         ttk.Label(dialog, text="Clone URL/SSH:").grid(row=1, column=0, sticky="w", padx=10, pady=4)
         clone_url_entry = ttk.Entry(dialog, textvariable=clone_url_var)
@@ -838,38 +909,155 @@ class ReposTabMixin:
         clone_name_entry.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 10), pady=4)
 
         has_key, _key_path = github_ssh_key_exists()
+        prepare_ssh_button: ttk.Button | None = None
         if not has_key:
-            ttk.Button(dialog, text="Preparar chave SSH", command=self._prepare_github_ssh_key).grid(
+            prepare_ssh_button = ttk.Button(dialog, text="Preparar chave SSH", command=self._prepare_github_ssh_key)
+            prepare_ssh_button.grid(
                 row=3, column=0, sticky="w", padx=10, pady=(2, 4)
             )
 
-        ttk.Label(dialog, textvariable=status_var).grid(row=4, column=0, columnspan=3, sticky="w", padx=10, pady=(2, 0))
+        progress_frame = ttk.LabelFrame(dialog, text="Progresso da clonagem")
+        progress_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", padx=10, pady=(4, 2))
+        progress_frame.grid_columnconfigure(0, weight=1)
+        progress_frame.grid_rowconfigure(0, weight=1)
+        progress_text = tk.Text(progress_frame, height=8, wrap="word", state="disabled")
+        progress_text.grid(row=0, column=0, sticky="nsew")
+        progress_scroll = ttk.Scrollbar(progress_frame, orient="vertical", command=progress_text.yview)
+        progress_scroll.grid(row=0, column=1, sticky="ns")
+        progress_text.configure(yscrollcommand=progress_scroll.set)
+        progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", mode="indeterminate")
+        progress_bar.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ttk.Label(dialog, textvariable=progress_hint_var).grid(
+            row=5, column=0, columnspan=3, sticky="w", padx=10, pady=(0, 2)
+        )
+        ttk.Label(dialog, textvariable=status_var).grid(row=6, column=0, columnspan=3, sticky="w", padx=10, pady=(2, 0))
         actions = ttk.Frame(dialog)
-        actions.grid(row=5, column=0, columnspan=3, sticky="e", padx=10, pady=10)
+        actions.grid(row=7, column=0, columnspan=3, sticky="e", padx=10, pady=10)
 
-        def on_clone_finished(ok: bool) -> None:
+        def append_progress_line(raw_line: str) -> None:
             if not dialog.winfo_exists():
                 return
+            line = raw_line.strip()
+            if not line:
+                return
+            status_var.set(line)
+            percent_match = re.search(r"(\d{1,3})%", line)
+            if percent_match:
+                progress_hint_var.set(f"Progresso reportado: {percent_match.group(1)}%")
+            progress_text.configure(state="normal")
+            progress_text.insert(tk.END, f"{line}\n")
+            progress_text.see(tk.END)
+            progress_text.configure(state="disabled")
+
+        def set_dialog_running(running: bool) -> None:
+            nonlocal clone_running
+            clone_running = running
+            if running:
+                root_entry.configure(state="disabled")
+                clone_url_entry.configure(state="disabled")
+                clone_name_entry.configure(state="disabled")
+                choose_root_button.configure(state="disabled")
+                if prepare_ssh_button is not None:
+                    prepare_ssh_button.configure(state="disabled")
+                clone_button.configure(state="disabled")
+                cancel_button.configure(text="Cancelar clone")
+                progress_bar.start(10)
+                if hasattr(self, "_set_clone_ui_locked"):
+                    self._set_clone_ui_locked(True)
+                return
+            root_entry.configure(state="readonly")
+            clone_url_entry.configure(state="normal")
+            clone_name_entry.configure(state="normal")
+            choose_root_button.configure(state="normal")
+            if prepare_ssh_button is not None:
+                prepare_ssh_button.configure(state="normal")
             clone_button.configure(state="normal")
+            cancel_button.configure(text="Fechar")
+            progress_bar.stop()
+            if hasattr(self, "_set_clone_ui_locked"):
+                self._set_clone_ui_locked(False)
+
+        def animate_clone_success_flash(steps: int = 8, on_done: Callable[[], None] | None = None) -> None:
+            nonlocal clone_success_flash_job
+            if not dialog.winfo_exists():
+                return
+            if steps <= 0:
+                progress_bar.configure(mode="determinate", maximum=100, value=100)
+                clone_success_flash_job = None
+                if on_done is not None:
+                    dialog.after(120, on_done)
+                return
+            value = 100 if steps % 2 == 0 else 0
+            progress_bar.configure(mode="determinate", maximum=100, value=value)
+            clone_success_flash_job = dialog.after(
+                120,
+                lambda: animate_clone_success_flash(steps - 1, on_done),
+            )
+
+        def on_clone_finished(ok: bool, detail: str) -> None:
+            nonlocal clone_cancel_requested, clone_success_flash_job
+            clone_cancel_requested = False
+            if not dialog.winfo_exists():
+                if hasattr(self, "_set_clone_ui_locked"):
+                    self._set_clone_ui_locked(False)
+                return
+            if clone_success_flash_job is not None:
+                try:
+                    dialog.after_cancel(clone_success_flash_job)
+                except tk.TclError:
+                    pass
+                clone_success_flash_job = None
+            set_dialog_running(False)
             if ok:
                 status_var.set("Clone concluido.")
-                dialog.destroy()
+                progress_hint_var.set("Progresso reportado: 100%")
+                clone_button.configure(state="disabled")
+                cancel_button.configure(state="disabled")
+                animate_clone_success_flash(on_done=lambda: dialog.winfo_exists() and dialog.destroy())
             else:
-                status_var.set("Falha no clone.")
+                cancelled = "cancelado pelo usuario" in detail.lower()
+                if cancelled:
+                    status_var.set("Clone cancelado pelo usuario.")
+                else:
+                    status_var.set(detail.strip() or "Falha no clone.")
 
         def clone_action() -> None:
+            nonlocal clone_cancel_requested
             repo_url = clone_url_var.get().strip()
             target_name = clone_name_var.get().strip()
             if not repo_url:
                 messagebox.showwarning("Clone", "Informe a URL SSH/HTTPS do repositório.")
                 return
-            clone_button.configure(state="disabled")
-            status_var.set("Clonando repositório...")
-            self._clone_repo_from_url(repo_url=repo_url, target_name=target_name, on_finished=on_clone_finished)
+            clone_cancel_requested = False
+            progress_text.configure(state="normal")
+            progress_text.delete("1.0", tk.END)
+            progress_text.configure(state="disabled")
+            progress_hint_var.set("Progresso reportado: 0%")
+            status_var.set("Iniciando clone...")
+            set_dialog_running(True)
+            self._clone_repo_from_url(
+                repo_url=repo_url,
+                target_name=target_name,
+                on_finished=on_clone_finished,
+                on_progress=lambda line: self.after(0, lambda value=line: append_progress_line(value)),
+                is_cancelled=lambda: clone_cancel_requested,
+            )
 
-        ttk.Button(actions, text="Cancelar", command=dialog.destroy).grid(row=0, column=0, padx=(0, 6))
+        def cancel_action() -> None:
+            nonlocal clone_cancel_requested
+            if clone_running:
+                clone_cancel_requested = True
+                status_var.set("Cancelando clone...")
+                return
+            if hasattr(self, "_set_clone_ui_locked"):
+                self._set_clone_ui_locked(False)
+            dialog.destroy()
+
+        cancel_button = ttk.Button(actions, text="Cancelar", command=cancel_action)
+        cancel_button.grid(row=0, column=0, padx=(0, 6))
         clone_button = ttk.Button(actions, text="Clonar", command=clone_action)
         clone_button.grid(row=0, column=1)
+        dialog.protocol("WM_DELETE_WINDOW", cancel_action)
         clone_url_entry.focus_set()
 
     def _open_workspace_card_repo(self, index: int) -> None:
