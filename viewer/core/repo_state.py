@@ -14,6 +14,20 @@ def list_tags(repo_path: str) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def list_worktree_changed_files(repo_path: str) -> list[str]:
+    output = run_git(repo_path, ["status", "--porcelain"])
+    changed_files: list[str] = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        raw_path = line[3:].strip() if len(line) >= 4 else line.strip()
+        if " -> " in raw_path:
+            raw_path = raw_path.split(" -> ", 1)[1].strip()
+        if raw_path and raw_path not in changed_files:
+            changed_files.append(raw_path)
+    return changed_files
+
+
 def get_current_branch(repo_path: str) -> str:
     output = run_git(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"])
     return output.strip()

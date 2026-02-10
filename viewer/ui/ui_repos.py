@@ -9,7 +9,16 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
-from ..core.git_client import is_git_repo, run_git
+from ..core.branch_ops import checkout_branch as core_checkout_branch
+from ..core.git_client import is_git_repo
+from ..core.repo_state import (
+    get_ahead_behind as core_get_ahead_behind,
+    get_current_branch as core_get_current_branch,
+    get_upstream as core_get_upstream,
+    is_dirty as core_is_dirty,
+    list_branches as core_list_branches,
+    list_worktree_changed_files as core_list_worktree_changed_files,
+)
 from ..core.repo_workspace import (
     check_github_ssh_auth,
     clone_repository,
@@ -632,30 +641,22 @@ class ReposTabMixin:
             }
 
         try:
-            branch = run_git(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).strip() or "(desconhecida)"
+            branch = core_get_current_branch(repo_path).strip() or "(desconhecida)"
         except RuntimeError:
             branch = "(desconhecida)"
         try:
-            output = run_git(repo_path, ["branch", "--format=%(refname:short)"])
-            branches = [line.strip() for line in output.splitlines() if line.strip()]
+            branches = core_list_branches(repo_path)
         except RuntimeError:
             branches = []
         if branch and branch not in branches and branch != "(desconhecida)":
             branches.insert(0, branch)
 
         sync = "Ahead 0 | Behind 0"
-        try:
-            upstream = run_git(repo_path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).strip()
-        except RuntimeError:
-            upstream = ""
+        upstream = core_get_upstream(repo_path) or ""
         if upstream:
             try:
-                counts = run_git(repo_path, ["rev-list", "--left-right", "--count", f"{upstream}...HEAD"]).strip()
-                parts = counts.split()
-                if len(parts) == 2:
-                    behind = int(parts[0])
-                    ahead = int(parts[1])
-                    sync = f"Ahead {ahead} | Behind {behind}"
+                behind, ahead = core_get_ahead_behind(repo_path, upstream)
+                sync = f"Ahead {ahead} | Behind {behind}"
             except RuntimeError:
                 sync = "Ahead/Behind: (erro)"
         else:
@@ -828,19 +829,11 @@ class ReposTabMixin:
 
     def _build_repo_worktree_status_summary(self, repo_path: str) -> str:
         try:
-            output = run_git(repo_path, ["status", "--porcelain"])
+            changed_files = core_list_worktree_changed_files(repo_path)
         except RuntimeError:
             return "Status: (indisponivel)"
-        lines = [line for line in output.splitlines() if line.strip()]
-        if not lines:
+        if not changed_files:
             return "Status: limpo"
-        changed_files: list[str] = []
-        for line in lines:
-            raw_path = line[3:].strip() if len(line) >= 4 else line.strip()
-            if " -> " in raw_path:
-                raw_path = raw_path.split(" -> ", 1)[1].strip()
-            if raw_path and raw_path not in changed_files:
-                changed_files.append(raw_path)
         total = len(changed_files)
         if total == 0:
             return "Status: alteracoes locais"
@@ -1105,13 +1098,13 @@ class ReposTabMixin:
         start = self._perf_start("Checkout branch", perf_trigger)
         try:
             try:
-                status_output = run_git(normalized_repo, ["status", "--porcelain"])
+                repo_is_dirty = core_is_dirty(normalized_repo)
             except RuntimeError as exc:
                 messagebox.showerror("Checkout", str(exc))
                 if previous_branch:
                     branch_var.set(previous_branch)
                 return
-            if status_output.strip():
+            if repo_is_dirty:
                 repo_name = os.path.basename(normalized_repo.rstrip(os.sep)) or normalized_repo
                 proceed = messagebox.askyesno(
                     "Checkout",
@@ -1122,7 +1115,7 @@ class ReposTabMixin:
                         branch_var.set(previous_branch)
                     return
             try:
-                run_git(normalized_repo, ["checkout", target])
+                core_checkout_branch(normalized_repo, target)
             except RuntimeError as exc:
                 messagebox.showerror("Checkout", str(exc))
                 if previous_branch:
