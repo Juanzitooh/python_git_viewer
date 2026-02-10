@@ -153,6 +153,9 @@ Legenda
 - [x] R7.1.2 Extrair construcao de links GitHub para o core (2026-02-10)
   Escopo: mover normalizacao de `origin`, descoberta de branch base/head e montagem de URLs (repo/branch/commits/issues/actions/releases/PR/commit) para `viewer/core`.
   Aceite: `ui_global` passa a apenas orquestrar UI (mensagens/clipboard/navegador) usando helpers puros de dominio.
+- [x] R7.1.3 Extrair comparacao de branches para o core (2026-02-10)
+  Escopo: mover carga de commits/diff numstat e calculos de ahead/behind/conflito da aba Comparar para `viewer/core`.
+  Aceite: `ui_branches` apenas apresenta dados e trata feedback visual, com regras Git centralizadas na camada core.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.

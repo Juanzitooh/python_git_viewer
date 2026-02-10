@@ -14,6 +14,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Abas Importar e Comparar agora tambem usam menu de contexto padronizado (commits/arquivos), com fechamento seguro e acoes de copia/abertura consistentes.
 - M7 iniciado: renderizacao de diff foi extraida para `viewer/ui/diff_render.py`, removendo dependencia de `tkinter` no modulo `viewer/core/diff_utils.py`.
 - M7 avancou com extracao de links GitHub para `viewer/core/github_urls.py`, isolando no core a logica de origin/branch e montagem de URLs para repo/branch/commits/issues/actions/releases/PR/commit.
+- M7 avancou com `viewer/core/branch_compare.py`, centralizando comparacao de branches (commits, numstat, ahead/behind e heuristica de conflito) fora da camada de UI.
 
 ## [0.2.0] - 2026-02-10
 
