@@ -702,6 +702,14 @@ class GlobalBarMixin:
     def _on_global_right_click(self, event: tk.Event) -> None:
         if hasattr(self, "_dismiss_commit_context_menu"):
             self._dismiss_commit_context_menu(event)
+        if hasattr(self, "_dismiss_history_file_context_menu"):
+            self._dismiss_history_file_context_menu(event)
+        if hasattr(self, "_dismiss_import_commit_context_menu"):
+            self._dismiss_import_commit_context_menu(event)
+        if hasattr(self, "_dismiss_compare_commit_context_menu"):
+            self._dismiss_compare_commit_context_menu(event)
+        if hasattr(self, "_dismiss_compare_file_context_menu"):
+            self._dismiss_compare_file_context_menu(event)
         if self._is_pointer_inside_widget(getattr(self, "repo_path_combo", None), event.x_root, event.y_root):
             self._on_repo_selector_context_menu(event)
             return
@@ -715,6 +723,14 @@ class GlobalBarMixin:
     def _on_global_pointer_click(self, event: tk.Event) -> None:
         if hasattr(self, "_dismiss_commit_context_menu"):
             self._dismiss_commit_context_menu(event)
+        if hasattr(self, "_dismiss_history_file_context_menu"):
+            self._dismiss_history_file_context_menu(event)
+        if hasattr(self, "_dismiss_import_commit_context_menu"):
+            self._dismiss_import_commit_context_menu(event)
+        if hasattr(self, "_dismiss_compare_commit_context_menu"):
+            self._dismiss_compare_commit_context_menu(event)
+        if hasattr(self, "_dismiss_compare_file_context_menu"):
+            self._dismiss_compare_file_context_menu(event)
         close_dropdown = False
         x_root = getattr(event, "x_root", None)
         y_root = getattr(event, "y_root", None)
@@ -892,6 +908,14 @@ class GlobalBarMixin:
             return
         if hasattr(self, "_dismiss_commit_context_menu"):
             self._dismiss_commit_context_menu()
+        if hasattr(self, "_dismiss_history_file_context_menu"):
+            self._dismiss_history_file_context_menu()
+        if hasattr(self, "_dismiss_import_commit_context_menu"):
+            self._dismiss_import_commit_context_menu()
+        if hasattr(self, "_dismiss_compare_commit_context_menu"):
+            self._dismiss_compare_commit_context_menu()
+        if hasattr(self, "_dismiss_compare_file_context_menu"):
+            self._dismiss_compare_file_context_menu()
         self._dismiss_repo_context_menu(close_dropdown=True)
 
     def _dismiss_repo_context_menu(
@@ -1189,25 +1213,57 @@ class GlobalBarMixin:
                 error(exc)
         return True
 
+    def _open_directory_in_file_manager(self, directory_path: str, title: str = "Pasta") -> bool:
+        normalized = os.path.abspath(os.path.expanduser(directory_path.strip()))
+        if not normalized or not os.path.isdir(normalized):
+            messagebox.showwarning(title, f"Pasta não encontrada:\n{directory_path}")
+            return False
+        try:
+            if os.name == "nt":
+                os.startfile(normalized)  # type: ignore[attr-defined]
+            elif shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", normalized])
+            elif shutil.which("open"):
+                subprocess.Popen(["open", normalized])
+            else:
+                messagebox.showwarning(title, "Não foi encontrado um comando para abrir a pasta.")
+                return False
+        except OSError as exc:
+            messagebox.showerror(title, f"Falha ao abrir a pasta: {exc}")
+            return False
+        return True
+
     def _open_repo_in_file_manager(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
         if not resolved_repo:
             messagebox.showinfo("Pasta", "Selecione um repositório válido antes de abrir a pasta.")
             return False
-        try:
-            if os.name == "nt":
-                os.startfile(resolved_repo)  # type: ignore[attr-defined]
-            elif shutil.which("xdg-open"):
-                subprocess.Popen(["xdg-open", resolved_repo])
-            elif shutil.which("open"):
-                subprocess.Popen(["open", resolved_repo])
-            else:
-                messagebox.showwarning("Pasta", "Não foi encontrado um comando para abrir a pasta.")
-                return False
-        except OSError as exc:
-            messagebox.showerror("Pasta", f"Falha ao abrir a pasta: {exc}")
+        return self._open_directory_in_file_manager(resolved_repo, title="Pasta")
+
+    def _open_repo_file_in_file_manager(self, repo_relative_path: str) -> bool:
+        if not self.repo_ready or not self.repo_path:
+            messagebox.showinfo("Pasta", "Selecione um repositório válido antes de abrir arquivos.")
             return False
-        return True
+        path_value = repo_relative_path.strip()
+        if not path_value:
+            messagebox.showwarning("Pasta", "Caminho do arquivo não informado.")
+            return False
+        if os.path.isabs(path_value):
+            abs_path = os.path.normpath(path_value)
+        else:
+            abs_path = os.path.normpath(os.path.join(self.repo_path, path_value))
+        target_dir = abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
+        if not target_dir:
+            target_dir = self.repo_path
+        while target_dir and not os.path.isdir(target_dir):
+            parent = os.path.dirname(target_dir)
+            if parent == target_dir:
+                break
+            target_dir = parent
+        if not target_dir or not os.path.isdir(target_dir):
+            messagebox.showwarning("Pasta", f"Pasta não encontrada para o caminho:\n{repo_relative_path}")
+            return False
+        return self._open_directory_in_file_manager(target_dir, title="Pasta")
 
     @staticmethod
     def _normalize_remote_url_for_browser(remote_url: str) -> str:

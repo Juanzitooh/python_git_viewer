@@ -186,6 +186,14 @@ class CommitsViewer(
             self._dismiss_repo_context_menu(close_dropdown=True)
         if hasattr(self, "_dismiss_commit_context_menu"):
             self._dismiss_commit_context_menu()
+        if hasattr(self, "_dismiss_history_file_context_menu"):
+            self._dismiss_history_file_context_menu()
+        if hasattr(self, "_dismiss_import_commit_context_menu"):
+            self._dismiss_import_commit_context_menu()
+        if hasattr(self, "_dismiss_compare_commit_context_menu"):
+            self._dismiss_compare_commit_context_menu()
+        if hasattr(self, "_dismiss_compare_file_context_menu"):
+            self._dismiss_compare_file_context_menu()
         if hasattr(self, "_refresh_repo_selector_visibility"):
             self._refresh_repo_selector_visibility()
 
@@ -238,6 +246,16 @@ class CommitsViewer(
             self._startup_poll_job = None
         if hasattr(self, "_dismiss_repo_context_menu"):
             self._dismiss_repo_context_menu(close_dropdown=True)
+        if hasattr(self, "_dismiss_commit_context_menu"):
+            self._dismiss_commit_context_menu()
+        if hasattr(self, "_dismiss_history_file_context_menu"):
+            self._dismiss_history_file_context_menu()
+        if hasattr(self, "_dismiss_import_commit_context_menu"):
+            self._dismiss_import_commit_context_menu()
+        if hasattr(self, "_dismiss_compare_commit_context_menu"):
+            self._dismiss_compare_commit_context_menu()
+        if hasattr(self, "_dismiss_compare_file_context_menu"):
+            self._dismiss_compare_file_context_menu()
         if hasattr(self, "_hide_conflicts_tab"):
             self._hide_conflicts_tab(select_history=False)
         self._hide_hover_tooltip()

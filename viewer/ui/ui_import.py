@@ -80,6 +80,7 @@ class ImportTabMixin:
         )
         self.import_commits_listbox.grid(row=0, column=0, sticky="nsew")
         self.import_commits_listbox.bind("<<ListboxSelect>>", self._on_import_commits_selection)
+        self.import_commits_listbox.bind("<Button-3>", self._on_import_commit_context_menu_request, add=True)
         import_scroll = ttk.Scrollbar(commits_frame, orient="vertical", command=self.import_commits_listbox.yview)
         import_scroll.grid(row=0, column=1, sticky="ns")
         self.import_commits_listbox.configure(yscrollcommand=import_scroll.set)
@@ -113,6 +114,7 @@ class ImportTabMixin:
         self.import_source_repo_path = ""
         self.import_source_repo_lookup: dict[str, str] = {}
         self.import_commit_summaries: list[CommitSummary] = []
+        self.import_commit_context_menu: tk.Menu | None = None
         self._refresh_import_source_repo_options()
         self._sync_import_tab_with_current_repo()
 
@@ -235,6 +237,7 @@ class ImportTabMixin:
 
     def _set_import_source_repo(self, path: str, *, show_errors: bool) -> bool:
         if not path.strip():
+            self._dismiss_import_commit_context_menu()
             self.import_source_repo_path = ""
             self.import_commit_summaries = []
             self.import_source_repo_var.set("")
@@ -312,6 +315,7 @@ class ImportTabMixin:
         self._load_import_source_commits()
 
     def _load_import_source_commits(self) -> None:
+        self._dismiss_import_commit_context_menu()
         source_repo = self.import_source_repo_path
         branch = self.import_source_branch_var.get().strip() if hasattr(self, "import_source_branch_var") else ""
         if not source_repo or not branch:
@@ -325,6 +329,7 @@ class ImportTabMixin:
             return load_commit_summaries(source_repo, self.commit_limit, filters=filters)
 
         def success(result: object) -> None:
+            self._dismiss_import_commit_context_menu()
             summaries = list(result)  # type: ignore[list-item]
             self.import_commit_summaries = summaries
             self.import_commits_listbox.delete(0, tk.END)
@@ -337,6 +342,7 @@ class ImportTabMixin:
             self._update_import_controls_state()
 
         def error(exc: Exception) -> None:
+            self._dismiss_import_commit_context_menu()
             self.import_commit_summaries = []
             self.import_commits_listbox.delete(0, tk.END)
             self.import_status_var.set("Falha ao carregar commits da origem.")
@@ -346,7 +352,181 @@ class ImportTabMixin:
         self._run_async("import_source_commits", "Commits origem", task, success, error)
 
     def _on_import_commits_selection(self, _event: tk.Event) -> None:
+        self._dismiss_import_commit_context_menu()
         self._update_import_controls_state()
+
+    def _dismiss_import_commit_context_menu(self, event: tk.Event | None = None) -> None:
+        if event is not None and self._is_event_inside_import_commit_context_menu(event):
+            return
+        menu = getattr(self, "import_commit_context_menu", None)
+        self.import_commit_context_menu = None
+        if menu is None:
+            return
+        try:
+            menu.unpost()
+        except tk.TclError:
+            pass
+        try:
+            menu.destroy()
+        except tk.TclError:
+            pass
+
+    def _is_event_inside_import_commit_context_menu(self, event: tk.Event) -> bool:
+        menu = getattr(self, "import_commit_context_menu", None)
+        if menu is None:
+            return False
+        menu_path = str(menu).strip()
+        if not menu_path:
+            return False
+        candidate_paths: list[str] = []
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            widget_path = str(widget).strip()
+            if widget_path:
+                candidate_paths.append(widget_path)
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            try:
+                contained = self.tk.call("winfo", "containing", x_root, y_root)
+            except tk.TclError:
+                contained = ""
+            contained_path = str(contained).strip()
+            if contained_path:
+                candidate_paths.append(contained_path)
+        for path in candidate_paths:
+            if path == menu_path or path.startswith(f"{menu_path}."):
+                return True
+        return False
+
+    def _on_import_commit_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self.import_commit_context_menu = None
+
+    def _import_commit_index_from_y(self, y: int) -> int | None:
+        size = self.import_commits_listbox.size()
+        if size <= 0:
+            return None
+        index = self.import_commits_listbox.nearest(y)
+        if index < 0 or index >= size:
+            return None
+        bbox = self.import_commits_listbox.bbox(index)
+        if bbox:
+            top = bbox[1]
+            bottom = bbox[1] + bbox[3]
+            if y < top or y > bottom:
+                return None
+        if index < 0 or index >= len(self.import_commit_summaries):
+            return None
+        return index
+
+    def _copy_import_commit_hash(self, commit_hash: str) -> None:
+        if not commit_hash:
+            return
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(commit_hash)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status("Hash do commit copiado.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(commit_hash)
+        self.update()
+
+    def _copy_import_commit_files_list(self, commit_hash: str) -> None:
+        source_repo = self.import_source_repo_path.strip()
+        if not source_repo:
+            messagebox.showwarning("Importar", "Selecione repositório e branch de origem.")
+            return
+        try:
+            output = run_git(source_repo, ["show", "--pretty=format:", "--name-only", commit_hash])
+        except RuntimeError as exc:
+            messagebox.showerror("Importar", str(exc))
+            return
+        paths = [line.strip() for line in output.splitlines() if line.strip()]
+        payload = ", ".join(paths)
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(payload)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status("Lista de arquivos do commit copiada.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        self.update()
+
+    def _copy_import_commit_patch(self, commit_hash: str) -> None:
+        source_repo = self.import_source_repo_path.strip()
+        if not source_repo:
+            messagebox.showwarning("Importar", "Selecione repositório e branch de origem.")
+            return
+        try:
+            patch = run_git(source_repo, ["show", "--format=", commit_hash])
+        except RuntimeError as exc:
+            messagebox.showerror("Importar", str(exc))
+            return
+        payload = patch.strip()
+        if not payload:
+            messagebox.showinfo("Importar", "Sem patch para copiar neste commit.")
+            return
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(payload)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status("Patch completo do commit copiado.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        self.update()
+
+    def _show_import_commit_context_menu(self, event: tk.Event, summary: CommitSummary) -> None:
+        self._dismiss_import_commit_context_menu()
+        commit_hash = summary.commit_hash.strip()
+        if not commit_hash:
+            return
+        source_repo = self.import_source_repo_path.strip()
+        if not source_repo:
+            messagebox.showwarning("Importar", "Selecione repositório e branch de origem.")
+            return
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label="Abrir commit no GitHub",
+            command=lambda selected_hash=commit_hash: self._open_commit_in_github(selected_hash, source_repo),
+        )
+        menu.add_command(
+            label="Copiar URL do commit no GitHub",
+            command=lambda selected_hash=commit_hash: self._copy_commit_github_url(selected_hash, source_repo),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Copiar hash completo",
+            command=lambda selected_hash=commit_hash: self._copy_import_commit_hash(selected_hash),
+        )
+        menu.add_command(
+            label="Copiar lista de arquivos",
+            command=lambda selected_hash=commit_hash: self._copy_import_commit_files_list(selected_hash),
+        )
+        menu.add_command(
+            label="Copiar patch completo",
+            command=lambda selected_hash=commit_hash: self._copy_import_commit_patch(selected_hash),
+        )
+        self.import_commit_context_menu = menu
+        menu.bind("<Unmap>", self._on_import_commit_context_menu_unmap, add=True)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _on_import_commit_context_menu_request(self, event: tk.Event) -> str:
+        index = self._import_commit_index_from_y(int(event.y))
+        if index is None:
+            selected_indices = self.import_commits_listbox.curselection()
+            if selected_indices:
+                index = selected_indices[-1]
+        if index is None or index < 0 or index >= len(self.import_commit_summaries):
+            return "break"
+        summary = self.import_commit_summaries[index]
+        self._show_import_commit_context_menu(event, summary)
+        return "break"
 
     def _get_selected_import_summaries(self) -> list[CommitSummary]:
         if not hasattr(self, "import_commits_listbox"):

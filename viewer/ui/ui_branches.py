@@ -73,6 +73,8 @@ class BranchesTabMixin:
         )
         self.compare_commits_listbox = tk.Listbox(commits_frame, height=10, activestyle="dotbox")
         self.compare_commits_listbox.grid(row=1, column=0, sticky="nsew")
+        self.compare_commits_listbox.bind("<<ListboxSelect>>", self._on_compare_commit_select)
+        self.compare_commits_listbox.bind("<ButtonPress-3>", self._on_compare_commit_context_menu_request, add=True)
         commits_scroll = ttk.Scrollbar(commits_frame, orient="vertical", command=self.compare_commits_listbox.yview)
         commits_scroll.grid(row=1, column=1, sticky="ns")
         self.compare_commits_listbox.configure(yscrollcommand=commits_scroll.set)
@@ -107,6 +109,7 @@ class BranchesTabMixin:
         self.compare_files_listbox.grid(row=1, column=0, sticky="nsew")
         self.compare_files_listbox.bind("<<ListboxSelect>>", self._on_compare_file_select)
         self.compare_files_listbox.bind("<Double-Button-1>", self._open_compare_file_in_vscode)
+        self.compare_files_listbox.bind("<Button-3>", self._on_compare_file_context_menu_request, add=True)
         files_scroll = ttk.Scrollbar(diff_frame, orient="vertical", command=self.compare_files_listbox.yview)
         files_scroll.grid(row=1, column=1, sticky="ns")
         self.compare_files_listbox.configure(yscrollcommand=files_scroll.set)
@@ -176,6 +179,9 @@ class BranchesTabMixin:
         self.branch_action_button.bind("<Leave>", self._hide_action_hint)
 
         self.compare_file_stats_by_index: dict[int, dict[str, object]] = {}
+        self.compare_commit_context_menu: tk.Menu | None = None
+        self.compare_file_context_menu: tk.Menu | None = None
+        self._compare_commit_context_guard = False
         self._update_branch_message_visibility()
         self._set_branch_dirty_cta_visibility(False)
 
@@ -218,6 +224,8 @@ class BranchesTabMixin:
         self._refresh_branch_comparison()
 
     def _refresh_branch_comparison(self) -> None:
+        self._dismiss_compare_commit_context_menu()
+        self._dismiss_compare_file_context_menu()
         if not hasattr(self, "compare_commits_listbox"):
             return
         start = self._perf_start("Comparar branches")
@@ -249,6 +257,8 @@ class BranchesTabMixin:
         self._perf_end("Comparar branches", start)
 
     def _clear_branch_comparison(self, message: str) -> None:
+        self._dismiss_compare_commit_context_menu()
+        self._dismiss_compare_file_context_menu()
         if hasattr(self, "compare_commits_listbox"):
             self.compare_commits_listbox.delete(0, tk.END)
         if hasattr(self, "compare_files_listbox"):
@@ -339,11 +349,342 @@ class BranchesTabMixin:
             summary = f"{summary} | Binários: {totals['binary']}"
         self.compare_status_var.set(summary)
 
+    def _on_compare_commit_select(self, _event: tk.Event) -> None:
+        if getattr(self, "_compare_commit_context_guard", False):
+            return
+        self._dismiss_compare_commit_context_menu()
+
+    def _clear_compare_commit_context_guard(self) -> None:
+        self._compare_commit_context_guard = False
+
+    def _dismiss_compare_commit_context_menu(self, event: tk.Event | None = None) -> None:
+        if event is not None and self._is_event_inside_compare_commit_context_menu(event):
+            return
+        menu = getattr(self, "compare_commit_context_menu", None)
+        self.compare_commit_context_menu = None
+        if menu is None:
+            return
+        try:
+            menu.unpost()
+        except tk.TclError:
+            pass
+        try:
+            menu.destroy()
+        except tk.TclError:
+            pass
+
+    def _is_event_inside_compare_commit_context_menu(self, event: tk.Event) -> bool:
+        menu = getattr(self, "compare_commit_context_menu", None)
+        if menu is None:
+            return False
+        menu_path = str(menu).strip()
+        if not menu_path:
+            return False
+        candidate_paths: list[str] = []
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            widget_path = str(widget).strip()
+            if widget_path:
+                candidate_paths.append(widget_path)
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            try:
+                contained = self.tk.call("winfo", "containing", x_root, y_root)
+            except tk.TclError:
+                contained = ""
+            contained_path = str(contained).strip()
+            if contained_path:
+                candidate_paths.append(contained_path)
+        for path in candidate_paths:
+            if path == menu_path or path.startswith(f"{menu_path}."):
+                return True
+        return False
+
+    def _on_compare_commit_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self.compare_commit_context_menu = None
+
+    def _compare_commit_index_from_y(self, y: int) -> int | None:
+        size = self.compare_commits_listbox.size()
+        if size <= 0:
+            return None
+        index = self.compare_commits_listbox.nearest(y)
+        if index < 0 or index >= size:
+            return None
+        bbox = self.compare_commits_listbox.bbox(index)
+        if bbox:
+            top = bbox[1]
+            bottom = bbox[1] + bbox[3]
+            if y < top or y > bottom:
+                return None
+        return index
+
+    @staticmethod
+    def _extract_compare_commit_token(commit_line: str) -> str:
+        value = commit_line.strip()
+        if not value:
+            return ""
+        return value.split(" ", 1)[0].strip()
+
+    def _resolve_compare_commit_hash(self, commit_line: str) -> str:
+        token = self._extract_compare_commit_token(commit_line)
+        if not token:
+            return ""
+        try:
+            return run_git(self.repo_path, ["rev-parse", token]).strip()
+        except RuntimeError:
+            return token
+
+    def _copy_compare_commit_hash(self, commit_hash: str) -> None:
+        if not commit_hash:
+            return
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(commit_hash)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status("Hash do commit copiado.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(commit_hash)
+        self.update()
+
+    def _copy_compare_commit_files_list(self, commit_hash: str) -> None:
+        if not commit_hash:
+            return
+        try:
+            output = run_git(self.repo_path, ["show", "--pretty=format:", "--name-only", commit_hash])
+        except RuntimeError as exc:
+            messagebox.showerror("Comparar", str(exc))
+            return
+        paths = [line.strip() for line in output.splitlines() if line.strip()]
+        payload = ", ".join(paths)
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(payload)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status("Lista de arquivos do commit copiada.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        self.update()
+
+    def _copy_compare_commit_patch(self, commit_hash: str) -> None:
+        if not commit_hash:
+            return
+        try:
+            patch = run_git(self.repo_path, ["show", "--format=", commit_hash])
+        except RuntimeError as exc:
+            messagebox.showerror("Comparar", str(exc))
+            return
+        payload = patch.strip()
+        if not payload:
+            messagebox.showinfo("Comparar", "Sem patch para copiar neste commit.")
+            return
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(payload)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status("Patch completo do commit copiado.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        self.update()
+
+    def _show_compare_commit_context_menu(self, event: tk.Event, index: int) -> None:
+        self._dismiss_compare_commit_context_menu()
+        if index < 0 or index >= self.compare_commits_listbox.size():
+            return
+        commit_line = str(self.compare_commits_listbox.get(index)).strip()
+        commit_hash = self._resolve_compare_commit_hash(commit_line)
+        if not commit_hash:
+            return
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label="Abrir commit no GitHub",
+            command=lambda selected_hash=commit_hash: self._open_commit_in_github(selected_hash, self.repo_path),
+        )
+        menu.add_command(
+            label="Copiar URL do commit no GitHub",
+            command=lambda selected_hash=commit_hash: self._copy_commit_github_url(selected_hash, self.repo_path),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Copiar hash completo",
+            command=lambda selected_hash=commit_hash: self._copy_compare_commit_hash(selected_hash),
+        )
+        menu.add_command(
+            label="Copiar lista de arquivos",
+            command=lambda selected_hash=commit_hash: self._copy_compare_commit_files_list(selected_hash),
+        )
+        menu.add_command(
+            label="Copiar patch completo",
+            command=lambda selected_hash=commit_hash: self._copy_compare_commit_patch(selected_hash),
+        )
+        self.compare_commit_context_menu = menu
+        menu.bind("<Unmap>", self._on_compare_commit_context_menu_unmap, add=True)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _on_compare_commit_context_menu_request(self, event: tk.Event) -> str:
+        index = self._compare_commit_index_from_y(int(event.y))
+        if index is None:
+            selection = self.compare_commits_listbox.curselection()
+            if selection:
+                index = selection[-1]
+        if index is None:
+            return "break"
+        self._compare_commit_context_guard = True
+        self.after(140, self._clear_compare_commit_context_guard)
+        self._show_compare_commit_context_menu(event, index)
+        return "break"
+
     def _on_compare_file_select(self, _event: tk.Event) -> None:
+        self._dismiss_compare_file_context_menu()
         selection = self.compare_files_listbox.curselection()
         if not selection:
             return
         self._show_compare_diff_for_index(selection[0])
+
+    def _dismiss_compare_file_context_menu(self, event: tk.Event | None = None) -> None:
+        if event is not None and self._is_event_inside_compare_file_context_menu(event):
+            return
+        menu = getattr(self, "compare_file_context_menu", None)
+        self.compare_file_context_menu = None
+        if menu is None:
+            return
+        try:
+            menu.unpost()
+        except tk.TclError:
+            pass
+        try:
+            menu.destroy()
+        except tk.TclError:
+            pass
+
+    def _is_event_inside_compare_file_context_menu(self, event: tk.Event) -> bool:
+        menu = getattr(self, "compare_file_context_menu", None)
+        if menu is None:
+            return False
+        menu_path = str(menu).strip()
+        if not menu_path:
+            return False
+        candidate_paths: list[str] = []
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            widget_path = str(widget).strip()
+            if widget_path:
+                candidate_paths.append(widget_path)
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            try:
+                contained = self.tk.call("winfo", "containing", x_root, y_root)
+            except tk.TclError:
+                contained = ""
+            contained_path = str(contained).strip()
+            if contained_path:
+                candidate_paths.append(contained_path)
+        for path in candidate_paths:
+            if path == menu_path or path.startswith(f"{menu_path}."):
+                return True
+        return False
+
+    def _on_compare_file_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self.compare_file_context_menu = None
+
+    def _compare_file_index_from_y(self, y: int) -> int | None:
+        size = self.compare_files_listbox.size()
+        if size <= 0:
+            return None
+        index = self.compare_files_listbox.nearest(y)
+        if index < 0 or index >= size:
+            return None
+        bbox = self.compare_files_listbox.bbox(index)
+        if bbox:
+            top = bbox[1]
+            bottom = bbox[1] + bbox[3]
+            if y < top or y > bottom:
+                return None
+        if index not in self.compare_file_stats_by_index:
+            return None
+        return index
+
+    def _copy_compare_file_patch(self, index: int) -> None:
+        entry = self.compare_file_stats_by_index.get(index)
+        if not entry:
+            return
+        if entry.get("binary"):
+            messagebox.showinfo("Comparar", "Arquivo binário: sem diff textual para copiar.")
+            return
+        origin = self.branch_origin_var.get().strip()
+        dest = self.branch_dest_var.get().strip()
+        path = str(entry.get("path", "")).strip()
+        if not origin or not dest or not path:
+            return
+        diff_output = self._load_compare_file_diff_output(origin, dest, path)
+        if diff_output is None:
+            return
+        payload = diff_output.strip()
+        if not payload:
+            messagebox.showinfo("Comparar", "Sem diff textual para copiar neste arquivo.")
+            return
+        if hasattr(self, "_copy_to_clipboard"):
+            copied = self._copy_to_clipboard(payload)
+            if copied and hasattr(self, "_set_status"):
+                self._set_status(f"Patch do arquivo copiado: {path}")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        self.update()
+
+    def _show_compare_file_context_menu(self, event: tk.Event, index: int) -> None:
+        self._dismiss_compare_file_context_menu()
+        entry = self.compare_file_stats_by_index.get(index)
+        if not entry:
+            return
+        path = str(entry.get("path", "")).strip()
+        if not path:
+            return
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label="Abrir arquivo no VS Code",
+            command=lambda selected_path=path: self._open_repo_file_in_vscode(selected_path),
+        )
+        menu.add_command(
+            label="Abrir na Pasta",
+            command=lambda selected_path=path: self._open_repo_file_in_file_manager(selected_path),
+        )
+        menu.add_command(
+            label="Copiar caminho relativo",
+            command=lambda selected_path=path: self._copy_to_clipboard(selected_path),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Copiar patch do arquivo",
+            command=lambda selected_index=index: self._copy_compare_file_patch(selected_index),
+        )
+        self.compare_file_context_menu = menu
+        menu.bind("<Unmap>", self._on_compare_file_context_menu_unmap, add=True)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _on_compare_file_context_menu_request(self, event: tk.Event) -> str:
+        index = self._compare_file_index_from_y(int(event.y))
+        if index is None:
+            selection = self.compare_files_listbox.curselection()
+            if selection:
+                index = selection[0]
+        if index is None:
+            return "break"
+        self._show_compare_file_context_menu(event, index)
+        return "break"
 
     def _open_compare_file_in_vscode(self, event: tk.Event) -> None:
         if self.compare_files_listbox.size() == 0:
@@ -378,24 +719,9 @@ class BranchesTabMixin:
         path = str(entry.get("path", "")).strip()
         if not path:
             return
-        args = ["diff", "--unified=0"]
-        if self._word_diff_enabled():
-            args.append("--word-diff=plain")
-        args.append(f"{dest}...{origin}")
-        args.extend(["--", path])
-        cache = getattr(self, "compare_diff_cache", None)
-        token = getattr(self, "repo_state_token", 0)
-        cache_key = (token, origin, dest, path, self._word_diff_enabled())
-        if cache is not None and cache_key in cache:
-            diff_output = cache[cache_key]
-        else:
-            try:
-                diff_output = run_git(self.repo_path, args)
-            except RuntimeError as exc:
-                messagebox.showerror("Comparar", str(exc))
-                return
-            if cache is not None:
-                cache[cache_key] = diff_output
+        diff_output = self._load_compare_file_diff_output(origin, dest, path)
+        if diff_output is None:
+            return
         display_diff, truncated, shown, total = self._apply_read_mode_to_diff(diff_output)
         render_patch_to_widget(
             self.compare_diff_text,
@@ -409,6 +735,26 @@ class BranchesTabMixin:
                 self.compare_read_mode_var.set(f"Modo leitura: {shown}/{total} linhas")
             else:
                 self.compare_read_mode_var.set("")
+
+    def _load_compare_file_diff_output(self, origin: str, dest: str, path: str) -> str | None:
+        args = ["diff", "--unified=0"]
+        if self._word_diff_enabled():
+            args.append("--word-diff=plain")
+        args.append(f"{dest}...{origin}")
+        args.extend(["--", path])
+        cache = getattr(self, "compare_diff_cache", None)
+        token = getattr(self, "repo_state_token", 0)
+        cache_key = (token, origin, dest, path, self._word_diff_enabled())
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
+        try:
+            diff_output = run_git(self.repo_path, args)
+        except RuntimeError as exc:
+            messagebox.showerror("Comparar", str(exc))
+            return None
+        if cache is not None:
+            cache[cache_key] = diff_output
+        return diff_output
 
     def _refresh_compare_diff(self) -> None:
         if not hasattr(self, "compare_files_listbox"):

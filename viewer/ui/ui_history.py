@@ -172,12 +172,14 @@ class HistoryTabMixin:
         self.files_listbox.grid(row=1, column=0, sticky="nsew")
         self.files_listbox.bind("<<ListboxSelect>>", self._on_file_select)
         self.files_listbox.bind("<Double-Button-1>", self._open_selected_file_in_vscode)
+        self.files_listbox.bind("<Button-3>", self._on_history_file_context_menu_request, add=True)
 
         files_scroll = ttk.Scrollbar(files_frame, orient="vertical", command=self.files_listbox.yview)
         files_scroll.grid(row=1, column=1, sticky="ns")
         self.files_listbox.configure(yscrollcommand=files_scroll.set)
 
         self.file_stats_by_index: dict[int, FileStat] = {}
+        self.history_file_context_menu: tk.Menu | None = None
 
         patch_frame = ttk.Frame(details_paned)
         patch_frame.grid_rowconfigure(1, weight=1)
@@ -726,6 +728,7 @@ class HistoryTabMixin:
 
     def _on_commit_select(self, _event: tk.Event) -> None:
         self._dismiss_commit_context_menu()
+        self._dismiss_history_file_context_menu()
         self._hide_commit_tooltip()
         selection = self.commit_listbox.curselection()
         if not selection:
@@ -926,10 +929,144 @@ class HistoryTabMixin:
         return run_git(self.repo_path, args)
 
     def _on_file_select(self, _event: tk.Event) -> None:
+        self._dismiss_history_file_context_menu()
         selection = self.files_listbox.curselection()
         if not selection:
             return
         self._show_file_patch(selection[0])
+
+    def _dismiss_history_file_context_menu(self, event: tk.Event | None = None) -> None:
+        if event is not None and self._is_event_inside_history_file_context_menu(event):
+            return
+        menu = getattr(self, "history_file_context_menu", None)
+        self.history_file_context_menu = None
+        if menu is None:
+            return
+        try:
+            menu.unpost()
+        except tk.TclError:
+            pass
+        try:
+            menu.destroy()
+        except tk.TclError:
+            pass
+
+    def _is_event_inside_history_file_context_menu(self, event: tk.Event) -> bool:
+        menu = getattr(self, "history_file_context_menu", None)
+        if menu is None:
+            return False
+        menu_path = str(menu).strip()
+        if not menu_path:
+            return False
+        candidate_paths: list[str] = []
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            widget_path = str(widget).strip()
+            if widget_path:
+                candidate_paths.append(widget_path)
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            try:
+                contained = self.tk.call("winfo", "containing", x_root, y_root)
+            except tk.TclError:
+                contained = ""
+            contained_path = str(contained).strip()
+            if contained_path:
+                candidate_paths.append(contained_path)
+        for path in candidate_paths:
+            if path == menu_path or path.startswith(f"{menu_path}."):
+                return True
+        return False
+
+    def _on_history_file_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self.history_file_context_menu = None
+
+    def _history_file_index_from_y(self, y: int) -> int | None:
+        if not hasattr(self, "files_listbox"):
+            return None
+        size = self.files_listbox.size()
+        if size <= 0:
+            return None
+        index = self.files_listbox.nearest(y)
+        if index < 0 or index >= size:
+            return None
+        bbox = self.files_listbox.bbox(index)
+        if bbox:
+            top = bbox[1]
+            bottom = bbox[1] + bbox[3]
+            if y < top or y > bottom:
+                return None
+        if index not in self.file_stats_by_index:
+            return None
+        return index
+
+    def _copy_history_file_patch(self, commit_hash: str, stat: FileStat) -> None:
+        if stat.is_binary:
+            messagebox.showinfo("Patch", "Arquivo binário: sem diff textual para copiar.")
+            return
+        try:
+            patch = self._get_patch(commit_hash, stat.path)
+        except RuntimeError as exc:
+            messagebox.showerror("Patch", str(exc))
+            return
+        payload = patch.strip()
+        if not payload:
+            messagebox.showinfo("Patch", "Sem diff textual para copiar neste arquivo.")
+            return
+        self._copy_to_clipboard(payload)
+        self._set_status(f"Patch do arquivo copiado: {stat.path}")
+
+    def _show_history_file_context_menu(self, event: tk.Event, index: int) -> None:
+        self._dismiss_history_file_context_menu()
+        stat = self.file_stats_by_index.get(index)
+        commit_hash = self._get_selected_commit_hash() or ""
+        if stat is None or not commit_hash:
+            return
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label="Abrir arquivo no VS Code",
+            command=lambda path=stat.path: self._open_repo_file_in_vscode(path),
+        )
+        menu.add_command(
+            label="Abrir na Pasta",
+            command=lambda path=stat.path: self._open_repo_file_in_file_manager(path),
+        )
+        menu.add_command(
+            label="Copiar caminho relativo",
+            command=lambda path=stat.path: self._copy_to_clipboard(path),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Copiar patch do arquivo",
+            command=lambda selected_hash=commit_hash, selected_stat=stat: self._copy_history_file_patch(
+                selected_hash, selected_stat
+            ),
+        )
+        menu.add_command(
+            label="Copiar patch completo do commit",
+            command=lambda selected_hash=commit_hash: self._copy_full_patch(selected_hash),
+        )
+        self.history_file_context_menu = menu
+        menu.bind("<Unmap>", self._on_history_file_context_menu_unmap, add=True)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _on_history_file_context_menu_request(self, event: tk.Event) -> str:
+        index = self._history_file_index_from_y(int(event.y))
+        if index is None:
+            selection = self.files_listbox.curselection()
+            if selection:
+                index = selection[0]
+        if index is None:
+            return "break"
+        self._show_history_file_context_menu(event, index)
+        return "break"
 
     def _open_selected_file_in_vscode(self, event: tk.Event) -> None:
         if self.files_listbox.size() == 0:
