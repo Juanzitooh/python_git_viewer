@@ -7,6 +7,10 @@ import sys
 from pathlib import Path
 
 from ..core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
+from ..core.commit_content import (
+    get_commit_patch as core_get_commit_patch,
+    list_commit_files as core_list_commit_files,
+)
 from ..core.commit_ops import (
     create_commit as core_create_commit,
     has_staged_changes as core_has_staged_changes,
@@ -14,7 +18,8 @@ from ..core.commit_ops import (
     stage_paths as core_stage_paths,
     unstage_all as core_unstage_all,
 )
-from ..core.git_client import is_git_repo
+from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries
+from ..core.models import CommitFilters, CommitSummary
 from ..core.remote_ops import (
     fetch_all_prune as core_fetch_all_prune,
     pull_ff_only as core_pull_ff_only,
@@ -35,6 +40,7 @@ try:
     from PySide6.QtGui import QCloseEvent, QFont
     from PySide6.QtWidgets import (
         QApplication,
+        QCheckBox,
         QFileDialog,
         QComboBox,
         QHBoxLayout,
@@ -201,7 +207,7 @@ class QtShellWindow(QMainWindow):
 
         self._build_repositories_tab()
         self._build_commit_tab()
-        self._build_placeholder_tab(self.history_tab, "Historico")
+        self._build_history_tab()
         self._build_placeholder_tab(self.import_tab, "Importar")
         self._build_placeholder_tab(self.compare_tab, "Comparar")
         self._build_placeholder_tab(self.settings_tab, "Configuracoes")
@@ -351,6 +357,214 @@ class QtShellWindow(QMainWindow):
 
         layout.addWidget(action_row)
         self._refresh_commit_files()
+
+    def _build_history_tab(self) -> None:
+        self.history_summaries: list[CommitSummary] = []
+        self.history_summary_by_hash: dict[str, CommitSummary] = {}
+        self.history_current_commit_hash = ""
+        self.history_current_file_path = ""
+
+        layout = QVBoxLayout(self.history_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        top_row = QWidget(self.history_tab)
+        top_layout = QHBoxLayout(top_row)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(6)
+
+        self.history_refresh_button = QPushButton("Atualizar", top_row)
+        self.history_refresh_button.clicked.connect(self._reload_history_commits)
+        top_layout.addWidget(self.history_refresh_button)
+
+        top_layout.addWidget(QLabel("Buscar:", top_row))
+        self.history_search_input = QLineEdit(top_row)
+        self.history_search_input.setPlaceholderText("Filtrar por texto no commit")
+        self.history_search_input.returnPressed.connect(self._reload_history_commits)
+        top_layout.addWidget(self.history_search_input, stretch=1)
+
+        top_layout.addWidget(QLabel("Limite:", top_row))
+        self.history_limit_combo = QComboBox(top_row)
+        self.history_limit_combo.addItem("50", 50)
+        self.history_limit_combo.addItem("100", 100)
+        self.history_limit_combo.addItem("200", 200)
+        self.history_limit_combo.setCurrentIndex(1)
+        self.history_limit_combo.currentIndexChanged.connect(self._reload_history_commits)
+        top_layout.addWidget(self.history_limit_combo)
+
+        self.history_word_diff_check = QCheckBox("Diff por palavra", top_row)
+        self.history_word_diff_check.stateChanged.connect(self._refresh_history_patch_view)
+        top_layout.addWidget(self.history_word_diff_check)
+
+        layout.addWidget(top_row)
+
+        body = QWidget(self.history_tab)
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(8)
+
+        self.history_commits_list = QListWidget(body)
+        self.history_commits_list.itemSelectionChanged.connect(self._on_history_commit_selected)
+        body_layout.addWidget(self.history_commits_list, stretch=2)
+
+        right_panel = QWidget(body)
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+
+        self.history_commit_info = QPlainTextEdit(right_panel)
+        self.history_commit_info.setReadOnly(True)
+        self.history_commit_info.setFixedHeight(130)
+        right_layout.addWidget(self.history_commit_info)
+
+        self.history_files_list = QListWidget(right_panel)
+        self.history_files_list.itemSelectionChanged.connect(self._on_history_file_selected)
+        right_layout.addWidget(self.history_files_list, stretch=1)
+
+        self.history_patch_view = QPlainTextEdit(right_panel)
+        self.history_patch_view.setReadOnly(True)
+        right_layout.addWidget(self.history_patch_view, stretch=2)
+
+        body_layout.addWidget(right_panel, stretch=3)
+        layout.addWidget(body, stretch=1)
+
+        self._clear_history_view()
+
+    def _clear_history_view(self) -> None:
+        self.history_summaries = []
+        self.history_summary_by_hash = {}
+        self.history_current_commit_hash = ""
+        self.history_current_file_path = ""
+        if hasattr(self, "history_commits_list"):
+            self.history_commits_list.clear()
+        if hasattr(self, "history_files_list"):
+            self.history_files_list.clear()
+        if hasattr(self, "history_commit_info"):
+            self.history_commit_info.setPlainText("")
+        if hasattr(self, "history_patch_view"):
+            self.history_patch_view.setPlainText("")
+
+    def _get_history_limit_value(self) -> int:
+        data = self.history_limit_combo.currentData()
+        try:
+            value = int(data)
+        except (TypeError, ValueError):
+            value = 100
+        return max(1, value)
+
+    def _reload_history_commits(self) -> None:
+        if not self.repo_path:
+            self._clear_history_view()
+            return
+        text_filter = self.history_search_input.text().strip()
+        filters = CommitFilters(text=text_filter)
+        limit = self._get_history_limit_value()
+        try:
+            summaries = load_commit_summaries(self.repo_path, limit=limit, filters=filters)
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Historico", str(exc))
+            self._clear_history_view()
+            return
+
+        self.history_summaries = summaries
+        self.history_summary_by_hash = {item.commit_hash: item for item in summaries}
+        self.history_current_commit_hash = ""
+        self.history_current_file_path = ""
+
+        self.history_commits_list.blockSignals(True)
+        self.history_commits_list.clear()
+        for summary in summaries:
+            label = f"{summary.commit_hash[:7]} | {summary.subject}"
+            item = QListWidgetItem(label, self.history_commits_list)
+            item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+        self.history_commits_list.blockSignals(False)
+
+        if summaries:
+            self.history_commits_list.setCurrentRow(0)
+        else:
+            self.history_files_list.clear()
+            self.history_commit_info.setPlainText("Nenhum commit encontrado.")
+            self.history_patch_view.setPlainText("")
+
+    def _on_history_commit_selected(self) -> None:
+        selected_items = self.history_commits_list.selectedItems()
+        if not selected_items:
+            self.history_current_commit_hash = ""
+            self.history_current_file_path = ""
+            self.history_files_list.clear()
+            self.history_commit_info.setPlainText("")
+            self.history_patch_view.setPlainText("")
+            return
+        item = selected_items[0]
+        value = item.data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+        if not commit_hash:
+            return
+        self.history_current_commit_hash = commit_hash
+        self.history_current_file_path = ""
+        self._load_history_commit_content(commit_hash)
+
+    def _load_history_commit_content(self, commit_hash: str) -> None:
+        try:
+            details = load_commit_details(self.repo_path, commit_hash)
+            files = core_list_commit_files(self.repo_path, commit_hash)
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Historico", str(exc))
+            self.history_files_list.clear()
+            self.history_patch_view.setPlainText("")
+            return
+
+        info_lines = [
+            f"Hash: {details.commit_hash}",
+            f"Autor: {details.author}",
+            f"Data: {details.date}",
+            f"Titulo: {details.subject}",
+            f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
+        ]
+        if details.body:
+            info_lines.extend(["", details.body.strip()])
+        self.history_commit_info.setPlainText("\n".join(info_lines))
+
+        self.history_files_list.blockSignals(True)
+        self.history_files_list.clear()
+        all_files_item = QListWidgetItem("(todos os arquivos)", self.history_files_list)
+        all_files_item.setData(Qt.ItemDataRole.UserRole, "")
+        for path in files:
+            file_item = QListWidgetItem(path, self.history_files_list)
+            file_item.setData(Qt.ItemDataRole.UserRole, path)
+        self.history_files_list.blockSignals(False)
+        self.history_files_list.setCurrentRow(0)
+
+    def _on_history_file_selected(self) -> None:
+        selected_items = self.history_files_list.selectedItems()
+        if not selected_items:
+            self.history_current_file_path = ""
+            self._refresh_history_patch_view()
+            return
+        item = selected_items[0]
+        value = item.data(Qt.ItemDataRole.UserRole)
+        self.history_current_file_path = str(value).strip() if value is not None else ""
+        self._refresh_history_patch_view()
+
+    def _refresh_history_patch_view(self) -> None:
+        commit_hash = self.history_current_commit_hash.strip()
+        if not commit_hash:
+            self.history_patch_view.setPlainText("")
+            return
+        word_diff = self.history_word_diff_check.isChecked()
+        path = self.history_current_file_path.strip() or None
+        try:
+            patch = core_get_commit_patch(
+                self.repo_path,
+                commit_hash,
+                path=path,
+                word_diff=word_diff,
+            )
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Historico", str(exc))
+            self.history_patch_view.setPlainText("")
+            return
+        self.history_patch_view.setPlainText(patch)
 
     def _collect_repo_paths_from_settings(self, key: str) -> list[str]:
         items = self.settings_data.get(key, [])
@@ -649,6 +863,7 @@ class QtShellWindow(QMainWindow):
         self._refresh_commit_files()
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
+        self._reload_history_commits()
 
     def _set_repo(self, repo_path: str, *, save: bool) -> None:
         normalized = normalize_repo_path(repo_path) if repo_path else ""
@@ -656,6 +871,7 @@ class QtShellWindow(QMainWindow):
             self.repo_path = ""
             self._refresh_repo_state_ui()
             self._refresh_commit_files()
+            self._clear_history_view()
             self._sync_workspace_tree_selection()
             if save:
                 self._persist_state()
@@ -665,6 +881,7 @@ class QtShellWindow(QMainWindow):
         self._select_repo_combo_item(normalized)
         self._refresh_repo_state_ui()
         self._refresh_commit_files()
+        self._reload_history_commits()
         self._sync_workspace_tree_selection()
         self._set_status(f"Repositorio ativo: {normalized}")
         if save:
@@ -787,6 +1004,7 @@ class QtShellWindow(QMainWindow):
         self._set_status(f"Checkout concluido: {target}")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
+        self._reload_history_commits()
         self._persist_state()
 
     def _create_new_branch(self) -> None:
@@ -808,6 +1026,7 @@ class QtShellWindow(QMainWindow):
         self._set_status(f"Branch criada: {normalized}")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
+        self._reload_history_commits()
         self._persist_state()
 
     def _fetch_repo(self) -> None:
@@ -821,6 +1040,7 @@ class QtShellWindow(QMainWindow):
         self._set_status("Fetch concluido.")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
+        self._reload_history_commits()
         self._persist_state()
 
     def _pull_repo(self) -> None:
@@ -834,6 +1054,7 @@ class QtShellWindow(QMainWindow):
         self._set_status("Pull concluido.")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
+        self._reload_history_commits()
         self._persist_state()
 
     def _push_repo(self) -> None:
@@ -847,6 +1068,7 @@ class QtShellWindow(QMainWindow):
         self._set_status("Push concluido.")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
+        self._reload_history_commits()
         self._persist_state()
 
     def _on_tab_changed(self, _index: int) -> None:
