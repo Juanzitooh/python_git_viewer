@@ -5,6 +5,10 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from ..core.cherry_pick_ops import (
+    cherry_pick_commit as core_cherry_pick_commit,
+    has_unmerged_conflicts as core_has_unmerged_conflicts,
+)
 from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
 from ..core.git_client import is_git_repo, load_commit_summaries, run_git
 from ..core.models import CommitFilters, CommitSummary
@@ -551,10 +555,9 @@ class ImportTabMixin:
 
     def _has_unmerged_conflicts(self) -> bool:
         try:
-            output = run_git(self.repo_path, ["diff", "--name-only", "--diff-filter=U"])
+            return core_has_unmerged_conflicts(self.repo_path)
         except RuntimeError:
             return False
-        return bool(output.strip())
 
     def _import_selected_commits(self) -> None:
         if not self.repo_ready or not self.repo_path:
@@ -600,9 +603,12 @@ class ImportTabMixin:
                 commit_hash = summary.commit_hash
                 failing_hash = commit_hash
                 try:
-                    if not source_is_target:
-                        run_git(self.repo_path, ["fetch", source_repo, commit_hash])
-                    run_git(self.repo_path, ["cherry-pick", commit_hash])
+                    core_cherry_pick_commit(
+                        self.repo_path,
+                        commit_hash,
+                        source_repo=source_repo,
+                        fetch_source=not source_is_target,
+                    )
                 except RuntimeError as exc:
                     if applied > 0:
                         if hasattr(self, "_bump_repo_state"):

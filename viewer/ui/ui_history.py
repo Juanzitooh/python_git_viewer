@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from ..core.cherry_pick_ops import (
+    cherry_pick_commit as core_cherry_pick_commit,
+    fetch_commit_from_source as core_fetch_commit_from_source,
+    load_unmerged_conflict_files as core_load_unmerged_conflict_files,
+)
 from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
 from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
 from ..core.models import CommitFilters, CommitInfo, CommitSummary, FileStat
@@ -1700,12 +1705,12 @@ class HistoryTabMixin:
             applied: list[str] = []
             for commit_hash in hashes:
                 try:
-                    run_git(self.repo_path, ["fetch", source_path, commit_hash])
+                    core_fetch_commit_from_source(self.repo_path, source_path, commit_hash)
                 except RuntimeError as exc:
                     messagebox.showerror("Importar", f"Falha ao buscar {commit_hash[:7]}.\n{exc}")
                     break
                 try:
-                    run_git(self.repo_path, ["cherry-pick", commit_hash])
+                    core_cherry_pick_commit(self.repo_path, commit_hash)
                 except RuntimeError as exc:
                     messagebox.showerror(
                         "Importar",
@@ -1811,8 +1816,7 @@ class HistoryTabMixin:
         self._refresh_conflicts_tab(select_tab=False)
 
     def _load_unmerged_conflict_files(self) -> list[str]:
-        output = run_git(self.repo_path, ["diff", "--name-only", "--diff-filter=U"])
-        return [line.strip() for line in output.splitlines() if line.strip()]
+        return core_load_unmerged_conflict_files(self.repo_path)
 
     def _git_ref_exists(self, ref_name: str) -> bool:
         try:
