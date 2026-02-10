@@ -609,6 +609,8 @@ class GlobalBarMixin:
         listbox_widget.bind("<ButtonPress-3>", self._on_repo_selector_dropdown_context_menu, add=True)
 
     def _on_global_right_click(self, event: tk.Event) -> None:
+        if hasattr(self, "_dismiss_commit_context_menu"):
+            self._dismiss_commit_context_menu(event)
         if self._is_pointer_inside_widget(getattr(self, "repo_path_combo", None), event.x_root, event.y_root):
             self._on_repo_selector_context_menu(event)
             return
@@ -620,6 +622,8 @@ class GlobalBarMixin:
         self._show_repo_context_menu(event, selected_path, close_dropdown=False)
 
     def _on_global_pointer_click(self, event: tk.Event) -> None:
+        if hasattr(self, "_dismiss_commit_context_menu"):
+            self._dismiss_commit_context_menu(event)
         close_dropdown = False
         x_root = getattr(event, "x_root", None)
         y_root = getattr(event, "y_root", None)
@@ -795,6 +799,8 @@ class GlobalBarMixin:
             return
         if self._is_pointer_over_local_widget():
             return
+        if hasattr(self, "_dismiss_commit_context_menu"):
+            self._dismiss_commit_context_menu()
         self._dismiss_repo_context_menu(close_dropdown=True)
 
     def _dismiss_repo_context_menu(

@@ -125,12 +125,14 @@ class HistoryTabMixin:
         self.commit_listbox.bind("<MouseWheel>", self._on_history_mousewheel)
         self.commit_listbox.bind("<Button-4>", self._on_history_mousewheel)
         self.commit_listbox.bind("<Button-5>", self._on_history_mousewheel)
+        self.commit_listbox.bind("<Button-3>", self._on_commit_context_menu_request, add=True)
         self.commit_listbox.bind("<Motion>", self._on_commit_list_hover)
         self.commit_listbox.bind("<Leave>", self._on_commit_list_leave)
         self.commit_listbox.bind("<FocusOut>", self._on_commit_list_leave)
         self.commit_listbox.bind("<Configure>", self._on_commit_list_leave)
         self.commit_tooltip_window: tk.Toplevel | None = None
         self.commit_tooltip_index: int = -1
+        self.commit_context_menu: tk.Menu | None = None
 
         self.commit_scrollbar = ttk.Scrollbar(self.left_frame, orient="vertical", command=self._on_history_scrollbar)
         self.commit_scrollbar.grid(row=0, column=1, sticky="ns")
@@ -143,44 +145,11 @@ class HistoryTabMixin:
     def _build_right_panel(self) -> None:
         parent = getattr(self, "_history_paned", self.history_tab)
         self.right_frame = ttk.Frame(parent)
-        self.right_frame.grid_rowconfigure(1, weight=1)
+        self.right_frame.grid_rowconfigure(0, weight=1)
         self.right_frame.grid_columnconfigure(0, weight=1)
 
-        top_actions = ttk.Frame(self.right_frame)
-        top_actions.grid(row=0, column=0, sticky="ne", padx=8, pady=(8, 4))
-
-        self.copy_hash_button = ttk.Button(
-            top_actions,
-            text="Copiar hash completo",
-            command=self._copy_selected_commit_hash,
-        )
-        self.copy_hash_button.grid(row=0, column=0, padx=(0, 6))
-
-        self.copy_files_button = ttk.Button(
-            top_actions,
-            text="Copiar lista",
-            command=self._copy_files_list,
-        )
-        self.copy_files_button.grid(row=0, column=1, padx=(0, 6))
-
-        self.copy_patch_button = ttk.Button(
-            top_actions,
-            text="Copiar patch completo",
-            command=self._copy_full_patch,
-        )
-        self.copy_patch_button.grid(row=0, column=2, padx=(0, 6))
-
-        self.load_patch_button = ttk.Button(
-            top_actions,
-            text="Carregar patch grande",
-            command=self._load_full_patch_for_selected_file,
-            state="disabled",
-        )
-        self.load_patch_button.grid(row=0, column=3)
-        self.load_patch_button.grid_remove()
-
         details_paned = ttk.PanedWindow(self.right_frame, orient="vertical")
-        details_paned.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        details_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 8))
         self._history_details_paned = details_paned
 
         meta_frame = ttk.Frame(details_paned)
@@ -216,27 +185,35 @@ class HistoryTabMixin:
         patch_header.grid(row=0, column=0, sticky="ew")
         patch_header.grid_columnconfigure(0, weight=1)
         ttk.Label(patch_header, text="Patch do arquivo").grid(row=0, column=0, sticky="w")
+        self.load_patch_button = ttk.Button(
+            patch_header,
+            text="Carregar patch grande",
+            command=self._load_full_patch_for_selected_file,
+            state="disabled",
+        )
+        self.load_patch_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.load_patch_button.grid_remove()
         self.open_patch_button = ttk.Button(
             patch_header,
             text="Abrir em janela",
             command=self._open_patch_window,
         )
-        self.open_patch_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.open_patch_button.grid(row=0, column=2, sticky="e", padx=(0, 8))
         ttk.Checkbutton(
             patch_header,
             text="Diff por palavra",
             variable=self.word_diff_var,
             command=self._toggle_word_diff,
-        ).grid(row=0, column=2, sticky="e")
+        ).grid(row=0, column=3, sticky="e")
         ttk.Checkbutton(
             patch_header,
             text="Modo leitura",
             variable=self.read_mode_var,
             command=self._toggle_read_mode,
-        ).grid(row=0, column=3, sticky="e", padx=(8, 0))
+        ).grid(row=0, column=4, sticky="e", padx=(8, 0))
         self.patch_read_mode_var = tk.StringVar(value="")
         ttk.Label(patch_header, textvariable=self.patch_read_mode_var).grid(
-            row=0, column=4, sticky="e", padx=(8, 0)
+            row=0, column=5, sticky="e", padx=(8, 0)
         )
 
         self.patch_text = tk.Text(patch_frame, wrap="none")
@@ -676,11 +653,114 @@ class HistoryTabMixin:
         self.after(0, self._maybe_load_more)
 
     def _on_commit_select(self, _event: tk.Event) -> None:
+        self._dismiss_commit_context_menu()
         self._hide_commit_tooltip()
         selection = self.commit_listbox.curselection()
         if not selection:
             return
         self._show_commit(selection[-1])
+
+    def _dismiss_commit_context_menu(self, event: tk.Event | None = None) -> None:
+        if event is not None and self._is_event_inside_commit_context_menu(event):
+            return
+        menu = getattr(self, "commit_context_menu", None)
+        self.commit_context_menu = None
+        if menu is None:
+            return
+        try:
+            menu.unpost()
+        except tk.TclError:
+            pass
+        try:
+            menu.destroy()
+        except tk.TclError:
+            pass
+
+    def _is_event_inside_commit_context_menu(self, event: tk.Event) -> bool:
+        menu = getattr(self, "commit_context_menu", None)
+        if menu is None:
+            return False
+        menu_path = str(menu).strip()
+        if not menu_path:
+            return False
+        candidate_paths: list[str] = []
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            widget_path = str(widget).strip()
+            if widget_path:
+                candidate_paths.append(widget_path)
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if isinstance(x_root, int) and isinstance(y_root, int):
+            try:
+                contained = self.tk.call("winfo", "containing", x_root, y_root)
+            except tk.TclError:
+                contained = ""
+            contained_path = str(contained).strip()
+            if contained_path:
+                candidate_paths.append(contained_path)
+        for path in candidate_paths:
+            if path == menu_path or path.startswith(f"{menu_path}."):
+                return True
+        return False
+
+    def _show_commit_context_menu(self, event: tk.Event, commit_hash: str) -> None:
+        self._dismiss_commit_context_menu()
+        if not commit_hash:
+            return
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label="Copiar hash completo",
+            command=lambda selected_hash=commit_hash: self._copy_selected_commit_hash(selected_hash),
+        )
+        menu.add_command(
+            label="Copiar lista de arquivos",
+            command=lambda selected_hash=commit_hash: self._copy_files_list(selected_hash),
+        )
+        menu.add_command(
+            label="Copiar patch completo",
+            command=lambda selected_hash=commit_hash: self._copy_full_patch(selected_hash),
+        )
+        self.commit_context_menu = menu
+        menu.bind("<Unmap>", self._on_commit_context_menu_unmap, add=True)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _on_commit_context_menu_unmap(self, _event: tk.Event | None = None) -> None:
+        self.commit_context_menu = None
+
+    def _commit_hash_from_listbox_y(self, y: int) -> str:
+        if not hasattr(self, "commit_listbox"):
+            return ""
+        size = self.commit_listbox.size()
+        if size <= 0:
+            return ""
+        index = self.commit_listbox.nearest(y)
+        if index < 0 or index >= size:
+            return ""
+        bbox = self.commit_listbox.bbox(index)
+        if bbox:
+            top = bbox[1]
+            bottom = bbox[1] + bbox[3]
+            if y < top or y > bottom:
+                return ""
+        if index < 0 or index >= len(self.commit_summaries):
+            return ""
+        return self.commit_summaries[index].commit_hash
+
+    def _on_commit_context_menu_request(self, event: tk.Event) -> str:
+        commit_hash = self._commit_hash_from_listbox_y(int(event.y))
+        if not commit_hash:
+            commit_hash = self._get_selected_commit_hash() or ""
+        if not commit_hash:
+            return "break"
+        self._show_commit_context_menu(event, commit_hash)
+        return "break"
 
     def _move_commit_selection(self, delta: int) -> None:
         if not hasattr(self, "commit_listbox"):
@@ -868,25 +948,40 @@ class HistoryTabMixin:
             return None
         return self.file_stats_by_index.get(selection[0])
 
-    def _copy_files_list(self) -> None:
-        commit = self._get_selected_commit()
-        if not commit:
+    def _copy_files_list(self, commit_hash: str | None = None) -> None:
+        selected_hash = (commit_hash or "").strip()
+        if not selected_hash:
+            selected_hash = self._get_selected_commit_hash() or ""
+        commit_hash = selected_hash
+        if not commit_hash:
             return
-        paths = [stat.path for stat in commit.file_stats]
+        commit = self.commit_details_cache.get(commit_hash)
+        if commit is not None:
+            paths = [stat.path for stat in commit.file_stats]
+        else:
+            try:
+                output = run_git(self.repo_path, ["show", "--pretty=format:", "--name-only", commit_hash])
+            except RuntimeError as exc:
+                messagebox.showerror("Erro", str(exc))
+                return
+            paths = [line.strip() for line in output.splitlines() if line.strip()]
         content = ", ".join(paths)
         self.clipboard_clear()
         self.clipboard_append(content)
         self.update()
 
-    def _copy_full_patch(self) -> None:
-        commit = self._get_selected_commit()
-        if not commit:
+    def _copy_full_patch(self, commit_hash: str | None = None) -> None:
+        selected_hash = (commit_hash or "").strip()
+        if not selected_hash:
+            selected_hash = self._get_selected_commit_hash() or ""
+        commit_hash = selected_hash
+        if not commit_hash:
             return
         try:
-            patch = self.full_patch_cache.get(commit.commit_hash)
+            patch = self.full_patch_cache.get(commit_hash)
             if patch is None:
-                patch = self._get_patch(commit.commit_hash)
-                self.full_patch_cache[commit.commit_hash] = patch
+                patch = self._get_patch(commit_hash)
+                self.full_patch_cache[commit_hash] = patch
         except RuntimeError as exc:
             messagebox.showerror("Erro", str(exc))
             return
@@ -894,8 +989,11 @@ class HistoryTabMixin:
         self.clipboard_append(patch)
         self.update()
 
-    def _copy_selected_commit_hash(self) -> None:
-        commit_hash = self._get_selected_commit_hash()
+    def _copy_selected_commit_hash(self, commit_hash: str | None = None) -> None:
+        selected_hash = (commit_hash or "").strip()
+        if not selected_hash:
+            selected_hash = self._get_selected_commit_hash() or ""
+        commit_hash = selected_hash
         if not commit_hash:
             return
         self.clipboard_clear()

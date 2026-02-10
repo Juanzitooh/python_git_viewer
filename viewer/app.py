@@ -184,6 +184,8 @@ class CommitsViewer(
                 self.last_tab_index = 0
         if hasattr(self, "_dismiss_repo_context_menu"):
             self._dismiss_repo_context_menu(close_dropdown=True)
+        if hasattr(self, "_dismiss_commit_context_menu"):
+            self._dismiss_commit_context_menu()
         if hasattr(self, "_refresh_repo_selector_visibility"):
             self._refresh_repo_selector_visibility()
 
