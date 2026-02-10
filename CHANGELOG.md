@@ -26,6 +26,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 iniciou o shell de PySide6 com `main_pyside6.py` e `viewer/pyside/shell.py`, incluindo barra global (repo/branch/fetch/pull/push), abas base, status ahead/behind e tema claro/escuro por settings.
 - M7 avancou na migracao de abas com Repositorios funcional no PySide6: raiz de workspace configuravel, scan/reescanear, lista com branch+ahead/behind+status e selecao direta do repositorio ativo.
 - M7 avancou com fluxo basico de Commit no PySide6 e novo `viewer/core/commit_ops.py`: lista de arquivos modificados com selecao, titulo obrigatorio, descricao opcional e criacao de commit via core.
+- M7 avancou com fluxo basico de Historico no PySide6: lista de commits com filtro por texto, detalhes do commit, arquivos alterados e patch por commit/arquivo com alternancia de diff por palavra.
 
 ## [0.2.0] - 2026-02-10
 

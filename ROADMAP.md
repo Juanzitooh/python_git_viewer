@@ -195,6 +195,9 @@ Legenda
 - [x] R7.3.2 Portar fluxo basico de commit para PySide6 (2026-02-10)
   Escopo: implementar na aba Commit do shell PySide6 a listagem de arquivos modificados com selecao, titulo/descricao e acao de commit via core.
   Aceite: usuario consegue selecionar arquivos modificados, criar commit (titulo obrigatorio) e atualizar estado de repositorio/workspace sem sair do PySide6.
+- [x] R7.3.3 Portar fluxo basico de historico para PySide6 (2026-02-10)
+  Escopo: implementar na aba Historico do shell PySide6 a lista de commits com filtro por texto, painel de detalhes, arquivos do commit e visualizacao de patch com opcao de diff por palavra.
+  Aceite: usuario consegue navegar commits, filtrar por texto e inspecionar patch por commit/arquivo no PySide6.
 - [ ] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
