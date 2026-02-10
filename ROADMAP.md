@@ -201,6 +201,9 @@ Legenda
 - [x] R7.3.4 Portar fluxo basico de comparacao para PySide6 (2026-02-10)
   Escopo: implementar na aba Comparar do shell PySide6 selecao de origem/destino, resumo de diferencas, lista de commits, lista de arquivos e patch por arquivo com opcao de diff por palavra.
   Aceite: usuario consegue comparar branches no PySide6 com visao de commits/arquivos/patch e indicadores basicos de ahead-behind e possivel conflito.
+- [x] R7.3.5 Portar fluxo basico de importacao para PySide6 (2026-02-10)
+  Escopo: implementar na aba Importar do shell PySide6 selecao de repositorio/branch de origem, lista de commits e acao de importacao por cherry-pick no repositorio atual.
+  Aceite: usuario consegue importar commits selecionados no PySide6 com feedback de progresso/erro e atualizacao das abas relacionadas.
 - [ ] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.

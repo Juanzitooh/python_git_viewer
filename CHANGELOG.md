@@ -28,6 +28,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com fluxo basico de Commit no PySide6 e novo `viewer/core/commit_ops.py`: lista de arquivos modificados com selecao, titulo obrigatorio, descricao opcional e criacao de commit via core.
 - M7 avancou com fluxo basico de Historico no PySide6: lista de commits com filtro por texto, detalhes do commit, arquivos alterados e patch por commit/arquivo com alternancia de diff por palavra.
 - M7 avancou com fluxo basico de Comparar no PySide6 e extensao de `viewer/core/branch_compare.py`, com origem/destino, resumo de diffs, commits, arquivos e patch por arquivo (incluindo diff por palavra).
+- M7 avancou com fluxo basico de Importar no PySide6: selecao de origem/branch, lista de commits e importacao por cherry-pick com atualizacao de status/historico/comparacao.
 
 ## [0.2.0] - 2026-02-10
 

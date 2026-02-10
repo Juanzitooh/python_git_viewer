@@ -72,4 +72,4 @@ Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/versi
 - Diffs grandes só são carregados quando solicitado.
 - O estado do Git é atualizado automaticamente em intervalo configurável.
 - `main_pyside6.py` é o shell inicial da migração; a UI completa segue em `main.py` (Tkinter) até concluir o R7.
-- No estado atual do PySide6, as abas `Repositorios`, `Commit`, `Historico` e `Comparar` já têm fluxo funcional inicial; as demais abas seguem em migração.
+- No estado atual do PySide6, as abas `Repositorios`, `Commit`, `Historico`, `Importar` e `Comparar` já têm fluxo funcional inicial; `Configuracoes` segue em migração.
