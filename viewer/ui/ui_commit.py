@@ -52,24 +52,6 @@ class CommitTabMixin:
             sticky="w",
             padx=(0, 8),
         )
-        commit_branch_controls = ttk.Frame(controls_row)
-        commit_branch_controls.grid(row=0, column=1, sticky="w")
-        ttk.Label(commit_branch_controls, text="Branch:").grid(row=0, column=0, sticky="e", padx=(0, 4))
-        self.commit_branch_quick_var = tk.StringVar(value="")
-        self.commit_branch_quick_combo = ttk.Combobox(
-            commit_branch_controls,
-            textvariable=self.commit_branch_quick_var,
-            state="disabled",
-            width=20,
-            values=[],
-        )
-        self.commit_branch_quick_combo.grid(row=0, column=1, sticky="e")
-        self.commit_branch_quick_combo.bind("<<ComboboxSelected>>", self._on_commit_quick_branch_selected)
-        ttk.Button(
-            commit_branch_controls,
-            text="Nova branch",
-            command=self._create_commit_quick_branch,
-        ).grid(row=0, column=2, sticky="e", padx=(6, 0))
 
         self.status_listbox = tk.Listbox(
             status_frame,
@@ -1624,36 +1606,3 @@ class CommitTabMixin:
 
         ttk.Button(actions, text="Cancelar", command=window.destroy).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(actions, text="Desfazer commit", command=execute).grid(row=0, column=1)
-
-    def _refresh_commit_branch_quick_selector(self, branches: list[str], current: str) -> None:
-        if not hasattr(self, "commit_branch_quick_combo"):
-            return
-        if not self.repo_ready or not branches:
-            self.commit_branch_quick_combo.configure(values=[], state="disabled")
-            if hasattr(self, "commit_branch_quick_var"):
-                self.commit_branch_quick_var.set("")
-            return
-        self.commit_branch_quick_combo.configure(values=branches, state="readonly")
-        if current and current in branches:
-            self.commit_branch_quick_var.set(current)
-            return
-        selected = self.commit_branch_quick_var.get().strip()
-        if selected in branches:
-            return
-        self.commit_branch_quick_var.set(branches[0])
-
-    def _on_commit_quick_branch_selected(self, _event: tk.Event) -> None:
-        if not self.repo_ready:
-            return
-        target = self.commit_branch_quick_var.get().strip()
-        if not target:
-            return
-        current = self.branch_var.get().strip() if hasattr(self, "branch_var") else ""
-        if target == current:
-            return
-        if not self._checkout_to_branch(target):
-            self._refresh_commit_branch_quick_selector(self.branch_list, current)
-
-    def _create_commit_quick_branch(self) -> None:
-        base = self.commit_branch_quick_var.get().strip() if hasattr(self, "commit_branch_quick_var") else ""
-        self._prompt_create_branch(base)

@@ -22,7 +22,6 @@ class HistoryTabMixin:
         top_bar = ttk.Frame(self.history_tab)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         top_bar.grid_columnconfigure(0, weight=1)
-        top_bar.grid_columnconfigure(1, weight=0)
 
         history_actions = ttk.Frame(top_bar)
         history_actions.grid(row=0, column=0, sticky="w")
@@ -50,25 +49,6 @@ class HistoryTabMixin:
         )
         self.reorder_local_button.grid_remove()
 
-        history_branch_controls = ttk.Frame(top_bar)
-        history_branch_controls.grid(row=0, column=1, sticky="e")
-        ttk.Label(history_branch_controls, text="Branch:").grid(row=0, column=0, sticky="e", padx=(0, 4))
-        self.history_branch_quick_var = tk.StringVar(value="")
-        self.history_branch_quick_combo = ttk.Combobox(
-            history_branch_controls,
-            textvariable=self.history_branch_quick_var,
-            state="disabled",
-            width=22,
-            values=[],
-        )
-        self.history_branch_quick_combo.grid(row=0, column=1, sticky="e")
-        self.history_branch_quick_combo.bind("<<ComboboxSelected>>", self._on_history_quick_branch_selected)
-        ttk.Button(
-            history_branch_controls,
-            text="Nova branch",
-            command=self._create_history_quick_branch,
-        ).grid(row=0, column=2, sticky="e", padx=(6, 0))
-
         # Ações de merge/rebase/squash agora vivem na aba Comparar.
         self.filter_text_var = tk.StringVar(value="")
         self.filter_author_var = tk.StringVar(value="")
@@ -88,7 +68,7 @@ class HistoryTabMixin:
         self.history_has_upstream = False
 
         filter_row = ttk.Frame(top_bar)
-        filter_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        filter_row.grid(row=1, column=0, columnspan=1, sticky="ew", pady=(6, 0))
         filter_row.grid_columnconfigure(2, weight=1)
 
         ttk.Button(filter_row, text="Busca filtrada", command=self._open_filter_modal).grid(
@@ -1926,39 +1906,6 @@ class HistoryTabMixin:
     def _get_tags(self) -> list[str]:
         output = run_git(self.repo_path, ["tag", "--list"])
         return [line.strip() for line in output.splitlines() if line.strip()]
-
-    def _refresh_history_branch_quick_selector(self, branches: list[str], current: str) -> None:
-        if not hasattr(self, "history_branch_quick_combo"):
-            return
-        if not self.repo_ready or not branches:
-            self.history_branch_quick_combo.configure(values=[], state="disabled")
-            if hasattr(self, "history_branch_quick_var"):
-                self.history_branch_quick_var.set("")
-            return
-        self.history_branch_quick_combo.configure(values=branches, state="readonly")
-        if current and current in branches:
-            self.history_branch_quick_var.set(current)
-            return
-        selected = self.history_branch_quick_var.get().strip()
-        if selected in branches:
-            return
-        self.history_branch_quick_var.set(branches[0])
-
-    def _on_history_quick_branch_selected(self, _event: tk.Event) -> None:
-        if not self.repo_ready:
-            return
-        target = self.history_branch_quick_var.get().strip()
-        if not target:
-            return
-        current = self.branch_var.get().strip() if hasattr(self, "branch_var") else ""
-        if target == current:
-            return
-        if not self._checkout_to_branch(target):
-            self._refresh_history_branch_quick_selector(self.branch_list, current)
-
-    def _create_history_quick_branch(self) -> None:
-        base = self.history_branch_quick_var.get().strip() if hasattr(self, "history_branch_quick_var") else ""
-        self._prompt_create_branch(base)
 
     def _refresh_filter_refs(self) -> None:
         if not self.repo_ready:

@@ -84,6 +84,9 @@ Legenda
 - [x] R6.3.9 Gerenciar repositorios por menu dos cards (2026-02-10)
   Escopo: incluir acao de exclusao de repositorio no menu de contexto dos cards da aba Repositorios, com confirmacao explicita antes de remover a pasta local.
   Aceite: usuario consegue excluir um repositorio local diretamente pelo card, com janela de confirmacao e atualizacao automatica da lista de favoritos/recentes.
+- [x] R6.3.10 Seletor de branch global para abas operacionais (2026-02-10)
+  Escopo: mover seletor rapido de branch + acao de criar branch das abas Commit/Historico para a barra superior, exibindo o controle apenas nas abas Commit, Historico e Importar.
+  Aceite: barra superior mostra controle de branch somente nas abas operacionais definidas; abas Commit e Historico ficam visualmente mais limpas sem controles duplicados.
 - [x] R6.3.4 Barra de atividade para operacoes assincronas (2026-02-08)
   Escopo: exibir um indicador fino no rodape durante operacoes de background para sinalizar progresso da interface em tarefas longas.
   Aceite: ao iniciar qualquer operacao assincrona a barra aparece; ao finalizar todas as operacoes pendentes a barra some automaticamente.

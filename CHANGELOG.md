@@ -54,6 +54,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Durante a clonagem, a UI principal fica bloqueada para evitar interações concorrentes e no diálogo apenas a ação de cancelar permanece ativa.
 - Ao finalizar clone com sucesso, a barra de progresso da janela de clonagem pisca brevemente para sinalizar conclusão antes de fechar.
 - Ao finalizar clone com sucesso, o app volta para a aba Repositórios e executa novo scan automático do workspace para atualizar cards/listas.
+- Seletor rápido de branch + botão "Nova branch" foi movido das abas Commit/Histórico para a barra superior, com visibilidade contextual apenas nas abas Commit, Histórico e Importar.
 - Cada card agora exibe status local do repositório com arquivos modificados quando houver alterações.
 - Log de performance em `performance.log` na raiz com timestamp, repositório e duração das operações monitoradas.
 - Novo argumento `--perf`: quando ativo, mostra bloco de performance na UI e grava métricas no `performance.log`; em execução padrão o bloco fica oculto e sem logging.

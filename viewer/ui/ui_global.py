@@ -21,6 +21,7 @@ class GlobalBarMixin:
         self.repo_left_actions = ttk.Frame(self.global_bar)
         self.repo_left_actions.grid(row=0, column=0, sticky="ew")
         self.repo_left_actions.grid_columnconfigure(0, weight=1)
+        self.repo_left_actions.grid_columnconfigure(1, weight=0)
 
         self.repo_right_actions = ttk.Frame(self.global_bar)
         self.repo_right_actions.grid(row=0, column=1, sticky="e")
@@ -47,6 +48,27 @@ class GlobalBarMixin:
         self.bind_all("<Escape>", self._dismiss_repo_context_menu, add=True)
         self.bind_all("<FocusOut>", self._on_app_focus_out, add=True)
         self.bind("<Unmap>", self._dismiss_repo_context_menu, add=True)
+
+        self.global_branch_quick_frame = ttk.Frame(self.repo_left_actions)
+        self.global_branch_quick_frame.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        ttk.Label(self.global_branch_quick_frame, text="Branch:").grid(row=0, column=0, sticky="e", padx=(0, 4))
+        self.global_branch_quick_var = tk.StringVar(value="")
+        self.global_branch_quick_combo = ttk.Combobox(
+            self.global_branch_quick_frame,
+            textvariable=self.global_branch_quick_var,
+            state="disabled",
+            width=18,
+            values=[],
+        )
+        self.global_branch_quick_combo.grid(row=0, column=1, sticky="e")
+        self.global_branch_quick_combo.bind("<<ComboboxSelected>>", self._on_global_quick_branch_selected)
+        self.global_new_branch_button = ttk.Button(
+            self.global_branch_quick_frame,
+            text="Nova branch",
+            command=self._create_global_quick_branch,
+            state="disabled",
+        )
+        self.global_new_branch_button.grid(row=0, column=2, sticky="e", padx=(6, 0))
 
         # Vars kept at global scope because they are shared across tabs.
         self.branch_var = tk.StringVar(value="")
@@ -76,6 +98,8 @@ class GlobalBarMixin:
             self.perf_title_label.grid_remove()
             self.perf_label.grid_remove()
         self._refresh_repo_selector()
+        self._refresh_global_branch_quick_selector([], "")
+        self._refresh_global_branch_quick_visibility()
 
     def _fetch_repo(self) -> None:
         if not self.repo_ready:
@@ -198,14 +222,50 @@ class GlobalBarMixin:
         self._refresh_filter_refs()
         if hasattr(self, "_sync_import_tab_with_current_repo"):
             self._sync_import_tab_with_current_repo()
-        if hasattr(self, "_refresh_history_branch_quick_selector"):
-            self._refresh_history_branch_quick_selector(branches, current)
-        if hasattr(self, "_refresh_commit_branch_quick_selector"):
-            self._refresh_commit_branch_quick_selector(branches, current)
+        self._refresh_global_branch_quick_selector(branches, current)
 
     def _get_branches(self) -> list[str]:
         output = run_git(self.repo_path, ["branch", "--format=%(refname:short)"])
         return [line.strip() for line in output.splitlines() if line.strip()]
+
+    def _refresh_global_branch_quick_selector(self, branches: list[str], current: str) -> None:
+        combo = getattr(self, "global_branch_quick_combo", None)
+        var = getattr(self, "global_branch_quick_var", None)
+        new_branch_button = getattr(self, "global_new_branch_button", None)
+        if combo is None or var is None:
+            return
+        if not self.repo_ready or not branches:
+            combo.configure(values=[], state="disabled")
+            var.set("")
+            if new_branch_button is not None:
+                new_branch_button.configure(state="disabled")
+            return
+        combo.configure(values=branches, state="readonly")
+        if new_branch_button is not None:
+            new_branch_button.configure(state="normal")
+        if current and current in branches:
+            var.set(current)
+            return
+        selected = var.get().strip()
+        if selected in branches:
+            return
+        var.set(branches[0])
+
+    def _on_global_quick_branch_selected(self, _event: tk.Event) -> None:
+        if not self.repo_ready:
+            return
+        target = self.global_branch_quick_var.get().strip()
+        if not target:
+            return
+        current = self.branch_var.get().strip() if hasattr(self, "branch_var") else ""
+        if target == current:
+            return
+        if not self._checkout_to_branch(target):
+            self._refresh_global_branch_quick_selector(self.branch_list, current)
+
+    def _create_global_quick_branch(self) -> None:
+        base = self.global_branch_quick_var.get().strip() if hasattr(self, "global_branch_quick_var") else ""
+        self._prompt_create_branch(base)
 
     def _get_current_branch(self) -> str:
         if not self.repo_ready:
@@ -512,10 +572,12 @@ class GlobalBarMixin:
             return
         if not hasattr(self, "tabs") or not hasattr(self, "repos_tab"):
             self._set_repo_selector_visibility(True)
+            self._refresh_global_branch_quick_visibility()
             return
         tab_id = self.tabs.select()
         is_repos_tab = bool(tab_id) and str(tab_id) == str(self.repos_tab)
         self._set_repo_selector_visibility(not is_repos_tab)
+        self._refresh_global_branch_quick_visibility()
 
     def _set_repo_selector_visibility(self, visible: bool) -> None:
         if not hasattr(self, "repo_selector_frame"):
@@ -529,6 +591,34 @@ class GlobalBarMixin:
             if hasattr(self, "repo_left_actions"):
                 self.repo_left_actions.grid_columnconfigure(0, weight=0)
         self._repo_selector_visible = visible
+
+    def _refresh_global_branch_quick_visibility(self) -> None:
+        frame = getattr(self, "global_branch_quick_frame", None)
+        if frame is None:
+            return
+        should_show = bool(getattr(self, "_repo_selector_visible", False)) and self._is_global_branch_quick_tab_selected()
+        if should_show:
+            frame.grid()
+            return
+        frame.grid_remove()
+
+    def _is_global_branch_quick_tab_selected(self) -> bool:
+        if not hasattr(self, "tabs"):
+            return False
+        try:
+            selected = self.tabs.select()
+        except tk.TclError:
+            return False
+        if not selected:
+            return False
+        selected_path = str(selected)
+        targets: list[str] = []
+        for name in ("branch_tab", "history_tab", "import_tab"):
+            tab_widget = getattr(self, name, None)
+            if tab_widget is None:
+                continue
+            targets.append(str(tab_widget))
+        return selected_path in targets
 
     def _update_repo_favorite_button(self) -> None:
         if not hasattr(self, "repo_favorite_button"):
@@ -1239,10 +1329,7 @@ class GlobalBarMixin:
             self._hide_commit_tooltip()
         if hasattr(self, "_hide_hover_tooltip"):
             self._hide_hover_tooltip()
-        if hasattr(self, "_refresh_history_branch_quick_selector"):
-            self._refresh_history_branch_quick_selector([], "")
-        if hasattr(self, "_refresh_commit_branch_quick_selector"):
-            self._refresh_commit_branch_quick_selector([], "")
+        self._refresh_global_branch_quick_selector([], "")
         self._update_filter_status()
         self._set_action_visibility(self.fetch_button, False)
         self._set_action_visibility(self.pull_button, False)
