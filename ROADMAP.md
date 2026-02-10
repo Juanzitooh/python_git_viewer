@@ -120,7 +120,7 @@ Legenda
 - [x] R6.8 Atalhos de GitHub para commit e PR (2026-02-10)
   Escopo: permitir abrir commit selecionado no GitHub pelo menu do Historico e exibir botao de abrir PR na aba Commit quando nao houver alteracoes no worktree.
   Aceite: usuario acessa commit e fluxo de PR no navegador sem copiar URL manualmente.
-- [ ] R6.9 Navegacao GitHub expandida (sem API)
+- [x] R6.9 Navegacao GitHub expandida (sem API) (2026-02-10)
   Escopo: adicionar acoes para abrir no navegador a branch atual (`/tree/<branch>`), historico de commits da branch (`/commits/<branch>`), issues (`/issues`), actions (`/actions`) e releases (`/releases`) do repositorio selecionado.
   Aceite: usuario consegue abrir cada destino GitHub por menu de contexto sem precisar copiar URL manualmente.
 - [ ] R6.9.1 Copiar links GitHub prontos (repo/branch/commit)
