@@ -17,6 +17,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com `viewer/core/branch_compare.py`, centralizando comparacao de branches (commits, numstat, ahead/behind e heuristica de conflito) fora da camada de UI.
 - M7 avancou com `viewer/core/repo_state.py`, centralizando estado de repositorio (branches, branch atual, dirty, upstream e ahead/behind) consumido pela barra global.
 - M7 avancou com `viewer/core/branch_ops.py`, centralizando checkout/criacao de branch e stash previo para checkout fora da camada de UI.
+- M7 avancou com `viewer/core/commit_content.py`, centralizando resolucao de hash e leitura de arquivos/patch de commits para Historico, Importar e Comparar.
 
 ## [0.2.0] - 2026-02-10
 

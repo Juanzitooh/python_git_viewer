@@ -162,6 +162,9 @@ Legenda
 - [x] R7.1.5 Extrair operacoes de branch para o core (2026-02-10)
   Escopo: mover checkout/criacao de branch e stash previo para checkout em modulo de dominio reutilizavel no `viewer/core`.
   Aceite: `ui_global` delega operacoes Git de branch ao core e mantem apenas validacao/interacao visual.
+- [x] R7.1.6 Extrair leitura de conteudo de commit para o core (2026-02-10)
+  Escopo: mover resolucao de hash, lista de arquivos e leitura de patch de commit para modulo compartilhado em `viewer/core`.
+  Aceite: abas Historico/Importar/Comparar reutilizam helpers do core para conteudo de commit, reduzindo duplicacao de `run_git`.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
