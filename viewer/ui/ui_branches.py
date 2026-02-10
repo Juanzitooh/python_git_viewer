@@ -16,7 +16,7 @@ class BranchesTabMixin:
         selection_frame = ttk.Frame(self.branches_tab)
         selection_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         selection_frame.grid_columnconfigure(1, weight=1)
-        selection_frame.grid_columnconfigure(3, weight=1)
+        selection_frame.grid_columnconfigure(4, weight=1)
 
         ttk.Label(selection_frame, text="Origem:").grid(row=0, column=0, sticky="w")
         origin_var = getattr(self, "branch_origin_var", None)
@@ -32,7 +32,13 @@ class BranchesTabMixin:
         self.compare_origin_combo.grid(row=0, column=1, sticky="w", padx=(6, 12))
         self.compare_origin_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_branch_comparison())
 
-        ttk.Label(selection_frame, text="Destino:").grid(row=0, column=2, sticky="w")
+        ttk.Button(
+            selection_frame,
+            text="Trocar",
+            command=self._swap_compare_branches,
+        ).grid(row=0, column=2, sticky="w", padx=(0, 12))
+
+        ttk.Label(selection_frame, text="Destino:").grid(row=0, column=3, sticky="w")
         dest_var = getattr(self, "branch_dest_var", None)
         if dest_var is None:
             dest_var = tk.StringVar()
@@ -43,12 +49,12 @@ class BranchesTabMixin:
             state="readonly",
             width=24,
         )
-        self.compare_dest_combo.grid(row=0, column=3, sticky="w", padx=(6, 12))
+        self.compare_dest_combo.grid(row=0, column=4, sticky="w", padx=(6, 12))
         self.compare_dest_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_branch_comparison())
 
         ttk.Button(selection_frame, text="Comparar", command=self._refresh_branch_comparison).grid(
             row=0,
-            column=4,
+            column=5,
             sticky="e",
         )
 
@@ -198,6 +204,17 @@ class BranchesTabMixin:
             fallback = next((item for item in values if item != self.branch_dest_var.get()), "")
             self.branch_origin_var.set(fallback)
 
+        self._refresh_branch_comparison()
+
+    def _swap_compare_branches(self) -> None:
+        if not hasattr(self, "branch_origin_var") or not hasattr(self, "branch_dest_var"):
+            return
+        origin = self.branch_origin_var.get().strip()
+        dest = self.branch_dest_var.get().strip()
+        if not origin and not dest:
+            return
+        self.branch_origin_var.set(dest)
+        self.branch_dest_var.set(origin)
         self._refresh_branch_comparison()
 
     def _refresh_branch_comparison(self) -> None:
