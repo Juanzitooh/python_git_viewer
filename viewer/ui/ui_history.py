@@ -26,20 +26,29 @@ class HistoryTabMixin:
 
         history_actions = ttk.Frame(top_bar)
         history_actions.grid(row=0, column=0, sticky="w")
-        ttk.Button(history_actions, text="Cherry-pick", command=self._open_cherry_pick_window).grid(
+        self.export_commits_button = ttk.Button(
+            history_actions,
+            text="Exportar",
+            command=self._open_cherry_pick_window,
+        )
+        self.export_commits_button.grid(
             row=0,
             column=0,
             padx=(0, 6),
         )
-        ttk.Button(history_actions, text="Importar commits", command=self._open_import_tab).grid(
+        self.export_commits_button.bind("<Enter>", self._on_export_button_hover, add=True)
+        self.export_commits_button.bind("<Leave>", self._hide_hover_tooltip, add=True)
+        self.reorder_local_button = ttk.Button(
+            history_actions,
+            text="Reordenar locais",
+            command=self._open_reorder_local_commits_window,
+        )
+        self.reorder_local_button.grid(
             row=0,
             column=1,
             padx=(0, 6),
         )
-        ttk.Button(history_actions, text="Reordenar locais", command=self._open_reorder_local_commits_window).grid(
-            row=0,
-            column=2,
-        )
+        self.reorder_local_button.grid_remove()
 
         history_branch_controls = ttk.Frame(top_bar)
         history_branch_controls.grid(row=0, column=1, sticky="e")
@@ -141,6 +150,14 @@ class HistoryTabMixin:
         self._build_right_panel()
         paned.add(self.left_frame, weight=1)
         paned.add(self.right_frame, weight=3)
+
+    def _on_export_button_hover(self, event: tk.Event) -> None:
+        self._show_hover_tooltip(
+            "history_export_button",
+            "Exportar commits selecionados",
+            event.x_root + 12,
+            event.y_root + 12,
+        )
 
     def _build_right_panel(self) -> None:
         parent = getattr(self, "_history_paned", self.history_tab)
@@ -585,6 +602,15 @@ class HistoryTabMixin:
         output = run_git(self.repo_path, ["rev-list", f"{upstream}..HEAD"])
         hashes = {line.strip() for line in output.splitlines() if line.strip()}
         return hashes, True
+
+    def _update_reorder_local_button_visibility(self) -> None:
+        if not hasattr(self, "reorder_local_button"):
+            return
+        visible = self.repo_ready and self.history_has_upstream and len(self.local_only_commit_hashes) >= 2
+        if visible:
+            self.reorder_local_button.grid()
+        else:
+            self.reorder_local_button.grid_remove()
 
     def _populate_commit_list(self) -> None:
         self._hide_commit_tooltip()
@@ -1732,6 +1758,7 @@ class HistoryTabMixin:
             self.commit_summaries = list(summaries)
             self.local_only_commit_hashes = set(local_only_hashes)
             self.history_has_upstream = bool(has_upstream)
+            self._update_reorder_local_button_visibility()
             self.commit_details_cache.clear()
             self.current_commit_hash = None
             self._populate_commit_list()
@@ -1741,6 +1768,7 @@ class HistoryTabMixin:
             self.loading_commits = False
             self.local_only_commit_hashes = set()
             self.history_has_upstream = False
+            self._update_reorder_local_button_visibility()
             messagebox.showerror("Erro", str(exc))
             self._update_filter_status()
 

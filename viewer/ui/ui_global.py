@@ -1090,6 +1090,8 @@ class GlobalBarMixin:
             self.local_only_commit_hashes = set()
         if hasattr(self, "history_has_upstream"):
             self.history_has_upstream = False
+        if hasattr(self, "_update_reorder_local_button_visibility"):
+            self._update_reorder_local_button_visibility()
         self.commit_details_cache.clear()
         self.current_commit_hash = None
         if hasattr(self, "status_signature"):
