@@ -192,6 +192,9 @@ Legenda
 - [x] R7.3.1 Portar aba Repositorios para o shell PySide6 (2026-02-10)
   Escopo: implementar no PySide6 o fluxo de workspace com raiz configuravel, reescanear repositorios, listar repos encontrados com branch/ahead/behind/status e selecao direta do repositorio ativo.
   Aceite: aba Repositorios no `main_pyside6.py` permite alternar repositorio e refletir estado no seletor global sem depender da UI Tk.
+- [x] R7.3.2 Portar fluxo basico de commit para PySide6 (2026-02-10)
+  Escopo: implementar na aba Commit do shell PySide6 a listagem de arquivos modificados com selecao, titulo/descricao e acao de commit via core.
+  Aceite: usuario consegue selecionar arquivos modificados, criar commit (titulo obrigatorio) e atualizar estado de repositorio/workspace sem sair do PySide6.
 - [ ] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
