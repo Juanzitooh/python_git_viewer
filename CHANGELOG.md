@@ -53,6 +53,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Janela de clonagem agora mostra progresso detalhado em tempo real (`git clone --progress`), com log textual, hint de percentual e cancelamento durante a operação.
 - Durante a clonagem, a UI principal fica bloqueada para evitar interações concorrentes e no diálogo apenas a ação de cancelar permanece ativa.
 - Ao finalizar clone com sucesso, a barra de progresso da janela de clonagem pisca brevemente para sinalizar conclusão antes de fechar.
+- Ao finalizar clone com sucesso, o app volta para a aba Repositórios e executa novo scan automático do workspace para atualizar cards/listas.
 - Cada card agora exibe status local do repositório com arquivos modificados quando houver alterações.
 - Log de performance em `performance.log` na raiz com timestamp, repositório e duração das operações monitoradas.
 - Novo argumento `--perf`: quando ativo, mostra bloco de performance na UI e grava métricas no `performance.log`; em execução padrão o bloco fica oculto e sem logging.

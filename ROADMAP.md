@@ -68,7 +68,7 @@ Legenda
   Aceite: na aba Repositorios a barra global exibe linha de clone; ao trocar de aba a linha some; botao de chave SSH aparece apenas quando necessario.
 - [x] R6.2.3 Clone com progresso detalhado e bloqueio de UI (2026-02-10)
   Escopo: mostrar log de progresso de `git clone --progress` na janela de clonagem com indicador visual de percentual, permitir cancelamento durante o clone e bloquear interacao da janela principal ate o fim da operacao, com feedback visual no termino.
-  Aceite: durante clone apenas o botao de cancelar fica ativo no dialogo, progresso aparece em tempo real e a janela principal permanece travada para evitar acoes concorrentes; ao concluir com sucesso a barra de progresso pisca rapidamente antes de fechar o dialogo.
+  Aceite: durante clone apenas o botao de cancelar fica ativo no dialogo, progresso aparece em tempo real e a janela principal permanece travada para evitar acoes concorrentes; ao concluir com sucesso a barra de progresso pisca rapidamente, a aba Repositorios e reaberta e o workspace e reescaneado.
 - [x] R6.3 Aba Repositorios com foco operacional (2026-02-08)
   Escopo: reduzir ruido visual removendo bloco redundante de status do repo, realizar scan automatico na inicializacao da pasta base e, ao usar "Abrir recente", executar fetch do repo aberto e navegar automaticamente para a aba Historico.
   Aceite: aba Repositorios abre mais limpa, scan inicial tenta popular Recentes automaticamente e abrir recente atualiza dados + leva para Historico sem acao manual extra.

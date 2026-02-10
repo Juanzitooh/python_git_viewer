@@ -1011,6 +1011,9 @@ class ReposTabMixin:
             if ok:
                 status_var.set("Clone concluido.")
                 progress_hint_var.set("Progresso reportado: 100%")
+                if hasattr(self, "_open_repositories_tab"):
+                    self._open_repositories_tab()
+                self.after(50, self._scan_repo_workspace)
                 clone_button.configure(state="disabled")
                 cancel_button.configure(state="disabled")
                 animate_clone_success_flash(on_done=lambda: dialog.winfo_exists() and dialog.destroy())
@@ -1206,6 +1209,18 @@ class ReposTabMixin:
             else:
                 self.tabs.select(index)
             return
+
+    def _open_repositories_tab(self) -> None:
+        if not hasattr(self, "tabs") or not hasattr(self, "repos_tab"):
+            return
+        try:
+            index = int(self.tabs.index(self.repos_tab))
+        except tk.TclError:
+            return
+        if hasattr(self, "_select_tab"):
+            self._select_tab(index)
+        else:
+            self.tabs.select(index)
 
     def _open_selected_favorite(self) -> None:
         path = self._get_selected_repo(self.favorite_listbox, self.favorite_repos)
