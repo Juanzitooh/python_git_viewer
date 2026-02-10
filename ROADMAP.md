@@ -186,9 +186,12 @@ Legenda
 - [x] R7.2.1 Bootstrap do shell PySide6 com barra global e tabs (2026-02-10)
   Escopo: criar entrypoint dedicado (`main_pyside6.py`) e janela inicial com seletor de repositorio, branch, fetch/pull/push, status ahead/behind e abas principais.
   Aceite: shell abre em PySide6, aplica tema claro/escuro via settings e persiste ultimo repo/aba.
-- [ ] R7.3 Migracao incremental das abas criticas (Repositorios, Commit, Historico)
+- [~] R7.3 Migracao incremental das abas criticas (Repositorios, Commit, Historico)
   Escopo: portar as abas de maior uso para PySide6 sem perder funcionalidades atuais.
   Aceite: fluxos centrais (scan/selecionar repo, stage/commit/push, historico e filtros) operam no frontend PySide6.
+- [x] R7.3.1 Portar aba Repositorios para o shell PySide6 (2026-02-10)
+  Escopo: implementar no PySide6 o fluxo de workspace com raiz configuravel, reescanear repositorios, listar repos encontrados com branch/ahead/behind/status e selecao direta do repositorio ativo.
+  Aceite: aba Repositorios no `main_pyside6.py` permite alternar repositorio e refletir estado no seletor global sem depender da UI Tk.
 - [ ] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
