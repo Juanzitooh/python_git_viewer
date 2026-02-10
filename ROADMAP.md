@@ -207,9 +207,12 @@ Legenda
 - [x] R7.3.6 Portar configuracoes basicas para PySide6 (2026-02-10)
   Escopo: implementar na aba Configuracoes do shell PySide6 controles para tema, limite de commits e raiz do workspace com persistencia em settings.
   Aceite: usuario consegue salvar configuracoes no PySide6 e ver efeito imediato no tema e no workspace.
-- [ ] R7.4 Polimento visual e UX "desktop grade"
+- [~] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
+- [x] R7.4.0 Polimento inicial do shell PySide6 (2026-02-10)
+  Escopo: evoluir layout visual (top bar, tabs, splitters nas abas criticas) e adicionar estado global de carregamento com badge/progresso para operacoes mais pesadas.
+  Aceite: interface PySide6 fica mais consistente visualmente e apresenta feedback claro durante scan/fetch/pull/push/carga de historico/importar/comparar.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.

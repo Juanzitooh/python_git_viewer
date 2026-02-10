@@ -30,6 +30,8 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com fluxo basico de Comparar no PySide6 e extensao de `viewer/core/branch_compare.py`, com origem/destino, resumo de diffs, commits, arquivos e patch por arquivo (incluindo diff por palavra).
 - M7 avancou com fluxo basico de Importar no PySide6: selecao de origem/branch, lista de commits e importacao por cherry-pick com atualizacao de status/historico/comparacao.
 - M7 avancou com Configuracoes basicas no PySide6: tema claro/escuro, limite de commits e raiz do workspace com persistencia em `settings.json` e aplicacao imediata.
+- M7 avancou com polimento visual inicial do shell PySide6: top bar estilizada, tabs em modo documento, splitters nas abas Historico/Comparar e destaque de botoes primarios.
+- Shell PySide6 agora exibe estado global de carregamento no rodape (badge + barra + cursor de espera), aplicado nas operacoes pesadas de scan, historico, importar, comparar e sincronizacao remota.
 
 ## [0.2.0] - 2026-02-10
 
