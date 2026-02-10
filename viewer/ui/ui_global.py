@@ -23,6 +23,13 @@ from ..core.github_urls import (
     normalize_remote_url_for_browser as core_normalize_remote_url_for_browser,
 )
 from ..core.git_client import is_git_repo, run_git
+from ..core.repo_state import (
+    get_ahead_behind as core_get_ahead_behind,
+    get_current_branch as core_get_current_branch,
+    get_upstream as core_get_upstream,
+    is_dirty as core_is_dirty,
+    list_branches as core_list_branches,
+)
 
 
 class GlobalBarMixin:
@@ -239,8 +246,7 @@ class GlobalBarMixin:
         self._refresh_global_branch_quick_selector(branches, current)
 
     def _get_branches(self) -> list[str]:
-        output = run_git(self.repo_path, ["branch", "--format=%(refname:short)"])
-        return [line.strip() for line in output.splitlines() if line.strip()]
+        return core_list_branches(self.repo_path)
 
     def _refresh_global_branch_quick_selector(self, branches: list[str], current: str) -> None:
         combo = getattr(self, "global_branch_quick_combo", None)
@@ -284,12 +290,10 @@ class GlobalBarMixin:
     def _get_current_branch(self) -> str:
         if not self.repo_ready:
             return ""
-        output = run_git(self.repo_path, ["rev-parse", "--abbrev-ref", "HEAD"])
-        return output.strip()
+        return core_get_current_branch(self.repo_path)
 
     def _is_dirty(self) -> bool:
-        output = run_git(self.repo_path, ["status", "--porcelain"])
-        return bool(output.strip())
+        return core_is_dirty(self.repo_path)
 
     def _stash_changes(self) -> None:
         if not self._is_dirty():
@@ -1631,24 +1635,13 @@ class GlobalBarMixin:
     def _get_upstream(self) -> str | None:
         if not self.repo_ready:
             return None
-        try:
-            output = run_git(self.repo_path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-        except RuntimeError:
-            return None
-        upstream = output.strip()
-        return upstream if upstream else None
+        return core_get_upstream(self.repo_path)
 
     def _get_ahead_behind(self) -> tuple[int, int]:
         upstream = self._get_upstream()
         if not upstream:
             return 0, 0
-        output = run_git(self.repo_path, ["rev-list", "--left-right", "--count", f"{upstream}...HEAD"])
-        parts = output.strip().split()
-        if len(parts) != 2:
-            return 0, 0
-        behind = int(parts[0])
-        ahead = int(parts[1])
-        return behind, ahead
+        return core_get_ahead_behind(self.repo_path, upstream)
 
     def _update_pull_push_labels(self) -> None:
         if not hasattr(self, "pull_button"):
