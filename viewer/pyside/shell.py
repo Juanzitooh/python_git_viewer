@@ -7,6 +7,13 @@ import sys
 from pathlib import Path
 
 from ..core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
+from ..core.commit_ops import (
+    create_commit as core_create_commit,
+    has_staged_changes as core_has_staged_changes,
+    list_modified_files as core_list_modified_files,
+    stage_paths as core_stage_paths,
+    unstage_all as core_unstage_all,
+)
 from ..core.git_client import is_git_repo
 from ..core.remote_ops import (
     fetch_all_prune as core_fetch_all_prune,
@@ -32,10 +39,13 @@ try:
         QComboBox,
         QHBoxLayout,
         QInputDialog,
+        QListWidget,
+        QListWidgetItem,
         QLabel,
         QLineEdit,
         QMainWindow,
         QMessageBox,
+        QPlainTextEdit,
         QPushButton,
         QSizePolicy,
         QStatusBar,
@@ -190,7 +200,7 @@ class QtShellWindow(QMainWindow):
         self.tabs.addTab(self.settings_tab, TAB_NAMES[5])
 
         self._build_repositories_tab()
-        self._build_placeholder_tab(self.commit_tab, "Commit")
+        self._build_commit_tab()
         self._build_placeholder_tab(self.history_tab, "Historico")
         self._build_placeholder_tab(self.import_tab, "Importar")
         self._build_placeholder_tab(self.compare_tab, "Comparar")
@@ -288,6 +298,59 @@ class QtShellWindow(QMainWindow):
         layout.addWidget(self.workspace_tree, stretch=1)
 
         self._scan_workspace_repos()
+
+    def _build_commit_tab(self) -> None:
+        layout = QVBoxLayout(self.commit_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        top_row = QWidget(self.commit_tab)
+        top_layout = QHBoxLayout(top_row)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(6)
+
+        self.commit_refresh_button = QPushButton("Atualizar status", top_row)
+        self.commit_refresh_button.clicked.connect(self._refresh_commit_files)
+        top_layout.addWidget(self.commit_refresh_button)
+
+        self.commit_select_all_button = QPushButton("Selecionar tudo", top_row)
+        self.commit_select_all_button.clicked.connect(self._select_all_commit_files)
+        top_layout.addWidget(self.commit_select_all_button)
+
+        self.commit_clear_selection_button = QPushButton("Limpar selecao", top_row)
+        self.commit_clear_selection_button.clicked.connect(self._clear_commit_file_selection)
+        top_layout.addWidget(self.commit_clear_selection_button)
+
+        top_layout.addStretch(1)
+        self.commit_selection_label = QLabel("Selecionados: 0/0", top_row)
+        top_layout.addWidget(self.commit_selection_label)
+
+        layout.addWidget(top_row)
+
+        self.commit_files_list = QListWidget(self.commit_tab)
+        self.commit_files_list.itemChanged.connect(self._on_commit_file_item_changed)
+        layout.addWidget(self.commit_files_list, stretch=1)
+
+        self.commit_title_input = QLineEdit(self.commit_tab)
+        self.commit_title_input.setPlaceholderText("Titulo do commit (obrigatorio)")
+        layout.addWidget(self.commit_title_input)
+
+        self.commit_description_input = QPlainTextEdit(self.commit_tab)
+        self.commit_description_input.setPlaceholderText("Descricao do commit (opcional)")
+        self.commit_description_input.setFixedHeight(120)
+        layout.addWidget(self.commit_description_input)
+
+        action_row = QWidget(self.commit_tab)
+        action_layout = QHBoxLayout(action_row)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(6)
+
+        self.commit_run_button = QPushButton("Commit", action_row)
+        self.commit_run_button.clicked.connect(self._create_commit_from_selection)
+        action_layout.addWidget(self.commit_run_button)
+
+        layout.addWidget(action_row)
+        self._refresh_commit_files()
 
     def _collect_repo_paths_from_settings(self, key: str) -> list[str]:
         items = self.settings_data.get(key, [])
@@ -490,11 +553,109 @@ class QtShellWindow(QMainWindow):
             return
         self._set_repo(target_repo, save=True)
 
+    def _refresh_commit_files(self) -> None:
+        self.commit_files_list.blockSignals(True)
+        self.commit_files_list.clear()
+        if not self.repo_path:
+            self.commit_files_list.blockSignals(False)
+            self._update_commit_selection_label()
+            return
+        try:
+            files = core_list_modified_files(self.repo_path)
+        except RuntimeError as exc:
+            self.commit_files_list.blockSignals(False)
+            QMessageBox.critical(self, "Commit", str(exc))
+            self._update_commit_selection_label()
+            return
+        for path in files:
+            item = QListWidgetItem(path, self.commit_files_list)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
+            item.setCheckState(Qt.CheckState.Checked)
+        self.commit_files_list.blockSignals(False)
+        self._update_commit_selection_label()
+
+    def _iter_commit_items(self) -> list[QListWidgetItem]:
+        items: list[QListWidgetItem] = []
+        for index in range(self.commit_files_list.count()):
+            item = self.commit_files_list.item(index)
+            if item is not None:
+                items.append(item)
+        return items
+
+    def _update_commit_selection_label(self) -> None:
+        items = self._iter_commit_items()
+        selected = 0
+        for item in items:
+            if item.checkState() == Qt.CheckState.Checked:
+                selected += 1
+        self.commit_selection_label.setText(f"Selecionados: {selected}/{len(items)}")
+
+    def _on_commit_file_item_changed(self, _item: QListWidgetItem) -> None:
+        self._update_commit_selection_label()
+
+    def _select_all_commit_files(self) -> None:
+        self.commit_files_list.blockSignals(True)
+        for item in self._iter_commit_items():
+            item.setCheckState(Qt.CheckState.Checked)
+        self.commit_files_list.blockSignals(False)
+        self._update_commit_selection_label()
+
+    def _clear_commit_file_selection(self) -> None:
+        self.commit_files_list.blockSignals(True)
+        for item in self._iter_commit_items():
+            item.setCheckState(Qt.CheckState.Unchecked)
+        self.commit_files_list.blockSignals(False)
+        self._update_commit_selection_label()
+
+    def _get_selected_commit_paths(self) -> list[str]:
+        selected: list[str] = []
+        for item in self._iter_commit_items():
+            if item.checkState() != Qt.CheckState.Checked:
+                continue
+            path = item.text().strip()
+            if path:
+                selected.append(path)
+        return selected
+
+    def _create_commit_from_selection(self) -> None:
+        if not self.repo_path:
+            QMessageBox.information(self, "Commit", "Selecione um repositorio valido primeiro.")
+            return
+        title = self.commit_title_input.text().strip()
+        if not title:
+            QMessageBox.warning(self, "Commit", "Titulo do commit e obrigatorio.")
+            return
+        selected_paths = self._get_selected_commit_paths()
+        if not selected_paths:
+            QMessageBox.warning(self, "Commit", "Selecione ao menos um arquivo para commit.")
+            return
+        description = self.commit_description_input.toPlainText().strip()
+        try:
+            core_unstage_all(self.repo_path)
+            core_stage_paths(self.repo_path, selected_paths)
+            if not core_has_staged_changes(self.repo_path):
+                QMessageBox.warning(self, "Commit", "Nenhuma alteracao ficou staged para commit.")
+                return
+            core_create_commit(self.repo_path, title, description)
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Commit", str(exc))
+            self._refresh_commit_files()
+            self._refresh_repo_state_ui()
+            self._refresh_workspace_tree()
+            return
+        self.commit_title_input.clear()
+        self.commit_description_input.clear()
+        self._set_status("Commit concluido.")
+        self._refresh_commit_files()
+        self._refresh_repo_state_ui()
+        self._refresh_workspace_tree()
+
     def _set_repo(self, repo_path: str, *, save: bool) -> None:
         normalized = normalize_repo_path(repo_path) if repo_path else ""
         if not normalized or not os.path.isdir(normalized) or not is_git_repo(normalized):
             self.repo_path = ""
             self._refresh_repo_state_ui()
+            self._refresh_commit_files()
             self._sync_workspace_tree_selection()
             if save:
                 self._persist_state()
@@ -503,6 +664,7 @@ class QtShellWindow(QMainWindow):
         self._add_recent_repo(normalized)
         self._select_repo_combo_item(normalized)
         self._refresh_repo_state_ui()
+        self._refresh_commit_files()
         self._sync_workspace_tree_selection()
         self._set_status(f"Repositorio ativo: {normalized}")
         if save:
