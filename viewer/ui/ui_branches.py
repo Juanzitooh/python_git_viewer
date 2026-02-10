@@ -10,6 +10,11 @@ from ..core.branch_compare import (
     load_compare_commits as core_load_compare_commits,
     load_compare_file_stats as core_load_compare_file_stats,
 )
+from ..core.commit_content import (
+    get_commit_patch as core_get_commit_patch,
+    list_commit_files as core_list_commit_files,
+    resolve_commit_hash as core_resolve_commit_hash,
+)
 from ..core.git_client import run_git
 from .diff_render import render_patch_to_widget
 
@@ -419,10 +424,7 @@ class BranchesTabMixin:
         token = self._extract_compare_commit_token(commit_line)
         if not token:
             return ""
-        try:
-            return run_git(self.repo_path, ["rev-parse", token]).strip()
-        except RuntimeError:
-            return token
+        return core_resolve_commit_hash(self.repo_path, token)
 
     def _copy_compare_commit_hash(self, commit_hash: str) -> None:
         if not commit_hash:
@@ -440,11 +442,10 @@ class BranchesTabMixin:
         if not commit_hash:
             return
         try:
-            output = run_git(self.repo_path, ["show", "--pretty=format:", "--name-only", commit_hash])
+            paths = core_list_commit_files(self.repo_path, commit_hash)
         except RuntimeError as exc:
             messagebox.showerror("Comparar", str(exc))
             return
-        paths = [line.strip() for line in output.splitlines() if line.strip()]
         payload = ", ".join(paths)
         if hasattr(self, "_copy_to_clipboard"):
             copied = self._copy_to_clipboard(payload)
@@ -459,7 +460,7 @@ class BranchesTabMixin:
         if not commit_hash:
             return
         try:
-            patch = run_git(self.repo_path, ["show", "--format=", commit_hash])
+            patch = core_get_commit_patch(self.repo_path, commit_hash)
         except RuntimeError as exc:
             messagebox.showerror("Comparar", str(exc))
             return

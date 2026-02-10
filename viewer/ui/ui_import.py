@@ -5,6 +5,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
 from ..core.git_client import is_git_repo, load_commit_summaries, run_git
 from ..core.models import CommitFilters, CommitSummary
 from ..core.settings_store import normalize_repo_path
@@ -437,11 +438,10 @@ class ImportTabMixin:
             messagebox.showwarning("Importar", "Selecione repositório e branch de origem.")
             return
         try:
-            output = run_git(source_repo, ["show", "--pretty=format:", "--name-only", commit_hash])
+            paths = core_list_commit_files(source_repo, commit_hash)
         except RuntimeError as exc:
             messagebox.showerror("Importar", str(exc))
             return
-        paths = [line.strip() for line in output.splitlines() if line.strip()]
         payload = ", ".join(paths)
         if hasattr(self, "_copy_to_clipboard"):
             copied = self._copy_to_clipboard(payload)
@@ -458,7 +458,7 @@ class ImportTabMixin:
             messagebox.showwarning("Importar", "Selecione repositório e branch de origem.")
             return
         try:
-            patch = run_git(source_repo, ["show", "--format=", commit_hash])
+            patch = core_get_commit_patch(source_repo, commit_hash)
         except RuntimeError as exc:
             messagebox.showerror("Importar", str(exc))
             return

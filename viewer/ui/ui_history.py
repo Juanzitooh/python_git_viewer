@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
 from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
 from ..core.models import CommitFilters, CommitInfo, CommitSummary, FileStat
 from .diff_render import render_patch_to_widget
@@ -920,13 +921,13 @@ class HistoryTabMixin:
     def _get_patch(self, commit_hash: str, path: str | None = None, word_diff: bool | None = None) -> str:
         if word_diff is None:
             word_diff = self._word_diff_enabled()
-        args = ["show", "--unified=0", "--format="]
-        if word_diff:
-            args.append("--word-diff=plain")
-        args.append(commit_hash)
-        if path:
-            args.extend(["--", path])
-        return run_git(self.repo_path, args)
+        return core_get_commit_patch(
+            self.repo_path,
+            commit_hash,
+            path=path,
+            word_diff=word_diff,
+            unified_zero=True,
+        )
 
     def _on_file_select(self, _event: tk.Event) -> None:
         self._dismiss_history_file_context_menu()
@@ -1177,11 +1178,10 @@ class HistoryTabMixin:
             paths = [stat.path for stat in commit.file_stats]
         else:
             try:
-                output = run_git(self.repo_path, ["show", "--pretty=format:", "--name-only", commit_hash])
+                paths = core_list_commit_files(self.repo_path, commit_hash)
             except RuntimeError as exc:
                 messagebox.showerror("Erro", str(exc))
                 return
-            paths = [line.strip() for line in output.splitlines() if line.strip()]
         content = ", ".join(paths)
         self.clipboard_clear()
         self.clipboard_append(content)
