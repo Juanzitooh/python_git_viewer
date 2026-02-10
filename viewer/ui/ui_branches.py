@@ -77,7 +77,12 @@ class BranchesTabMixin:
         ttk.Label(commits_frame, text="Commits a aplicar (origem → destino)").grid(
             row=0, column=0, sticky="w"
         )
-        self.compare_commits_listbox = tk.Listbox(commits_frame, height=10, activestyle="dotbox")
+        self.compare_commits_listbox = tk.Listbox(
+            commits_frame,
+            height=10,
+            activestyle="dotbox",
+            exportselection=False,
+        )
         self.compare_commits_listbox.grid(row=1, column=0, sticky="nsew")
         self.compare_commits_listbox.bind("<<ListboxSelect>>", self._on_compare_commit_select)
         self.compare_commits_listbox.bind("<ButtonPress-3>", self._on_compare_commit_context_menu_request, add=True)
@@ -111,7 +116,12 @@ class BranchesTabMixin:
             row=0, column=3, sticky="e", padx=(8, 0)
         )
 
-        self.compare_files_listbox = tk.Listbox(diff_frame, height=8, activestyle="dotbox")
+        self.compare_files_listbox = tk.Listbox(
+            diff_frame,
+            height=8,
+            activestyle="dotbox",
+            exportselection=False,
+        )
         self.compare_files_listbox.grid(row=1, column=0, sticky="nsew")
         self.compare_files_listbox.bind("<<ListboxSelect>>", self._on_compare_file_select)
         self.compare_files_listbox.bind("<Double-Button-1>", self._open_compare_file_in_vscode)
@@ -740,7 +750,12 @@ class BranchesTabMixin:
             return
         selection = self.compare_files_listbox.curselection()
         if not selection:
-            return
+            if self.compare_files_listbox.size() <= 0:
+                return
+            selection = (0,)
+            self.compare_files_listbox.selection_set(0)
+            self.compare_files_listbox.activate(0)
+            self.compare_files_listbox.see(0)
         self._show_compare_diff_for_index(selection[0])
 
     def _on_branch_action_changed(self) -> None:
