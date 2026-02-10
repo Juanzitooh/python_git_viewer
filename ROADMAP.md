@@ -174,6 +174,9 @@ Legenda
 - [x] R7.1.9 Extrair reordenacao de commits locais para o core (2026-02-10)
   Escopo: mover carregamento de commits locais e pipeline de reordenacao (backup/reset/replay/restore) para modulo `viewer/core`.
   Aceite: Historico continua com o mesmo fluxo visual, mas delega logica de reordenacao local ao core.
+- [x] R7.1.10 Extrair operacoes remotas e tags para o core (2026-02-10)
+  Escopo: mover fetch/pull/push e listagem de commits de push para `viewer/core`, alem da listagem de tags usada no filtro do Historico.
+  Aceite: `ui_global` e `ui_history` deixam de executar `run_git` inline nesses fluxos, mantendo comportamento funcional inalterado.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
