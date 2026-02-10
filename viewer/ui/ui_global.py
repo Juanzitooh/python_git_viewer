@@ -1019,6 +1019,14 @@ class GlobalBarMixin:
         )
         menu.add_separator()
         menu.add_command(
+            label="Copiar URL do repositorio",
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_github_url(path)),
+        )
+        menu.add_command(
+            label="Copiar URL da branch atual",
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_branch_github_url(path)),
+        )
+        menu.add_command(
             label="Copiar caminho",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_path(path)),
         )
@@ -1050,14 +1058,58 @@ class GlobalBarMixin:
             except tk.TclError:
                 pass
 
+    def _copy_to_clipboard(self, content: str) -> bool:
+        payload = content.strip()
+        if not payload:
+            return False
+        self.clipboard_clear()
+        self.clipboard_append(payload)
+        self.update()
+        return True
+
     def _copy_repo_path(self, repo_path: str = "") -> None:
         resolved_repo = self._resolve_repo_action_path(repo_path)
         if not resolved_repo:
             messagebox.showinfo("Repo", "Selecione um repositório antes de copiar o caminho.")
             return
-        self.clipboard_clear()
-        self.clipboard_append(resolved_repo)
-        self.update()
+        self._copy_to_clipboard(resolved_repo)
+        self._set_status("Caminho do repositorio copiado.")
+
+    def _copy_repo_github_url(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositorio valido antes de copiar URL.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        copied = self._copy_to_clipboard(repo_base_url)
+        if copied:
+            self._set_status("URL do repositorio copiada.")
+        return copied
+
+    def _copy_repo_branch_github_url(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositorio valido antes de copiar URL da branch.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        branch = self._get_current_branch_for_pr(resolved_repo).strip()
+        if not branch:
+            messagebox.showwarning("GitHub", "Nao foi possivel identificar a branch atual.")
+            return False
+        branch_enc = quote(branch, safe="")
+        branch_url = f"{repo_base_url}/tree/{branch_enc}"
+        copied = self._copy_to_clipboard(branch_url)
+        if copied:
+            self._set_status("URL da branch copiada.")
+        return copied
 
     def _delete_repo_directory(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1340,6 +1392,26 @@ class GlobalBarMixin:
             return False
         commit_url = f"{repo_base_url}/commit/{sha}"
         return self._open_browser_url("GitHub", commit_url)
+
+    def _copy_commit_github_url(self, commit_hash: str, repo_path: str = "") -> bool:
+        sha = commit_hash.strip()
+        if not sha:
+            messagebox.showwarning("GitHub", "Informe um hash de commit valido.")
+            return False
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositorio valido antes de copiar URL de commit.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        commit_url = f"{repo_base_url}/commit/{sha}"
+        copied = self._copy_to_clipboard(commit_url)
+        if copied:
+            self._set_status("URL do commit copiada.")
+        return copied
 
     def _apply_repo_from_entry(self) -> None:
         if not hasattr(self, "repo_var"):
