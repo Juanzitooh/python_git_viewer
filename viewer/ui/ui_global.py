@@ -22,6 +22,11 @@ from ..core.github_urls import (
     get_repo_origin_url as core_get_repo_origin_url,
     normalize_remote_url_for_browser as core_normalize_remote_url_for_browser,
 )
+from ..core.branch_ops import (
+    checkout_branch as core_checkout_branch,
+    create_branch as core_create_branch,
+    create_stash as core_create_stash,
+)
 from ..core.git_client import is_git_repo, run_git
 from ..core.repo_state import (
     get_ahead_behind as core_get_ahead_behind,
@@ -303,7 +308,7 @@ class GlobalBarMixin:
         start = self._perf_start("Stash", perf_trigger)
         try:
             try:
-                run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
+                core_create_stash(self.repo_path, message="git_commits_viewer", include_untracked=True)
             except RuntimeError as exc:
                 messagebox.showerror("Stash", str(exc))
                 return
@@ -385,9 +390,12 @@ class GlobalBarMixin:
         start = self._perf_start("Checkout branch", perf_trigger)
         try:
             try:
-                if choice == "stash":
-                    run_git(self.repo_path, ["stash", "push", "-u", "-m", "git_commits_viewer"])
-                run_git(self.repo_path, ["checkout", target])
+                core_checkout_branch(
+                    self.repo_path,
+                    target,
+                    stash_before=(choice == "stash"),
+                    stash_message="git_commits_viewer",
+                )
             except RuntimeError as exc:
                 messagebox.showerror("Checkout", str(exc))
                 return False
@@ -430,14 +438,11 @@ class GlobalBarMixin:
         if branch_name in self.branch_list:
             messagebox.showwarning("Nova branch", f"A branch '{branch_name}' já existe.")
             return False
-        args = ["branch", branch_name]
-        if base:
-            args.append(base)
         perf_trigger = f"create_branch:{branch_name}"
         start = self._perf_start("Criar branch", perf_trigger)
         try:
             try:
-                run_git(self.repo_path, args)
+                core_create_branch(self.repo_path, branch_name, base_branch=base)
             except RuntimeError as exc:
                 messagebox.showerror("Nova branch", str(exc))
                 return False
