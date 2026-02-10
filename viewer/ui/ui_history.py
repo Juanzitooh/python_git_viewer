@@ -21,6 +21,11 @@ from ..core.conflict_ops import (
 )
 from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
 from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
+from ..core.history_local_ops import (
+    apply_local_commit_reorder as core_apply_local_commit_reorder,
+    load_local_only_commit_hashes as core_load_local_only_commit_hashes,
+    load_reorderable_local_commits as core_load_reorderable_local_commits,
+)
 from ..core.models import CommitFilters, CommitInfo, CommitSummary, FileStat
 from .diff_render import render_patch_to_widget
 
@@ -661,8 +666,7 @@ class HistoryTabMixin:
         upstream = self._get_upstream()
         if not upstream:
             return set(), False
-        output = run_git(self.repo_path, ["rev-list", f"{upstream}..HEAD"])
-        hashes = {line.strip() for line in output.splitlines() if line.strip()}
+        hashes = core_load_local_only_commit_hashes(self.repo_path, upstream)
         return hashes, True
 
     def _update_reorder_local_button_visibility(self) -> None:
@@ -1395,71 +1399,8 @@ class HistoryTabMixin:
         upstream = self._get_upstream()
         if not upstream:
             return "", []
-        field_sep = "\x1f"
-        record_sep = "\x1e"
-        log_output = run_git(
-            self.repo_path,
-            [
-                "log",
-                "--reverse",
-                "--date=iso",
-                f"--pretty=format:%H{field_sep}%s{field_sep}%an{field_sep}%ad{field_sep}%ct{record_sep}",
-                f"{upstream}..HEAD",
-            ],
-        )
-        commits: list[CommitSummary] = []
-        for record in log_output.split(record_sep):
-            record = record.strip("\n")
-            if not record:
-                continue
-            fields = record.split(field_sep)
-            if len(fields) < 2:
-                continue
-            commit_hash = fields[0]
-            subject = fields[1]
-            author = fields[2] if len(fields) > 2 else ""
-            date = fields[3] if len(fields) > 3 else ""
-            timestamp_raw = fields[4] if len(fields) > 4 else ""
-            try:
-                timestamp = int(timestamp_raw)
-            except ValueError:
-                timestamp = 0
-            commits.append(
-                CommitSummary(
-                    commit_hash=commit_hash,
-                    subject=subject,
-                    author=author,
-                    date=date,
-                    timestamp=timestamp,
-                )
-            )
+        commits = core_load_reorderable_local_commits(self.repo_path, upstream)
         return upstream, commits
-
-    @staticmethod
-    def _sanitize_branch_name_for_backup(branch_name: str) -> str:
-        if not branch_name.strip():
-            return "branch"
-        safe = []
-        for char in branch_name.strip():
-            if char.isalnum() or char in ("-", "_"):
-                safe.append(char)
-            else:
-                safe.append("-")
-        value = "".join(safe).strip("-")
-        return value or "branch"
-
-    def _build_reorder_backup_branch(self, current_branch: str) -> str:
-        safe_branch = self._sanitize_branch_name_for_backup(current_branch)
-        base = f"backup/reorder-{safe_branch}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        candidate = base
-        counter = 2
-        while True:
-            try:
-                run_git(self.repo_path, ["rev-parse", "--verify", candidate])
-            except RuntimeError:
-                return candidate
-            candidate = f"{base}-{counter}"
-            counter += 1
 
     def _apply_local_commit_reorder(self, upstream: str, ordered_commits: list[CommitSummary]) -> bool:
         if not self.repo_ready or not upstream or not ordered_commits:
@@ -1478,30 +1419,25 @@ class HistoryTabMixin:
             except RuntimeError as exc:
                 messagebox.showerror("Reordenar commits", str(exc))
                 return False
-            backup_branch = self._build_reorder_backup_branch(current_branch)
             try:
-                run_git(self.repo_path, ["branch", backup_branch, "HEAD"])
+                result = core_apply_local_commit_reorder(
+                    self.repo_path,
+                    upstream,
+                    ordered_commits,
+                    current_branch=current_branch,
+                )
             except RuntimeError as exc:
-                messagebox.showerror("Reordenar commits", f"Falha ao criar branch de backup:\n{exc}")
+                messagebox.showerror("Reordenar commits", str(exc))
                 return False
 
-            try:
-                run_git(self.repo_path, ["reset", "--hard", upstream])
-                for summary in ordered_commits:
-                    run_git(self.repo_path, ["cherry-pick", summary.commit_hash])
-            except RuntimeError as exc:
-                try:
-                    run_git(self.repo_path, ["cherry-pick", "--abort"])
-                except RuntimeError:
-                    pass
-                try:
-                    run_git(self.repo_path, ["reset", "--hard", backup_branch])
-                except RuntimeError as restore_exc:
+            backup_branch = result.backup_branch
+            if not result.ok:
+                if result.restore_error_message:
                     messagebox.showerror(
                         "Reordenar commits",
                         (
-                            f"Falha ao reordenar commits:\n{exc}\n\n"
-                            f"Também falhou ao restaurar backup automaticamente:\n{restore_exc}\n\n"
+                            f"Falha ao reordenar commits:\n{result.error_message}\n\n"
+                            f"Também falhou ao restaurar backup automaticamente:\n{result.restore_error_message}\n\n"
                             f"Backup disponível em: {backup_branch}"
                         ),
                     )
@@ -1515,7 +1451,7 @@ class HistoryTabMixin:
                 self._set_status(f"Reordenação falhou. Estado restaurado a partir de {backup_branch}.")
                 messagebox.showerror(
                     "Reordenar commits",
-                    f"Falha ao reordenar commits:\n{exc}\n\nEstado restaurado com backup: {backup_branch}",
+                    f"Falha ao reordenar commits:\n{result.error_message}\n\nEstado restaurado com backup: {backup_branch}",
                 )
                 return False
 
