@@ -120,9 +120,48 @@ Legenda
 - [x] R6.8 Atalhos de GitHub para commit e PR (2026-02-10)
   Escopo: permitir abrir commit selecionado no GitHub pelo menu do Historico e exibir botao de abrir PR na aba Commit quando nao houver alteracoes no worktree.
   Aceite: usuario acessa commit e fluxo de PR no navegador sem copiar URL manualmente.
+- [ ] R6.9 Navegacao GitHub expandida (sem API)
+  Escopo: adicionar acoes para abrir no navegador a branch atual (`/tree/<branch>`), historico de commits da branch (`/commits/<branch>`), issues (`/issues`), actions (`/actions`) e releases (`/releases`) do repositorio selecionado.
+  Aceite: usuario consegue abrir cada destino GitHub por menu de contexto sem precisar copiar URL manualmente.
+- [ ] R6.9.1 Copiar links GitHub prontos (repo/branch/commit)
+  Escopo: incluir acoes de copia para URL do repositorio, URL da branch atual e URL de commit selecionado, aproveitando os utilitarios existentes de normalizacao do `origin`.
+  Aceite: links copiados para clipboard funcionam diretamente no navegador e refletem o repo/branch/commit correto.
+- [ ] R6.9.2 Menu GitHub consolidado nas acoes de repositorio
+  Escopo: organizar atalhos de navegador em um grupo consistente no menu de contexto de cards e combobox de repositorio, evitando duplicacao de comandos na barra superior.
+  Aceite: menus de contexto ficam consistentes entre abas e centralizam todas as acoes de GitHub sem poluir a UI.
 - [x] R6.7 Aba Commit com stage/unstage por interacao direta (2026-02-08)
   Escopo: remover dependencia dos botoes de acao em lote e usar clique para alternar stage/unstage em arquivo, hunk e linha; preservar ordem natural dos itens e indicar visualmente selecao de hunk/linha.
   Aceite: fluxo principal de stage/unstage funciona sem combinacao de teclado e sem passos extras.
+
+## M7 - UI Moderna (PySide6) e Distribuicao Linux
+
+- [ ] R7.1 Core Python estabilizado e desacoplado da UI
+  Escopo: consolidar contratos entre `viewer/core` e camada de interface para que a logica Git permaneca 100% reutilizavel em qualquer frontend.
+  Aceite: operacoes Git, parse de diff, estado de repositorio e persistencia funcionam sem dependencia direta de widgets Tk.
+- [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
+  Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
+  Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
+- [ ] R7.3 Migracao incremental das abas criticas (Repositorios, Commit, Historico)
+  Escopo: portar as abas de maior uso para PySide6 sem perder funcionalidades atuais.
+  Aceite: fluxos centrais (scan/selecionar repo, stage/commit/push, historico e filtros) operam no frontend PySide6.
+- [ ] R7.4 Polimento visual e UX "desktop grade"
+  Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
+  Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
+- [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
+  Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
+  Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
+- [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
+  Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
+  Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
+- [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
+  Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
+  Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.
+- [ ] R7.6 Pipeline de release para desktop Linux
+  Escopo: automatizar build e publicacao dos artefatos Linux (AppImage/.deb) na esteira de release.
+  Aceite: cada release gera pacotes assinaveis/reproduziveis com checksum e notas.
+- [ ] R7.7 Manter `core` em Python como padrao do projeto
+  Escopo: formalizar no roadmap que somente a camada de interface muda para PySide6; dominio e automacoes permanecem em Python.
+  Aceite: decisoes de arquitetura e PRs de UI seguem regra de nao reescrever o `core` em outra linguagem.
 
 Ordem de execucao sugerida
 - 1) R6.2
@@ -132,6 +171,18 @@ Ordem de execucao sugerida
 - 5) R6.6
 - 6) R6.4
 - 7) R6.7
+- 8) R6.9
+- 9) R6.9.1
+- 10) R6.9.2
+- 11) R7.1
+- 12) R7.2
+- 13) R7.3
+- 14) R7.4
+- 15) R7.4.1
+- 16) R7.4.2
+- 17) R7.5
+- 18) R7.6
+- 19) R7.7
 
 ## Regras de Manutencao
 
