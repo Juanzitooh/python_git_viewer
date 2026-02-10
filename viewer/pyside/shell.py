@@ -14,6 +14,10 @@ from ..core.branch_compare import (
     load_compare_file_stats as core_load_compare_file_stats,
 )
 from ..core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
+from ..core.cherry_pick_ops import (
+    cherry_pick_commit as core_cherry_pick_commit,
+    has_unmerged_conflicts as core_has_unmerged_conflicts,
+)
 from ..core.commit_content import (
     get_commit_patch as core_get_commit_patch,
     list_commit_files as core_list_commit_files,
@@ -46,6 +50,7 @@ try:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QCloseEvent, QFont
     from PySide6.QtWidgets import (
+        QAbstractItemView,
         QApplication,
         QCheckBox,
         QFileDialog,
@@ -215,7 +220,7 @@ class QtShellWindow(QMainWindow):
         self._build_repositories_tab()
         self._build_commit_tab()
         self._build_history_tab()
-        self._build_placeholder_tab(self.import_tab, "Importar")
+        self._build_import_tab()
         self._build_compare_tab()
         self._build_placeholder_tab(self.settings_tab, "Configuracoes")
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -573,6 +578,352 @@ class QtShellWindow(QMainWindow):
             return
         self.history_patch_view.setPlainText(patch)
 
+    def _build_import_tab(self) -> None:
+        self.import_source_repo_path = ""
+        self.import_source_repo_lookup: dict[str, str] = {}
+        self.import_commit_summaries: list[CommitSummary] = []
+
+        layout = QVBoxLayout(self.import_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        source_row = QWidget(self.import_tab)
+        source_layout = QHBoxLayout(source_row)
+        source_layout.setContentsMargins(0, 0, 0, 0)
+        source_layout.setSpacing(6)
+
+        source_layout.addWidget(QLabel("Origem:", source_row))
+        self.import_source_repo_combo = QComboBox(source_row)
+        self.import_source_repo_combo.currentIndexChanged.connect(self._on_import_source_repo_changed)
+        source_layout.addWidget(self.import_source_repo_combo, stretch=1)
+
+        self.import_source_repo_refresh_button = QPushButton("Atualizar repos", source_row)
+        self.import_source_repo_refresh_button.clicked.connect(self._refresh_import_source_repos)
+        source_layout.addWidget(self.import_source_repo_refresh_button)
+
+        self.import_source_repo_current_button = QPushButton("Usar atual", source_row)
+        self.import_source_repo_current_button.clicked.connect(self._use_current_repo_as_import_source)
+        source_layout.addWidget(self.import_source_repo_current_button)
+
+        source_layout.addWidget(QLabel("Branch origem:", source_row))
+        self.import_source_branch_combo = QComboBox(source_row)
+        self.import_source_branch_combo.currentIndexChanged.connect(self._on_import_source_branch_changed)
+        source_layout.addWidget(self.import_source_branch_combo)
+
+        self.import_source_branch_refresh_button = QPushButton("Atualizar lista", source_row)
+        self.import_source_branch_refresh_button.clicked.connect(self._load_import_source_commits)
+        source_layout.addWidget(self.import_source_branch_refresh_button)
+
+        layout.addWidget(source_row)
+
+        self.import_target_label = QLabel("Destino: (nenhum repositório selecionado)", self.import_tab)
+        layout.addWidget(self.import_target_label)
+
+        self.import_commits_list = QListWidget(self.import_tab)
+        self.import_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.import_commits_list.itemSelectionChanged.connect(self._update_import_controls_state)
+        layout.addWidget(self.import_commits_list, stretch=1)
+
+        actions_row = QWidget(self.import_tab)
+        actions_layout = QHBoxLayout(actions_row)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
+
+        self.import_copy_hashes_button = QPushButton("Copiar hashes", actions_row)
+        self.import_copy_hashes_button.clicked.connect(self._copy_selected_import_hashes)
+        actions_layout.addWidget(self.import_copy_hashes_button)
+
+        self.import_run_button = QPushButton("Importar selecionados", actions_row)
+        self.import_run_button.clicked.connect(self._import_selected_commits)
+        actions_layout.addWidget(self.import_run_button)
+
+        actions_layout.addStretch(1)
+        layout.addWidget(actions_row)
+
+        self.import_status_label = QLabel("Selecione o repositório de origem para carregar commits.", self.import_tab)
+        layout.addWidget(self.import_status_label)
+
+        self._refresh_import_source_repos()
+        self._sync_import_target_label()
+        self._update_import_controls_state()
+
+    def _sync_import_target_label(self) -> None:
+        if not hasattr(self, "import_target_label"):
+            return
+        if not self.repo_path:
+            self.import_target_label.setText("Destino: (nenhum repositório selecionado)")
+            return
+        try:
+            branch = core_get_current_branch(self.repo_path).strip()
+        except RuntimeError:
+            branch = "(desconhecida)"
+        display = self._format_workspace_relative_path(self.repo_path)
+        self.import_target_label.setText(f"Destino: {display} | Branch atual: {branch}")
+
+    def _clear_import_selection(self, status_message: str) -> None:
+        self.import_commit_summaries = []
+        if hasattr(self, "import_commits_list"):
+            self.import_commits_list.clear()
+        self.import_status_label.setText(status_message)
+        self._update_import_controls_state()
+
+    def _refresh_import_source_repos(self) -> None:
+        if not hasattr(self, "import_source_repo_combo"):
+            return
+        repos = self._collect_known_repos()
+        source_path = normalize_repo_path(self.import_source_repo_path) if self.import_source_repo_path else ""
+
+        labels: list[str] = []
+        lookup: dict[str, str] = {}
+        for repo in repos:
+            label_base = self._format_repo_display_label(repo)
+            label = label_base
+            suffix = 2
+            while label in lookup:
+                label = f"{label_base} [{suffix}]"
+                suffix += 1
+            labels.append(label)
+            lookup[label] = repo
+        self.import_source_repo_lookup = lookup
+
+        self.import_source_repo_combo.blockSignals(True)
+        self.import_source_repo_combo.clear()
+        for label in labels:
+            self.import_source_repo_combo.addItem(label, lookup[label])
+        self.import_source_repo_combo.blockSignals(False)
+
+        if source_path and source_path in lookup.values():
+            idx = self.import_source_repo_combo.findData(source_path)
+            if idx >= 0:
+                self.import_source_repo_combo.setCurrentIndex(idx)
+        elif labels:
+            self.import_source_repo_combo.setCurrentIndex(0)
+        else:
+            self.import_source_repo_path = ""
+            self.import_source_branch_combo.clear()
+            self._clear_import_selection("Nenhum repositório disponível para origem.")
+
+        if self.import_source_repo_combo.count() > 0:
+            self._apply_import_source_repo_from_combo()
+        self._update_import_controls_state()
+
+    def _on_import_source_repo_changed(self, _index: int) -> None:
+        self._apply_import_source_repo_from_combo()
+
+    def _apply_import_source_repo_from_combo(self) -> None:
+        selected = self.import_source_repo_combo.currentData()
+        repo = str(selected).strip() if selected is not None else ""
+        if not repo:
+            self.import_source_repo_path = ""
+            self.import_source_branch_combo.clear()
+            self._clear_import_selection("Selecione o repositório de origem para carregar commits.")
+            return
+        normalized = normalize_repo_path(repo)
+        if not os.path.isdir(normalized) or not is_git_repo(normalized):
+            self.import_source_repo_path = ""
+            self.import_source_branch_combo.clear()
+            self._clear_import_selection("Repositório de origem inválido.")
+            return
+        self.import_source_repo_path = normalized
+        self._load_import_source_branches()
+
+    def _use_current_repo_as_import_source(self) -> None:
+        if not self.repo_path:
+            QMessageBox.information(self, "Importar", "Selecione um repositório destino válido primeiro.")
+            return
+        index = self.import_source_repo_combo.findData(self.repo_path)
+        if index < 0:
+            self._refresh_import_source_repos()
+            index = self.import_source_repo_combo.findData(self.repo_path)
+        if index >= 0:
+            self.import_source_repo_combo.setCurrentIndex(index)
+            self._apply_import_source_repo_from_combo()
+
+    def _load_import_source_branches(self) -> None:
+        source_repo = self.import_source_repo_path
+        if not source_repo:
+            self.import_source_branch_combo.clear()
+            self._clear_import_selection("Selecione o repositório de origem para carregar commits.")
+            return
+        try:
+            branches = core_list_branches(source_repo)
+            current = core_get_current_branch(source_repo).strip()
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Importar", str(exc))
+            self.import_source_branch_combo.clear()
+            self._clear_import_selection("Falha ao carregar branches da origem.")
+            return
+        if not branches:
+            self.import_source_branch_combo.clear()
+            self._clear_import_selection("Nenhuma branch encontrada na origem.")
+            return
+        self.import_source_branch_combo.blockSignals(True)
+        self.import_source_branch_combo.clear()
+        for branch in branches:
+            self.import_source_branch_combo.addItem(branch, branch)
+        self.import_source_branch_combo.blockSignals(False)
+        idx = self.import_source_branch_combo.findData(current)
+        if idx < 0:
+            idx = 0
+        self.import_source_branch_combo.setCurrentIndex(idx)
+        self._load_import_source_commits()
+
+    def _on_import_source_branch_changed(self, _index: int) -> None:
+        self._load_import_source_commits()
+
+    def _load_import_source_commits(self) -> None:
+        source_repo = self.import_source_repo_path
+        selected_branch = self.import_source_branch_combo.currentData()
+        branch = str(selected_branch).strip() if selected_branch is not None else ""
+        if not source_repo or not branch:
+            self._clear_import_selection("Selecione origem e branch para carregar commits.")
+            return
+        self.import_status_label.setText(f"Carregando commits de {branch}...")
+        filters = CommitFilters(ref=branch)
+        limit_raw = self.settings_data.get("commit_limit", 100)
+        try:
+            limit = int(limit_raw)
+        except (TypeError, ValueError):
+            limit = 100
+        limit = max(1, limit)
+        try:
+            summaries = load_commit_summaries(source_repo, limit=limit, filters=filters)
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Importar", str(exc))
+            self._clear_import_selection("Falha ao carregar commits da origem.")
+            return
+        self.import_commit_summaries = summaries
+        self.import_commits_list.clear()
+        for summary in summaries:
+            label = f"{summary.commit_hash[:7]} | {summary.subject}"
+            item = QListWidgetItem(label, self.import_commits_list)
+            item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+        if summaries:
+            self.import_status_label.setText(f"{len(summaries)} commits carregados da branch {branch}.")
+        else:
+            self.import_status_label.setText(f"Nenhum commit encontrado na branch {branch}.")
+        self._update_import_controls_state()
+
+    def _get_selected_import_summaries(self) -> list[CommitSummary]:
+        selected_indexes = self.import_commits_list.selectedIndexes()
+        if not selected_indexes:
+            return []
+        selected_hashes: list[str] = []
+        for model_index in sorted(selected_indexes, key=lambda index: int(index.row())):
+            item = self.import_commits_list.item(model_index.row())
+            if item is None:
+                continue
+            value = item.data(Qt.ItemDataRole.UserRole)
+            commit_hash = str(value).strip() if value is not None else ""
+            if commit_hash:
+                selected_hashes.append(commit_hash)
+        summaries_by_hash = {item.commit_hash: item for item in self.import_commit_summaries}
+        selected: list[CommitSummary] = []
+        for commit_hash in selected_hashes:
+            summary = summaries_by_hash.get(commit_hash)
+            if summary is not None:
+                selected.append(summary)
+        return selected
+
+    def _copy_selected_import_hashes(self) -> None:
+        selected = self._get_selected_import_summaries()
+        if not selected:
+            QMessageBox.information(self, "Importar", "Selecione commits para copiar os hashes.")
+            return
+        payload = "\n".join(item.commit_hash for item in selected)
+        QApplication.clipboard().setText(payload)
+        self._set_status("Hashes copiados.")
+
+    def _import_selected_commits(self) -> None:
+        if not self.repo_path:
+            QMessageBox.information(self, "Importar", "Selecione um repositório destino válido primeiro.")
+            return
+        source_repo = self.import_source_repo_path
+        if not source_repo:
+            QMessageBox.warning(self, "Importar", "Selecione o repositório de origem.")
+            return
+        selected = self._get_selected_import_summaries()
+        if not selected:
+            QMessageBox.warning(self, "Importar", "Selecione ao menos um commit para importar.")
+            return
+        target_branch = self.branch_combo.currentData()
+        target = str(target_branch).strip() if target_branch is not None else ""
+        if not target:
+            target = core_get_current_branch(self.repo_path).strip()
+        source_branch_data = self.import_source_branch_combo.currentData()
+        source_branch = str(source_branch_data).strip() if source_branch_data is not None else ""
+        confirm = QMessageBox.question(
+            self,
+            "Importar commits",
+            (
+                f"Importar {len(selected)} commit(s)\n"
+                f"Origem: {source_repo} ({source_branch or '(sem branch)'})\n"
+                f"Destino: {self.repo_path} ({target or '(desconhecida)'})"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        source_is_target = normalize_repo_path(source_repo) == normalize_repo_path(self.repo_path)
+        ordered = list(reversed(selected))
+        applied = 0
+        self.import_status_label.setText("Importando commits...")
+        for summary in ordered:
+            try:
+                core_cherry_pick_commit(
+                    self.repo_path,
+                    summary.commit_hash,
+                    source_repo=source_repo,
+                    fetch_source=not source_is_target,
+                )
+            except RuntimeError as exc:
+                has_conflicts = False
+                try:
+                    has_conflicts = core_has_unmerged_conflicts(self.repo_path)
+                except RuntimeError:
+                    has_conflicts = False
+                suffix = "Conflitos detectados." if has_conflicts else "Importação interrompida."
+                QMessageBox.critical(
+                    self,
+                    "Importar",
+                    f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\n{suffix}",
+                )
+                self.import_status_label.setText(f"Importação interrompida após {applied} commit(s).")
+                self._refresh_repo_state_ui()
+                self._refresh_workspace_tree()
+                self._reload_history_commits()
+                self._refresh_compare_branch_options()
+                self._refresh_commit_files()
+                self._update_import_controls_state()
+                return
+            applied += 1
+
+        self.import_status_label.setText(f"Importação concluída: {applied} commit(s) em {target}.")
+        self._set_status(f"Importado em {target}: {applied} commit(s).")
+        self._refresh_repo_state_ui()
+        self._refresh_workspace_tree()
+        self._reload_history_commits()
+        self._refresh_compare_branch_options()
+        self._refresh_commit_files()
+        self._load_import_source_commits()
+        self._update_import_controls_state()
+
+    def _update_import_controls_state(self) -> None:
+        if not hasattr(self, "import_run_button"):
+            return
+        source_ready = bool(self.import_source_repo_path and self.import_source_branch_combo.currentData())
+        selected = bool(self.import_commits_list.selectedItems())
+        has_source_options = self.import_source_repo_combo.count() > 0
+        can_import = bool(self.repo_path and source_ready and selected)
+        self.import_run_button.setEnabled(can_import)
+        self.import_copy_hashes_button.setEnabled(selected)
+        self.import_source_branch_combo.setEnabled(source_ready or bool(self.import_source_repo_path))
+        self.import_source_branch_refresh_button.setEnabled(source_ready)
+        self.import_source_repo_combo.setEnabled(has_source_options)
+        self.import_source_repo_refresh_button.setEnabled(True)
+
     def _build_compare_tab(self) -> None:
         self.compare_file_entries: list[dict[str, object]] = []
         self.compare_current_file_path = ""
@@ -929,6 +1280,7 @@ class QtShellWindow(QMainWindow):
         )
         self._load_repo_selector_items()
         self._refresh_workspace_tree()
+        self._refresh_import_source_repos()
 
     def _build_repo_status_summary(self, repo_path: str) -> str:
         try:
@@ -1133,6 +1485,7 @@ class QtShellWindow(QMainWindow):
             self._refresh_commit_files()
             self._clear_history_view()
             self._refresh_compare_branch_options()
+            self._sync_import_target_label()
             self._sync_workspace_tree_selection()
             if save:
                 self._persist_state()
@@ -1144,6 +1497,8 @@ class QtShellWindow(QMainWindow):
         self._refresh_commit_files()
         self._reload_history_commits()
         self._refresh_compare_branch_options()
+        self._refresh_import_source_repos()
+        self._sync_import_target_label()
         self._sync_workspace_tree_selection()
         self._set_status(f"Repositorio ativo: {normalized}")
         if save:
@@ -1171,6 +1526,7 @@ class QtShellWindow(QMainWindow):
             self.push_button.setEnabled(False)
             self.sync_label.setText("Ahead: 0 | Behind: 0")
             self.branch_combo.clear()
+            self._sync_import_target_label()
             return
 
         try:
@@ -1199,6 +1555,7 @@ class QtShellWindow(QMainWindow):
             self.push_button.setEnabled(False)
             self.sync_label.setText("Ahead: 0 | Behind: 0 (sem upstream)")
             self.fetch_button.setText("Fetch")
+            self._sync_import_target_label()
             return
 
         behind, ahead = core_get_ahead_behind(self.repo_path, upstream)
@@ -1208,6 +1565,7 @@ class QtShellWindow(QMainWindow):
         self.fetch_button.setText(f"Fetch ({behind})" if behind > 0 else "Fetch")
         self.pull_button.setText(f"Pull ({behind})" if behind > 0 else "Pull")
         self.push_button.setText(f"Push ({ahead})" if ahead > 0 else "Push")
+        self._sync_import_target_label()
 
     def _add_recent_repo(self, repo_path: str) -> None:
         normalized = normalize_repo_path(repo_path)
@@ -1268,6 +1626,7 @@ class QtShellWindow(QMainWindow):
         self._refresh_workspace_tree()
         self._reload_history_commits()
         self._refresh_compare_branch_options()
+        self._sync_import_target_label()
         self._persist_state()
 
     def _create_new_branch(self) -> None:
