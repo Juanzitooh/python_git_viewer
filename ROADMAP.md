@@ -117,6 +117,9 @@ Legenda
 - [x] R6.6.1 Alternancia rapida origem/destino na comparacao (2026-02-10)
   Escopo: adicionar botao de troca entre os combobox de origem e destino na aba Comparar para inverter rapidamente a direcao da operacao.
   Aceite: com um clique usuario troca origem/destino e a comparacao e atualizada automaticamente.
+- [x] R6.8 Atalhos de GitHub para commit e PR (2026-02-10)
+  Escopo: permitir abrir commit selecionado no GitHub pelo menu do Historico e exibir botao de abrir PR na aba Commit quando nao houver alteracoes no worktree.
+  Aceite: usuario acessa commit e fluxo de PR no navegador sem copiar URL manualmente.
 - [x] R6.7 Aba Commit com stage/unstage por interacao direta (2026-02-08)
   Escopo: remover dependencia dos botoes de acao em lote e usar clique para alternar stage/unstage em arquivo, hunk e linha; preservar ordem natural dos itens e indicar visualmente selecao de hunk/linha.
   Aceite: fluxo principal de stage/unstage funciona sem combinacao de teclado e sem passos extras.

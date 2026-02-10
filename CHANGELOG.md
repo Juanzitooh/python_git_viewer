@@ -4,6 +4,12 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 
 ## [Unreleased]
 
+- Menu de contexto do Histórico agora inclui ação para abrir commit selecionado no GitHub.
+- Aba Commit agora mostra botão "Abrir PR" quando o worktree está limpo, abrindo direto a página de compare/PR no navegador.
+- Fluxos GitHub ganharam utilitários para abrir repositório, commit e página de PR com URL montada a partir do `origin`.
+
+## [0.2.0] - 2026-02-10
+
 - Filtro de commits por texto, autor, arquivo e intervalo de datas na aba Historico.
 - Filtro de commits por branch, tag e status do repositorio na aba Historico.
 - Diff por palavra com realce de mudancas pequenas.
