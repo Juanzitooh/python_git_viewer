@@ -4,8 +4,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from ..core.diff_utils import render_patch_to_widget
 from ..core.git_client import run_git
+from .diff_render import render_patch_to_widget
 
 
 class StashMixin:

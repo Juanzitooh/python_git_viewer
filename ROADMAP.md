@@ -144,9 +144,12 @@ Legenda
 
 ## M7 - UI Moderna (PySide6) e Distribuicao Linux
 
-- [ ] R7.1 Core Python estabilizado e desacoplado da UI
+- [~] R7.1 Core Python estabilizado e desacoplado da UI
   Escopo: consolidar contratos entre `viewer/core` e camada de interface para que a logica Git permaneca 100% reutilizavel em qualquer frontend.
   Aceite: operacoes Git, parse de diff, estado de repositorio e persistencia funcionam sem dependencia direta de widgets Tk.
+- [x] R7.1.1 Extrair renderizacao de diff para camada de UI (2026-02-10)
+  Escopo: mover `render_patch_to_widget` e utilitarios de render para `viewer/ui`, removendo dependencia de `tkinter` em `viewer/core/diff_utils.py`.
+  Aceite: `viewer/core` permanece apenas com parse/build de dados; renderizacao visual fica isolada na camada de interface.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
