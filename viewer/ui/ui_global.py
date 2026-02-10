@@ -914,7 +914,11 @@ class GlobalBarMixin:
         try:
             menu.unpost()
         except tk.TclError:
-            return
+            pass
+        try:
+            menu.destroy()
+        except tk.TclError:
+            pass
 
     def _is_event_inside_repo_context_menu(self, event: tk.Event) -> bool:
         menu = getattr(self, "repo_context_menu", None)
@@ -956,6 +960,12 @@ class GlobalBarMixin:
         close_dropdown: bool = True,
         source: str = "",
     ) -> None:
+        if self._repo_focus_out_job is not None:
+            try:
+                self.after_cancel(self._repo_focus_out_job)
+            except tk.TclError:
+                pass
+            self._repo_focus_out_job = None
         self._dismiss_repo_context_menu(clear_lock=False)
         resolved_repo = self._resolve_repo_action_path(repo_path)
         if not resolved_repo:
@@ -1052,7 +1062,6 @@ class GlobalBarMixin:
             )
         self.repo_context_menu = menu
         menu.bind("<Unmap>", self._on_repo_context_menu_unmap, add=True)
-        menu.bind("<FocusOut>", self._dismiss_repo_context_menu, add=True)
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
