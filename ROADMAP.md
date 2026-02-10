@@ -66,6 +66,9 @@ Legenda
 - [x] R6.2.2 Clone contextual na barra global e SSH condicional (2026-02-08)
   Escopo: mover linha de clone (URL/SSH + pasta + clonar) para a barra global e exibir somente na aba Repositorios; ocultar botao de preparar chave SSH quando a chave local ja existir.
   Aceite: na aba Repositorios a barra global exibe linha de clone; ao trocar de aba a linha some; botao de chave SSH aparece apenas quando necessario.
+- [x] R6.2.3 Clone com progresso detalhado e bloqueio de UI (2026-02-10)
+  Escopo: mostrar log de progresso de `git clone --progress` na janela de clonagem com indicador visual de percentual, permitir cancelamento durante o clone e bloquear interacao da janela principal ate o fim da operacao, com feedback visual no termino.
+  Aceite: durante clone apenas o botao de cancelar fica ativo no dialogo, progresso aparece em tempo real e a janela principal permanece travada para evitar acoes concorrentes; ao concluir com sucesso a barra de progresso pisca rapidamente antes de fechar o dialogo.
 - [x] R6.3 Aba Repositorios com foco operacional (2026-02-08)
   Escopo: reduzir ruido visual removendo bloco redundante de status do repo, realizar scan automatico na inicializacao da pasta base e, ao usar "Abrir recente", executar fetch do repo aberto e navegar automaticamente para a aba Historico.
   Aceite: aba Repositorios abre mais limpa, scan inicial tenta popular Recentes automaticamente e abrir recente atualiza dados + leva para Historico sem acao manual extra.
@@ -78,6 +81,9 @@ Legenda
 - [x] R6.3.3 Cards interativos com troca de branch e atalho VS Code (2026-02-08)
   Escopo: adicionar combobox de branch em cada card para checkout rapido por repositorio, usar clique simples para selecionar repo no app e duplo clique para selecionar + abrir no VS Code.
   Aceite: usuario consegue trocar branch direto no card, selecionar repo com um clique e abrir repo no VS Code com duplo clique.
+- [x] R6.3.9 Gerenciar repositorios por menu dos cards (2026-02-10)
+  Escopo: incluir acao de exclusao de repositorio no menu de contexto dos cards da aba Repositorios, com confirmacao explicita antes de remover a pasta local.
+  Aceite: usuario consegue excluir um repositorio local diretamente pelo card, com janela de confirmacao e atualizacao automatica da lista de favoritos/recentes.
 - [x] R6.3.4 Barra de atividade para operacoes assincronas (2026-02-08)
   Escopo: exibir um indicador fino no rodape durante operacoes de background para sinalizar progresso da interface em tarefas longas.
   Aceite: ao iniciar qualquer operacao assincrona a barra aparece; ao finalizar todas as operacoes pendentes a barra some automaticamente.

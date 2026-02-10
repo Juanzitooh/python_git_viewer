@@ -47,8 +47,12 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Combobox de repositório voltou para a barra superior com visibilidade contextual: aparece fora da aba Repositórios e fica oculto dentro dela.
 - Barra superior reorganizada com ações de repositório no lado esquerdo e ações globais (Fetch/Pull/Push, Ahead/Behind e Perf) ancoradas à direita.
 - Ações de repositório migradas para menu de contexto (clique direito) no combobox global e nos cards da aba Repositórios, com abrir no VS Code, copiar caminho, abrir pasta e abrir no GitHub.
+- Cards da aba Repositórios agora incluem opção de excluir repositório local via menu de contexto, com confirmação explícita antes da remoção física da pasta.
 - Cards da aba Repositórios agora têm rolagem contínua (sem limite fixo de 8) e card final "+1" para adicionar repositório.
 - Fluxo de clonagem saiu da barra superior e foi para modal aberto pelo card de adicionar repositório.
+- Janela de clonagem agora mostra progresso detalhado em tempo real (`git clone --progress`), com log textual, hint de percentual e cancelamento durante a operação.
+- Durante a clonagem, a UI principal fica bloqueada para evitar interações concorrentes e no diálogo apenas a ação de cancelar permanece ativa.
+- Ao finalizar clone com sucesso, a barra de progresso da janela de clonagem pisca brevemente para sinalizar conclusão antes de fechar.
 - Cada card agora exibe status local do repositório com arquivos modificados quando houver alterações.
 - Log de performance em `performance.log` na raiz com timestamp, repositório e duração das operações monitoradas.
 - Novo argumento `--perf`: quando ativo, mostra bloco de performance na UI e grava métricas no `performance.log`; em execução padrão o bloco fica oculto e sem logging.
