@@ -64,8 +64,10 @@ try:
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
+        QProgressBar,
         QPushButton,
         QSizePolicy,
+        QSplitter,
         QStatusBar,
         QTabWidget,
         QTreeWidget,
@@ -133,6 +135,7 @@ class QtShellWindow(QMainWindow):
         self._setting_repo_programmatically = False
         self._setting_branch_programmatically = False
         self._setting_workspace_selection = False
+        self._busy_depth = 0
 
         self.setWindowTitle("Git Viewer (PySide6)")
         self.resize(1280, 820)
@@ -164,8 +167,9 @@ class QtShellWindow(QMainWindow):
         self.setCentralWidget(root)
 
         bar = QWidget(root)
+        bar.setObjectName("TopBar")
         bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(0, 0, 0, 0)
+        bar_layout.setContentsMargins(10, 8, 10, 8)
         bar_layout.setSpacing(6)
 
         self.repo_combo = QComboBox(bar)
@@ -190,19 +194,24 @@ class QtShellWindow(QMainWindow):
         bar_layout.addWidget(self.fetch_button)
 
         self.pull_button = QPushButton("Pull", bar)
+        self.pull_button.setProperty("role", "primary")
         self.pull_button.clicked.connect(self._pull_repo)
         bar_layout.addWidget(self.pull_button)
 
         self.push_button = QPushButton("Push", bar)
+        self.push_button.setProperty("role", "primary")
         self.push_button.clicked.connect(self._push_repo)
         bar_layout.addWidget(self.push_button)
 
         self.sync_label = QLabel("Ahead: 0 | Behind: 0", bar)
+        self.sync_label.setObjectName("SyncChip")
         bar_layout.addWidget(self.sync_label)
 
         root_layout.addWidget(bar)
 
         self.tabs = QTabWidget(root)
+        self.tabs.setDocumentMode(True)
+        self.tabs.setUsesScrollButtons(True)
         self.repositories_tab = QWidget(self.tabs)
         self.commit_tab = QWidget(self.tabs)
         self.history_tab = QWidget(self.tabs)
@@ -228,31 +237,25 @@ class QtShellWindow(QMainWindow):
 
         self.status = QStatusBar(root)
         self.setStatusBar(self.status)
+        self.status_busy_label = QLabel("Pronto", self.status)
+        self.status_busy_label.setObjectName("BusyBadge")
+        self.status_busy_progress = QProgressBar(self.status)
+        self.status_busy_progress.setObjectName("BusyBar")
+        self.status_busy_progress.setMaximum(0)
+        self.status_busy_progress.setFixedWidth(120)
+        self.status_busy_progress.setTextVisible(False)
+        self.status_busy_progress.setVisible(False)
+        self.status.addPermanentWidget(self.status_busy_label)
+        self.status.addPermanentWidget(self.status_busy_progress)
         self._set_status("PySide6 shell iniciado.")
+        self._set_busy_message("Pronto")
 
     def _apply_theme_from_settings(self) -> None:
         app = QApplication.instance()
         if app is None:
             return
         theme = str(self.settings_data.get("theme", "light"))
-        if theme == "dark":
-            app.setStyleSheet(
-                """
-                QWidget { background-color: #1f2328; color: #e6edf3; }
-                QLineEdit, QComboBox, QTabWidget::pane { background-color: #0d1117; color: #e6edf3; }
-                QPushButton { background-color: #22272e; border: 1px solid #30363d; padding: 4px 8px; }
-                QPushButton:hover { background-color: #2d333b; }
-                """
-            )
-        else:
-            app.setStyleSheet(
-                """
-                QWidget { background-color: #f6f8fa; color: #1f2328; }
-                QLineEdit, QComboBox, QTabWidget::pane { background-color: #ffffff; color: #1f2328; }
-                QPushButton { background-color: #f3f4f6; border: 1px solid #d0d7de; padding: 4px 8px; }
-                QPushButton:hover { background-color: #e7ecf1; }
-                """
-            )
+        app.setStyleSheet(self._build_theme_stylesheet(theme))
 
         family = str(self.settings_data.get("ui_font_family", "")).strip()
         size_raw = self.settings_data.get("ui_font_size", 0)
@@ -262,6 +265,129 @@ class QtShellWindow(QMainWindow):
             size = 0
         if family and size > 0:
             app.setFont(QFont(family, size))
+        else:
+            app.setFont(QFont("Noto Sans", 10))
+
+        mono_font = QFont("JetBrains Mono", 10)
+        for widget_name in (
+            "history_patch_view",
+            "compare_patch_view",
+            "history_commit_info",
+            "commit_description_input",
+        ):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setFont(mono_font)
+
+    @staticmethod
+    def _build_theme_stylesheet(theme: str) -> str:
+        if theme == "dark":
+            palette = {
+                "bg": "#161b22",
+                "fg": "#e6edf3",
+                "panel": "#1f2630",
+                "field": "#0d1117",
+                "border": "#30363d",
+                "accent": "#2f81f7",
+                "accent_fg": "#ffffff",
+                "accent_soft": "#1d3d67",
+                "button_bg": "#222c38",
+                "button_hover": "#2b3846",
+                "chip_bg": "#1f3147",
+            }
+        else:
+            palette = {
+                "bg": "#eef1f5",
+                "fg": "#1f2328",
+                "panel": "#ffffff",
+                "field": "#ffffff",
+                "border": "#d0d7de",
+                "accent": "#0969da",
+                "accent_fg": "#ffffff",
+                "accent_soft": "#dbeafe",
+                "button_bg": "#f3f4f6",
+                "button_hover": "#e5e9ef",
+                "chip_bg": "#e7eef9",
+            }
+        return f"""
+        QMainWindow {{
+          background-color: {palette["bg"]};
+        }}
+        QWidget {{
+          color: {palette["fg"]};
+        }}
+        QWidget#TopBar {{
+          background-color: {palette["panel"]};
+          border: 1px solid {palette["border"]};
+          border-radius: 10px;
+        }}
+        QTabWidget::pane {{
+          border: 1px solid {palette["border"]};
+          border-radius: 10px;
+          background-color: {palette["panel"]};
+          margin-top: 6px;
+          padding: 6px;
+        }}
+        QTabBar::tab {{
+          background-color: {palette["button_bg"]};
+          border: 1px solid {palette["border"]};
+          border-bottom: none;
+          border-top-left-radius: 8px;
+          border-top-right-radius: 8px;
+          padding: 7px 12px;
+          margin-right: 4px;
+        }}
+        QTabBar::tab:selected {{
+          background-color: {palette["panel"]};
+          color: {palette["fg"]};
+          border-color: {palette["accent"]};
+        }}
+        QLineEdit, QComboBox, QPlainTextEdit, QListWidget, QTreeWidget {{
+          background-color: {palette["field"]};
+          border: 1px solid {palette["border"]};
+          border-radius: 8px;
+          padding: 6px;
+          selection-background-color: {palette["accent_soft"]};
+        }}
+        QTreeWidget::item {{
+          height: 22px;
+        }}
+        QPushButton {{
+          background-color: {palette["button_bg"]};
+          border: 1px solid {palette["border"]};
+          border-radius: 8px;
+          padding: 6px 10px;
+        }}
+        QPushButton:hover {{
+          background-color: {palette["button_hover"]};
+          border-color: {palette["accent"]};
+        }}
+        QPushButton[role="primary"] {{
+          background-color: {palette["accent"]};
+          color: {palette["accent_fg"]};
+          border-color: {palette["accent"]};
+          font-weight: 600;
+        }}
+        QPushButton[role="primary"]:hover {{
+          background-color: {palette["accent"]};
+          border-color: {palette["accent"]};
+        }}
+        QLabel#SyncChip, QLabel#BusyBadge {{
+          background-color: {palette["chip_bg"]};
+          border: 1px solid {palette["border"]};
+          border-radius: 10px;
+          padding: 3px 8px;
+        }}
+        QProgressBar#BusyBar {{
+          background-color: {palette["field"]};
+          border: 1px solid {palette["border"]};
+          border-radius: 8px;
+        }}
+        QProgressBar#BusyBar::chunk {{
+          background-color: {palette["accent"]};
+          border-radius: 8px;
+        }}
+        """
 
     def _build_placeholder_tab(self, tab: QWidget, name: str) -> None:
         layout = QVBoxLayout(tab)
@@ -364,6 +490,7 @@ class QtShellWindow(QMainWindow):
         action_layout.setSpacing(6)
 
         self.commit_run_button = QPushButton("Commit", action_row)
+        self.commit_run_button.setProperty("role", "primary")
         self.commit_run_button.clicked.connect(self._create_commit_from_selection)
         action_layout.addWidget(self.commit_run_button)
 
@@ -410,35 +537,30 @@ class QtShellWindow(QMainWindow):
 
         layout.addWidget(top_row)
 
-        body = QWidget(self.history_tab)
-        body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(8)
+        body_splitter = QSplitter(Qt.Orientation.Horizontal, self.history_tab)
+        body_splitter.setChildrenCollapsible(False)
 
-        self.history_commits_list = QListWidget(body)
+        self.history_commits_list = QListWidget(body_splitter)
         self.history_commits_list.itemSelectionChanged.connect(self._on_history_commit_selected)
-        body_layout.addWidget(self.history_commits_list, stretch=2)
 
-        right_panel = QWidget(body)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(6)
+        right_splitter = QSplitter(Qt.Orientation.Vertical, body_splitter)
+        right_splitter.setChildrenCollapsible(False)
 
-        self.history_commit_info = QPlainTextEdit(right_panel)
+        self.history_commit_info = QPlainTextEdit(right_splitter)
         self.history_commit_info.setReadOnly(True)
-        self.history_commit_info.setFixedHeight(130)
-        right_layout.addWidget(self.history_commit_info)
 
-        self.history_files_list = QListWidget(right_panel)
+        self.history_files_list = QListWidget(right_splitter)
         self.history_files_list.itemSelectionChanged.connect(self._on_history_file_selected)
-        right_layout.addWidget(self.history_files_list, stretch=1)
 
-        self.history_patch_view = QPlainTextEdit(right_panel)
+        self.history_patch_view = QPlainTextEdit(right_splitter)
         self.history_patch_view.setReadOnly(True)
-        right_layout.addWidget(self.history_patch_view, stretch=2)
 
-        body_layout.addWidget(right_panel, stretch=3)
-        layout.addWidget(body, stretch=1)
+        body_splitter.setStretchFactor(0, 2)
+        body_splitter.setStretchFactor(1, 4)
+        right_splitter.setStretchFactor(0, 2)
+        right_splitter.setStretchFactor(1, 2)
+        right_splitter.setStretchFactor(2, 4)
+        layout.addWidget(body_splitter, stretch=1)
 
         self._clear_history_view()
 
@@ -465,38 +587,42 @@ class QtShellWindow(QMainWindow):
         return max(1, value)
 
     def _reload_history_commits(self) -> None:
-        if not self.repo_path:
-            self._clear_history_view()
-            return
-        text_filter = self.history_search_input.text().strip()
-        filters = CommitFilters(text=text_filter)
-        limit = self._get_history_limit_value()
+        self._begin_busy("Carregando historico...")
         try:
-            summaries = load_commit_summaries(self.repo_path, limit=limit, filters=filters)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Historico", str(exc))
-            self._clear_history_view()
-            return
+            if not self.repo_path:
+                self._clear_history_view()
+                return
+            text_filter = self.history_search_input.text().strip()
+            filters = CommitFilters(text=text_filter)
+            limit = self._get_history_limit_value()
+            try:
+                summaries = load_commit_summaries(self.repo_path, limit=limit, filters=filters)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Historico", str(exc))
+                self._clear_history_view()
+                return
 
-        self.history_summaries = summaries
-        self.history_summary_by_hash = {item.commit_hash: item for item in summaries}
-        self.history_current_commit_hash = ""
-        self.history_current_file_path = ""
+            self.history_summaries = summaries
+            self.history_summary_by_hash = {item.commit_hash: item for item in summaries}
+            self.history_current_commit_hash = ""
+            self.history_current_file_path = ""
 
-        self.history_commits_list.blockSignals(True)
-        self.history_commits_list.clear()
-        for summary in summaries:
-            label = f"{summary.commit_hash[:7]} | {summary.subject}"
-            item = QListWidgetItem(label, self.history_commits_list)
-            item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
-        self.history_commits_list.blockSignals(False)
+            self.history_commits_list.blockSignals(True)
+            self.history_commits_list.clear()
+            for summary in summaries:
+                label = f"{summary.commit_hash[:7]} | {summary.subject}"
+                item = QListWidgetItem(label, self.history_commits_list)
+                item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+            self.history_commits_list.blockSignals(False)
 
-        if summaries:
-            self.history_commits_list.setCurrentRow(0)
-        else:
-            self.history_files_list.clear()
-            self.history_commit_info.setPlainText("Nenhum commit encontrado.")
-            self.history_patch_view.setPlainText("")
+            if summaries:
+                self.history_commits_list.setCurrentRow(0)
+            else:
+                self.history_files_list.clear()
+                self.history_commit_info.setPlainText("Nenhum commit encontrado.")
+                self.history_patch_view.setPlainText("")
+        finally:
+            self._end_busy()
 
     def _on_history_commit_selected(self) -> None:
         selected_items = self.history_commits_list.selectedItems()
@@ -517,35 +643,39 @@ class QtShellWindow(QMainWindow):
         self._load_history_commit_content(commit_hash)
 
     def _load_history_commit_content(self, commit_hash: str) -> None:
+        self._begin_busy(f"Carregando commit {commit_hash[:7]}...")
         try:
-            details = load_commit_details(self.repo_path, commit_hash)
-            files = core_list_commit_files(self.repo_path, commit_hash)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Historico", str(exc))
+            try:
+                details = load_commit_details(self.repo_path, commit_hash)
+                files = core_list_commit_files(self.repo_path, commit_hash)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Historico", str(exc))
+                self.history_files_list.clear()
+                self.history_patch_view.setPlainText("")
+                return
+
+            info_lines = [
+                f"Hash: {details.commit_hash}",
+                f"Autor: {details.author}",
+                f"Data: {details.date}",
+                f"Titulo: {details.subject}",
+                f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
+            ]
+            if details.body:
+                info_lines.extend(["", details.body.strip()])
+            self.history_commit_info.setPlainText("\n".join(info_lines))
+
+            self.history_files_list.blockSignals(True)
             self.history_files_list.clear()
-            self.history_patch_view.setPlainText("")
-            return
-
-        info_lines = [
-            f"Hash: {details.commit_hash}",
-            f"Autor: {details.author}",
-            f"Data: {details.date}",
-            f"Titulo: {details.subject}",
-            f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
-        ]
-        if details.body:
-            info_lines.extend(["", details.body.strip()])
-        self.history_commit_info.setPlainText("\n".join(info_lines))
-
-        self.history_files_list.blockSignals(True)
-        self.history_files_list.clear()
-        all_files_item = QListWidgetItem("(todos os arquivos)", self.history_files_list)
-        all_files_item.setData(Qt.ItemDataRole.UserRole, "")
-        for path in files:
-            file_item = QListWidgetItem(path, self.history_files_list)
-            file_item.setData(Qt.ItemDataRole.UserRole, path)
-        self.history_files_list.blockSignals(False)
-        self.history_files_list.setCurrentRow(0)
+            all_files_item = QListWidgetItem("(todos os arquivos)", self.history_files_list)
+            all_files_item.setData(Qt.ItemDataRole.UserRole, "")
+            for path in files:
+                file_item = QListWidgetItem(path, self.history_files_list)
+                file_item.setData(Qt.ItemDataRole.UserRole, path)
+            self.history_files_list.blockSignals(False)
+            self.history_files_list.setCurrentRow(0)
+        finally:
+            self._end_busy()
 
     def _on_history_file_selected(self) -> None:
         selected_items = self.history_files_list.selectedItems()
@@ -634,6 +764,7 @@ class QtShellWindow(QMainWindow):
         actions_layout.addWidget(self.import_copy_hashes_button)
 
         self.import_run_button = QPushButton("Importar selecionados", actions_row)
+        self.import_run_button.setProperty("role", "primary")
         self.import_run_button.clicked.connect(self._import_selected_commits)
         actions_layout.addWidget(self.import_run_button)
 
@@ -772,37 +903,41 @@ class QtShellWindow(QMainWindow):
         self._load_import_source_commits()
 
     def _load_import_source_commits(self) -> None:
-        source_repo = self.import_source_repo_path
-        selected_branch = self.import_source_branch_combo.currentData()
-        branch = str(selected_branch).strip() if selected_branch is not None else ""
-        if not source_repo or not branch:
-            self._clear_import_selection("Selecione origem e branch para carregar commits.")
-            return
-        self.import_status_label.setText(f"Carregando commits de {branch}...")
-        filters = CommitFilters(ref=branch)
-        limit_raw = self.settings_data.get("commit_limit", 100)
+        self._begin_busy("Carregando commits de origem...")
         try:
-            limit = int(limit_raw)
-        except (TypeError, ValueError):
-            limit = 100
-        limit = max(1, limit)
-        try:
-            summaries = load_commit_summaries(source_repo, limit=limit, filters=filters)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Importar", str(exc))
-            self._clear_import_selection("Falha ao carregar commits da origem.")
-            return
-        self.import_commit_summaries = summaries
-        self.import_commits_list.clear()
-        for summary in summaries:
-            label = f"{summary.commit_hash[:7]} | {summary.subject}"
-            item = QListWidgetItem(label, self.import_commits_list)
-            item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
-        if summaries:
-            self.import_status_label.setText(f"{len(summaries)} commits carregados da branch {branch}.")
-        else:
-            self.import_status_label.setText(f"Nenhum commit encontrado na branch {branch}.")
-        self._update_import_controls_state()
+            source_repo = self.import_source_repo_path
+            selected_branch = self.import_source_branch_combo.currentData()
+            branch = str(selected_branch).strip() if selected_branch is not None else ""
+            if not source_repo or not branch:
+                self._clear_import_selection("Selecione origem e branch para carregar commits.")
+                return
+            self.import_status_label.setText(f"Carregando commits de {branch}...")
+            filters = CommitFilters(ref=branch)
+            limit_raw = self.settings_data.get("commit_limit", 100)
+            try:
+                limit = int(limit_raw)
+            except (TypeError, ValueError):
+                limit = 100
+            limit = max(1, limit)
+            try:
+                summaries = load_commit_summaries(source_repo, limit=limit, filters=filters)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Importar", str(exc))
+                self._clear_import_selection("Falha ao carregar commits da origem.")
+                return
+            self.import_commit_summaries = summaries
+            self.import_commits_list.clear()
+            for summary in summaries:
+                label = f"{summary.commit_hash[:7]} | {summary.subject}"
+                item = QListWidgetItem(label, self.import_commits_list)
+                item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+            if summaries:
+                self.import_status_label.setText(f"{len(summaries)} commits carregados da branch {branch}.")
+            else:
+                self.import_status_label.setText(f"Nenhum commit encontrado na branch {branch}.")
+            self._update_import_controls_state()
+        finally:
+            self._end_busy()
 
     def _get_selected_import_summaries(self) -> list[CommitSummary]:
         selected_indexes = self.import_commits_list.selectedIndexes()
@@ -870,35 +1005,40 @@ class QtShellWindow(QMainWindow):
         ordered = list(reversed(selected))
         applied = 0
         self.import_status_label.setText("Importando commits...")
-        for summary in ordered:
-            try:
-                core_cherry_pick_commit(
-                    self.repo_path,
-                    summary.commit_hash,
-                    source_repo=source_repo,
-                    fetch_source=not source_is_target,
-                )
-            except RuntimeError as exc:
-                has_conflicts = False
+        self._begin_busy(f"Importando commits (0/{len(ordered)})...")
+        try:
+            for summary in ordered:
+                self._set_busy_message(f"Importando commits ({applied + 1}/{len(ordered)})...")
                 try:
-                    has_conflicts = core_has_unmerged_conflicts(self.repo_path)
-                except RuntimeError:
+                    core_cherry_pick_commit(
+                        self.repo_path,
+                        summary.commit_hash,
+                        source_repo=source_repo,
+                        fetch_source=not source_is_target,
+                    )
+                except RuntimeError as exc:
                     has_conflicts = False
-                suffix = "Conflitos detectados." if has_conflicts else "Importação interrompida."
-                QMessageBox.critical(
-                    self,
-                    "Importar",
-                    f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\n{suffix}",
-                )
-                self.import_status_label.setText(f"Importação interrompida após {applied} commit(s).")
-                self._refresh_repo_state_ui()
-                self._refresh_workspace_tree()
-                self._reload_history_commits()
-                self._refresh_compare_branch_options()
-                self._refresh_commit_files()
-                self._update_import_controls_state()
-                return
-            applied += 1
+                    try:
+                        has_conflicts = core_has_unmerged_conflicts(self.repo_path)
+                    except RuntimeError:
+                        has_conflicts = False
+                    suffix = "Conflitos detectados." if has_conflicts else "Importação interrompida."
+                    QMessageBox.critical(
+                        self,
+                        "Importar",
+                        f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\n{suffix}",
+                    )
+                    self.import_status_label.setText(f"Importação interrompida após {applied} commit(s).")
+                    self._refresh_repo_state_ui()
+                    self._refresh_workspace_tree()
+                    self._reload_history_commits()
+                    self._refresh_compare_branch_options()
+                    self._refresh_commit_files()
+                    self._update_import_controls_state()
+                    return
+                applied += 1
+        finally:
+            self._end_busy()
 
         self.import_status_label.setText(f"Importação concluída: {applied} commit(s) em {target}.")
         self._set_status(f"Importado em {target}: {applied} commit(s).")
@@ -966,23 +1106,19 @@ class QtShellWindow(QMainWindow):
         self.compare_status_label = QLabel("Selecione origem e destino para comparar.", self.compare_tab)
         layout.addWidget(self.compare_status_label)
 
-        body = QWidget(self.compare_tab)
-        body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(8)
+        body_splitter = QSplitter(Qt.Orientation.Horizontal, self.compare_tab)
+        body_splitter.setChildrenCollapsible(False)
 
-        self.compare_commits_list = QListWidget(body)
-        body_layout.addWidget(self.compare_commits_list, stretch=2)
-
-        self.compare_files_list = QListWidget(body)
+        self.compare_commits_list = QListWidget(body_splitter)
+        self.compare_files_list = QListWidget(body_splitter)
         self.compare_files_list.itemSelectionChanged.connect(self._on_compare_file_selected)
-        body_layout.addWidget(self.compare_files_list, stretch=2)
-
-        self.compare_patch_view = QPlainTextEdit(body)
+        self.compare_patch_view = QPlainTextEdit(body_splitter)
         self.compare_patch_view.setReadOnly(True)
-        body_layout.addWidget(self.compare_patch_view, stretch=3)
 
-        layout.addWidget(body, stretch=1)
+        body_splitter.setStretchFactor(0, 2)
+        body_splitter.setStretchFactor(1, 2)
+        body_splitter.setStretchFactor(2, 4)
+        layout.addWidget(body_splitter, stretch=1)
         self._clear_compare_view()
 
     def _clear_compare_view(self) -> None:
@@ -1079,65 +1215,69 @@ class QtShellWindow(QMainWindow):
         self._refresh_compare_view()
 
     def _refresh_compare_view(self) -> None:
-        if not self.repo_path:
-            self._clear_compare_view()
-            return
-        origin, dest = self._get_compare_branches()
-        if not origin or not dest:
-            self._clear_compare_view()
-            return
-        if origin == dest:
-            self._clear_compare_view()
-            self.compare_status_label.setText("Origem e destino devem ser diferentes.")
-            return
-
+        self._begin_busy("Atualizando comparacao...")
         try:
-            commits = core_load_compare_commits(self.repo_path, origin, dest)
-            file_stats, totals = core_load_compare_file_stats(self.repo_path, origin, dest)
-            behind, ahead = core_get_ahead_behind_between(self.repo_path, origin, dest)
-            has_conflict = core_has_potential_conflict(self.repo_path, origin, dest)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Comparar", str(exc))
-            self._clear_compare_view()
-            return
+            if not self.repo_path:
+                self._clear_compare_view()
+                return
+            origin, dest = self._get_compare_branches()
+            if not origin or not dest:
+                self._clear_compare_view()
+                return
+            if origin == dest:
+                self._clear_compare_view()
+                self.compare_status_label.setText("Origem e destino devem ser diferentes.")
+                return
 
-        self.compare_file_entries = file_stats
-        self.compare_current_file_path = ""
+            try:
+                commits = core_load_compare_commits(self.repo_path, origin, dest)
+                file_stats, totals = core_load_compare_file_stats(self.repo_path, origin, dest)
+                behind, ahead = core_get_ahead_behind_between(self.repo_path, origin, dest)
+                has_conflict = core_has_potential_conflict(self.repo_path, origin, dest)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Comparar", str(exc))
+                self._clear_compare_view()
+                return
 
-        self.compare_commits_list.clear()
-        for line in commits:
-            self.compare_commits_list.addItem(line)
+            self.compare_file_entries = file_stats
+            self.compare_current_file_path = ""
 
-        self.compare_files_list.blockSignals(True)
-        self.compare_files_list.clear()
-        for entry in file_stats:
-            path = str(entry.get("path", "")).strip()
-            if not path:
-                continue
-            added = int(entry.get("added", 0) or 0)
-            deleted = int(entry.get("deleted", 0) or 0)
-            binary = bool(entry.get("binary", False))
-            if binary:
-                label = f"{path} [binario]"
-            else:
-                label = f"{path} (+{added}/-{deleted})"
-            item = QListWidgetItem(label, self.compare_files_list)
-            item.setData(Qt.ItemDataRole.UserRole, path)
-        self.compare_files_list.blockSignals(False)
+            self.compare_commits_list.clear()
+            for line in commits:
+                self.compare_commits_list.addItem(line)
 
-        conflict_label = "possivel conflito" if has_conflict else "sem conflito aparente"
-        self.compare_status_label.setText(
-            (
-                f"{origin} -> {dest} | commits: {len(commits)} | arquivos: {totals.get('files', 0)} "
-                f"| +{totals.get('added', 0)} -{totals.get('deleted', 0)} | "
-                f"ahead/behind: {ahead}/{behind} | {conflict_label}"
+            self.compare_files_list.blockSignals(True)
+            self.compare_files_list.clear()
+            for entry in file_stats:
+                path = str(entry.get("path", "")).strip()
+                if not path:
+                    continue
+                added = int(entry.get("added", 0) or 0)
+                deleted = int(entry.get("deleted", 0) or 0)
+                binary = bool(entry.get("binary", False))
+                if binary:
+                    label = f"{path} [binario]"
+                else:
+                    label = f"{path} (+{added}/-{deleted})"
+                item = QListWidgetItem(label, self.compare_files_list)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+            self.compare_files_list.blockSignals(False)
+
+            conflict_label = "possivel conflito" if has_conflict else "sem conflito aparente"
+            self.compare_status_label.setText(
+                (
+                    f"{origin} -> {dest} | commits: {len(commits)} | arquivos: {totals.get('files', 0)} "
+                    f"| +{totals.get('added', 0)} -{totals.get('deleted', 0)} | "
+                    f"ahead/behind: {ahead}/{behind} | {conflict_label}"
+                )
             )
-        )
 
-        if self.compare_files_list.count() > 0:
-            self.compare_files_list.setCurrentRow(0)
-        else:
-            self.compare_patch_view.setPlainText("(nenhuma diferença)")
+            if self.compare_files_list.count() > 0:
+                self.compare_files_list.setCurrentRow(0)
+            else:
+                self.compare_patch_view.setPlainText("(nenhuma diferença)")
+        finally:
+            self._end_busy()
 
     def _on_compare_file_selected(self) -> None:
         selected_items = self.compare_files_list.selectedItems()
@@ -1223,6 +1363,7 @@ class QtShellWindow(QMainWindow):
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(6)
         self.settings_save_button = QPushButton("Salvar configurações", actions_row)
+        self.settings_save_button.setProperty("role", "primary")
         self.settings_save_button.clicked.connect(self._save_settings_from_tab)
         actions_layout.addWidget(self.settings_save_button)
         actions_layout.addStretch(1)
@@ -1391,18 +1532,22 @@ class QtShellWindow(QMainWindow):
         self._persist_state()
 
     def _scan_workspace_repos(self) -> None:
-        root = normalize_repo_path(self.repo_scan_root) if self.repo_scan_root else normalize_repo_path(default_repo_scan_root())
-        os.makedirs(root, exist_ok=True)
-        self.repo_scan_root = root
-        self.workspace_root_edit.setText(root)
-        discovered = discover_git_repositories(root, max_depth=4)
-        self.scanned_repos = [normalize_repo_path(path) for path in discovered]
-        self.workspace_scan_status_label.setText(
-            f"Scan inicial: {len(self.scanned_repos)} encontrados em {root}"
-        )
-        self._load_repo_selector_items()
-        self._refresh_workspace_tree()
-        self._refresh_import_source_repos()
+        self._begin_busy("Escaneando workspace...")
+        try:
+            root = normalize_repo_path(self.repo_scan_root) if self.repo_scan_root else normalize_repo_path(default_repo_scan_root())
+            os.makedirs(root, exist_ok=True)
+            self.repo_scan_root = root
+            self.workspace_root_edit.setText(root)
+            discovered = discover_git_repositories(root, max_depth=4)
+            self.scanned_repos = [normalize_repo_path(path) for path in discovered]
+            self.workspace_scan_status_label.setText(
+                f"Scan inicial: {len(self.scanned_repos)} encontrados em {root}"
+            )
+            self._load_repo_selector_items()
+            self._refresh_workspace_tree()
+            self._refresh_import_source_repos()
+        finally:
+            self._end_busy()
 
     def _build_repo_status_summary(self, repo_path: str) -> str:
         try:
@@ -1715,6 +1860,34 @@ class QtShellWindow(QMainWindow):
     def _set_status(self, text: str) -> None:
         self.status.showMessage(text, 5000)
 
+    def _set_busy_message(self, text: str) -> None:
+        if hasattr(self, "status_busy_label"):
+            self.status_busy_label.setText(text)
+
+    def _begin_busy(self, text: str) -> None:
+        self._busy_depth += 1
+        if self._busy_depth == 1:
+            if hasattr(self, "status_busy_progress"):
+                self.status_busy_progress.setVisible(True)
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self._set_busy_message(text)
+        if hasattr(self, "status"):
+            self.status.showMessage(text)
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+
+    def _end_busy(self) -> None:
+        if self._busy_depth > 0:
+            self._busy_depth -= 1
+        if self._busy_depth > 0:
+            return
+        self._set_busy_message("Pronto")
+        if hasattr(self, "status_busy_progress"):
+            self.status_busy_progress.setVisible(False)
+        while QApplication.overrideCursor() is not None:
+            QApplication.restoreOverrideCursor()
+
     def _on_repo_changed(self, _index: int) -> None:
         if self._setting_repo_programmatically:
             return
@@ -1777,11 +1950,15 @@ class QtShellWindow(QMainWindow):
     def _fetch_repo(self) -> None:
         if not self.repo_path:
             return
+        self._begin_busy("Executando fetch...")
         try:
-            core_fetch_all_prune(self.repo_path)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Fetch", str(exc))
-            return
+            try:
+                core_fetch_all_prune(self.repo_path)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Fetch", str(exc))
+                return
+        finally:
+            self._end_busy()
         self._set_status("Fetch concluido.")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
@@ -1792,11 +1969,15 @@ class QtShellWindow(QMainWindow):
     def _pull_repo(self) -> None:
         if not self.repo_path:
             return
+        self._begin_busy("Executando pull...")
         try:
-            core_pull_ff_only(self.repo_path)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Pull", str(exc))
-            return
+            try:
+                core_pull_ff_only(self.repo_path)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Pull", str(exc))
+                return
+        finally:
+            self._end_busy()
         self._set_status("Pull concluido.")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
@@ -1807,11 +1988,15 @@ class QtShellWindow(QMainWindow):
     def _push_repo(self) -> None:
         if not self.repo_path:
             return
+        self._begin_busy("Executando push...")
         try:
-            core_push_current_branch(self.repo_path)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Push", str(exc))
-            return
+            try:
+                core_push_current_branch(self.repo_path)
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Push", str(exc))
+                return
+        finally:
+            self._end_busy()
         self._set_status("Push concluido.")
         self._refresh_repo_state_ui()
         self._refresh_workspace_tree()
