@@ -996,6 +996,29 @@ class GlobalBarMixin:
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_in_github(path)),
         )
         menu.add_command(
+            label="Abrir branch atual no GitHub",
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_branch_in_github(path)),
+        )
+        menu.add_command(
+            label="Abrir commits da branch no GitHub",
+            command=lambda path=normalized_repo: run_repo_menu_action(
+                lambda: self._open_repo_branch_commits_in_github(path)
+            ),
+        )
+        menu.add_command(
+            label="Abrir issues no GitHub",
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_issues_in_github(path)),
+        )
+        menu.add_command(
+            label="Abrir actions no GitHub",
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_actions_in_github(path)),
+        )
+        menu.add_command(
+            label="Abrir releases no GitHub",
+            command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._open_repo_releases_in_github(path)),
+        )
+        menu.add_separator()
+        menu.add_command(
             label="Copiar caminho",
             command=lambda path=normalized_repo: run_repo_menu_action(lambda: self._copy_repo_path(path)),
         )
@@ -1159,6 +1182,17 @@ class GlobalBarMixin:
             raise RuntimeError(f"Remote origin nao aponta para GitHub:\n{remote_url_raw}")
         return remote_url.rstrip("/")
 
+    def _open_browser_url(self, title: str, url: str) -> bool:
+        try:
+            opened = webbrowser.open(url, new=2)
+        except webbrowser.Error as exc:
+            messagebox.showerror(title, f"Falha ao abrir navegador: {exc}")
+            return False
+        if not opened:
+            messagebox.showwarning(title, f"Nao foi possivel abrir automaticamente:\n{url}")
+            return False
+        return True
+
     @staticmethod
     def _get_default_base_branch_for_pr(repo_path: str) -> str:
         try:
@@ -1198,15 +1232,77 @@ class GlobalBarMixin:
         except RuntimeError as exc:
             messagebox.showerror("GitHub", str(exc))
             return False
+        return self._open_browser_url("GitHub", remote_url)
+
+    def _open_repo_branch_in_github(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositório válido antes de abrir a branch no GitHub.")
+            return False
         try:
-            opened = webbrowser.open(remote_url, new=2)
-        except webbrowser.Error as exc:
-            messagebox.showerror("GitHub", f"Falha ao abrir navegador: {exc}")
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
             return False
-        if not opened:
-            messagebox.showwarning("GitHub", f"Não foi possível abrir automaticamente:\n{remote_url}")
+        branch = self._get_current_branch_for_pr(resolved_repo).strip()
+        if not branch:
+            messagebox.showwarning("GitHub", "Nao foi possivel identificar a branch atual.")
             return False
-        return True
+        branch_enc = quote(branch, safe="")
+        return self._open_browser_url("GitHub", f"{repo_base_url}/tree/{branch_enc}")
+
+    def _open_repo_branch_commits_in_github(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositório válido antes de abrir commits no GitHub.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        branch = self._get_current_branch_for_pr(resolved_repo).strip()
+        if not branch:
+            messagebox.showwarning("GitHub", "Nao foi possivel identificar a branch atual.")
+            return False
+        branch_enc = quote(branch, safe="")
+        return self._open_browser_url("GitHub", f"{repo_base_url}/commits/{branch_enc}")
+
+    def _open_repo_issues_in_github(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositório válido antes de abrir issues.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        return self._open_browser_url("GitHub", f"{repo_base_url}/issues")
+
+    def _open_repo_actions_in_github(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositório válido antes de abrir actions.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        return self._open_browser_url("GitHub", f"{repo_base_url}/actions")
+
+    def _open_repo_releases_in_github(self, repo_path: str = "") -> bool:
+        resolved_repo = self._resolve_repo_action_path(repo_path)
+        if not resolved_repo:
+            messagebox.showinfo("GitHub", "Selecione um repositório válido antes de abrir releases.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+        except RuntimeError as exc:
+            messagebox.showerror("GitHub", str(exc))
+            return False
+        return self._open_browser_url("GitHub", f"{repo_base_url}/releases")
 
     def _open_pr_on_github(self, repo_path: str = "", base_branch: str = "", head_branch: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1226,15 +1322,7 @@ class GlobalBarMixin:
         base_enc = quote(resolved_base, safe="")
         head_enc = quote(resolved_head, safe="")
         pr_url = f"{repo_base_url}/compare/{base_enc}...{head_enc}"
-        try:
-            opened = webbrowser.open(pr_url, new=2)
-        except webbrowser.Error as exc:
-            messagebox.showerror("PR", f"Falha ao abrir navegador: {exc}")
-            return False
-        if not opened:
-            messagebox.showwarning("PR", f"Nao foi possivel abrir automaticamente:\n{pr_url}")
-            return False
-        return True
+        return self._open_browser_url("PR", pr_url)
 
     def _open_commit_in_github(self, commit_hash: str, repo_path: str = "") -> bool:
         sha = commit_hash.strip()
@@ -1251,15 +1339,7 @@ class GlobalBarMixin:
             messagebox.showerror("GitHub", str(exc))
             return False
         commit_url = f"{repo_base_url}/commit/{sha}"
-        try:
-            opened = webbrowser.open(commit_url, new=2)
-        except webbrowser.Error as exc:
-            messagebox.showerror("GitHub", f"Falha ao abrir navegador: {exc}")
-            return False
-        if not opened:
-            messagebox.showwarning("GitHub", f"Nao foi possivel abrir automaticamente:\n{commit_url}")
-            return False
-        return True
+        return self._open_browser_url("GitHub", commit_url)
 
     def _apply_repo_from_entry(self) -> None:
         if not hasattr(self, "repo_var"):
