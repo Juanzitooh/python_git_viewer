@@ -177,6 +177,9 @@ Legenda
 - [x] R7.1.10 Extrair operacoes remotas e tags para o core (2026-02-10)
   Escopo: mover fetch/pull/push e listagem de commits de push para `viewer/core`, alem da listagem de tags usada no filtro do Historico.
   Aceite: `ui_global` e `ui_history` deixam de executar `run_git` inline nesses fluxos, mantendo comportamento funcional inalterado.
+- [x] R7.1.11 Extrair estado dos cards de workspace para o core (2026-02-10)
+  Escopo: mover leitura de branch, upstream, ahead/behind e arquivos alterados dos cards da aba Repositorios para helpers do `viewer/core`, reaproveitando operacao de checkout de branch no core.
+  Aceite: fluxo de cards/workspace em `ui_repos` deixa de executar `run_git` inline para status e checkout.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.

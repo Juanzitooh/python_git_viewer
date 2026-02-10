@@ -22,6 +22,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com `viewer/core/conflict_ops.py`, centralizando deteccao de operacao ativa e comandos de continuar/abortar conflitos (cherry-pick, rebase, merge/squash).
 - M7 avancou com `viewer/core/history_local_ops.py`, centralizando carga de commits locais e pipeline de reordenacao com backup/restore fora da UI.
 - M7 avancou com `viewer/core/remote_ops.py` e `list_tags` em `viewer/core/repo_state.py`, centralizando fetch/pull/push, preview de commits de push e leitura de tags fora da camada de UI.
+- M7 avancou com novos helpers de `viewer/core/repo_state.py` para cards de workspace (arquivos alterados e estado de branch/upstream), removendo `run_git` inline de `ui_repos` nos fluxos de status e checkout.
 
 ## [0.2.0] - 2026-02-10
 
