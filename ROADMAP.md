@@ -129,6 +129,9 @@ Legenda
 - [x] R6.9.2 Menu GitHub consolidado nas acoes de repositorio (2026-02-10)
   Escopo: organizar atalhos de navegador em um grupo consistente no menu de contexto de cards e combobox de repositorio, evitando duplicacao de comandos na barra superior.
   Aceite: menus de contexto ficam consistentes entre abas e centralizam todas as acoes de GitHub sem poluir a UI.
+- [ ] R6.10 Menu de contexto para arquivos do commit no Historico
+  Escopo: adicionar menu de contexto na lista de arquivos de um commit selecionado com acoes de abrir arquivo no VS Code, copiar patch total do arquivo, copiar patch relativo (arquivo especifico) e abrir o caminho do arquivo no explorador.
+  Aceite: cada acao respeita validacoes de caminho/arquivo, apresenta erros de forma segura quando o arquivo nao existir localmente e funciona sem alterar selecao de commit de forma inesperada.
 - [x] R6.7 Aba Commit com stage/unstage por interacao direta (2026-02-08)
   Escopo: remover dependencia dos botoes de acao em lote e usar clique para alternar stage/unstage em arquivo, hunk e linha; preservar ordem natural dos itens e indicar visualmente selecao de hunk/linha.
   Aceite: fluxo principal de stage/unstage funciona sem combinacao de teclado e sem passos extras.
@@ -174,15 +177,16 @@ Ordem de execucao sugerida
 - 8) R6.9
 - 9) R6.9.1
 - 10) R6.9.2
-- 11) R7.1
-- 12) R7.2
-- 13) R7.3
-- 14) R7.4
-- 15) R7.4.1
-- 16) R7.4.2
-- 17) R7.5
-- 18) R7.6
-- 19) R7.7
+- 11) R6.10
+- 12) R7.1
+- 13) R7.2
+- 14) R7.3
+- 15) R7.4
+- 16) R7.4.1
+- 17) R7.4.2
+- 18) R7.5
+- 19) R7.6
+- 20) R7.7
 
 ## Regras de Manutencao
 
