@@ -10,7 +10,7 @@ from tkinter import messagebox, ttk
 
 from ..core.diff_utils import build_line_map, build_patch_for_hunk, build_patch_for_line, parse_diff_data, render_patch_to_widget
 from ..core.git_client import run_git
-from ..core.models import DiffData, DiffLineInfo
+from ..core.models import DiffData, DiffHunk, DiffLineInfo
 
 
 class CommitTabMixin:
