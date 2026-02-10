@@ -9,6 +9,11 @@ def list_branches(repo_path: str) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def list_tags(repo_path: str) -> list[str]:
+    output = run_git(repo_path, ["tag", "--list"])
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
 def get_current_branch(repo_path: str) -> str:
     output = run_git(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"])
     return output.strip()

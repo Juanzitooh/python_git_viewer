@@ -20,13 +20,14 @@ from ..core.conflict_ops import (
     resolve_active_conflict_operation as core_resolve_active_conflict_operation,
 )
 from ..core.commit_content import get_commit_patch as core_get_commit_patch, list_commit_files as core_list_commit_files
-from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries, run_git
+from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries
 from ..core.history_local_ops import (
     apply_local_commit_reorder as core_apply_local_commit_reorder,
     load_local_only_commit_hashes as core_load_local_only_commit_hashes,
     load_reorderable_local_commits as core_load_reorderable_local_commits,
 )
 from ..core.models import CommitFilters, CommitInfo, CommitSummary, FileStat
+from ..core.repo_state import list_tags as core_list_tags
 from .diff_render import render_patch_to_widget
 
 
@@ -1369,7 +1370,7 @@ class HistoryTabMixin:
             try:
                 for commit in commits:
                     try:
-                        run_git(self.repo_path, ["cherry-pick", commit.commit_hash])
+                        core_cherry_pick_commit(self.repo_path, commit.commit_hash)
                     except RuntimeError as exc:
                         messagebox.showerror(
                             "Exportar",
@@ -1956,8 +1957,7 @@ class HistoryTabMixin:
             self._perf_end("Abortar conflitos", start, perf_trigger)
 
     def _get_tags(self) -> list[str]:
-        output = run_git(self.repo_path, ["tag", "--list"])
-        return [line.strip() for line in output.splitlines() if line.strip()]
+        return core_list_tags(self.repo_path)
 
     def _refresh_filter_refs(self) -> None:
         if not self.repo_ready:

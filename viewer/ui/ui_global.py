@@ -27,7 +27,13 @@ from ..core.branch_ops import (
     create_branch as core_create_branch,
     create_stash as core_create_stash,
 )
-from ..core.git_client import is_git_repo, run_git
+from ..core.git_client import is_git_repo
+from ..core.remote_ops import (
+    fetch_all_prune as core_fetch_all_prune,
+    list_outgoing_commit_titles as core_list_outgoing_commit_titles,
+    pull_ff_only as core_pull_ff_only,
+    push_current_branch as core_push_current_branch,
+)
 from ..core.repo_state import (
     get_ahead_behind as core_get_ahead_behind,
     get_current_branch as core_get_current_branch,
@@ -132,7 +138,7 @@ class GlobalBarMixin:
             return
 
         def task() -> None:
-            run_git(self.repo_path, ["fetch", "--all", "--prune"])
+            core_fetch_all_prune(self.repo_path)
 
         def success(_result: object) -> None:
             self._set_status("Fetch concluído.")
@@ -148,7 +154,7 @@ class GlobalBarMixin:
             return
 
         def task() -> None:
-            run_git(self.repo_path, ["pull", "--ff-only"])
+            core_pull_ff_only(self.repo_path)
 
         def success(_result: object) -> None:
             if hasattr(self, "_bump_repo_state"):
@@ -170,7 +176,7 @@ class GlobalBarMixin:
         self._hide_hover_tooltip()
 
         def task() -> None:
-            run_git(self.repo_path, ["push"])
+            core_push_current_branch(self.repo_path)
 
         def success(_result: object) -> None:
             self._set_status("Push concluído.")
@@ -196,10 +202,9 @@ class GlobalBarMixin:
         if not upstream:
             return "Sem upstream configurado para a branch atual."
         try:
-            output = run_git(self.repo_path, ["log", "--pretty=format:%h %s", f"{upstream}..HEAD"])
+            commits = core_list_outgoing_commit_titles(self.repo_path, upstream)
         except RuntimeError as exc:
             return f"Falha ao listar commits para push:\n{exc}"
-        commits = [line.strip() for line in output.splitlines() if line.strip()]
         if not commits:
             return "Nada para enviar."
         limit = 12
@@ -1696,7 +1701,7 @@ class GlobalBarMixin:
         perf_trigger = f"fetch:{normalized_trigger}"
         start = self._perf_start("Fetch", perf_trigger)
         try:
-            run_git(self.repo_path, ["fetch", "--all", "--prune"])
+            core_fetch_all_prune(self.repo_path)
         except RuntimeError as exc:
             if show_errors:
                 messagebox.showerror("Erro", str(exc))
