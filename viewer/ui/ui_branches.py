@@ -4,6 +4,12 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from ..core.branch_compare import (
+    get_ahead_behind_between as core_get_ahead_behind_between,
+    has_potential_conflict as core_has_potential_conflict,
+    load_compare_commits as core_load_compare_commits,
+    load_compare_file_stats as core_load_compare_file_stats,
+)
 from ..core.git_client import run_git
 from .diff_render import render_patch_to_widget
 
@@ -271,44 +277,17 @@ class BranchesTabMixin:
 
     def _load_compare_commits(self, origin: str, dest: str) -> list[str]:
         try:
-            output = run_git(self.repo_path, ["log", "--oneline", f"{dest}..{origin}"])
+            return core_load_compare_commits(self.repo_path, origin, dest)
         except RuntimeError as exc:
             messagebox.showerror("Comparar", str(exc))
             return []
-        return [line.strip() for line in output.splitlines() if line.strip()]
 
     def _load_compare_file_stats(self, origin: str, dest: str) -> tuple[list[dict[str, object]], dict[str, int]]:
         try:
-            output = run_git(self.repo_path, ["diff", "--numstat", f"{dest}...{origin}"])
+            return core_load_compare_file_stats(self.repo_path, origin, dest)
         except RuntimeError as exc:
             messagebox.showerror("Comparar", str(exc))
             return [], {"files": 0, "added": 0, "deleted": 0, "binary": 0}
-        stats: list[dict[str, object]] = []
-        totals = {"files": 0, "added": 0, "deleted": 0, "binary": 0}
-        for raw in output.splitlines():
-            if not raw.strip():
-                continue
-            parts = raw.split("\t", 2)
-            if len(parts) < 3:
-                continue
-            added_raw, deleted_raw, path = parts
-            is_binary = added_raw == "-" or deleted_raw == "-"
-            added = 0 if is_binary else int(added_raw)
-            deleted = 0 if is_binary else int(deleted_raw)
-            stats.append(
-                {
-                    "path": path,
-                    "added": added,
-                    "deleted": deleted,
-                    "binary": is_binary,
-                }
-            )
-            totals["files"] += 1
-            totals["added"] += added
-            totals["deleted"] += deleted
-            if is_binary:
-                totals["binary"] += 1
-        return stats, totals
 
     def _render_compare_commits(self, commits: list[str]) -> None:
         self.compare_commits_listbox.delete(0, tk.END)
@@ -843,24 +822,10 @@ class BranchesTabMixin:
             self.branch_action_button.configure(state="normal")
 
     def _get_ahead_behind_between(self, origin: str, dest: str) -> tuple[int, int]:
-        try:
-            output = run_git(self.repo_path, ["rev-list", "--left-right", "--count", f"{origin}...{dest}"])
-        except RuntimeError:
-            return 0, 0
-        parts = output.strip().split()
-        if len(parts) != 2:
-            return 0, 0
-        behind = int(parts[0])
-        ahead = int(parts[1])
-        return behind, ahead
+        return core_get_ahead_behind_between(self.repo_path, origin, dest)
 
     def _has_potential_conflict(self, origin: str, dest: str) -> bool:
-        try:
-            base = run_git(self.repo_path, ["merge-base", dest, origin]).strip()
-            output = run_git(self.repo_path, ["merge-tree", base, dest, origin])
-        except RuntimeError:
-            return False
-        return "<<<<<<<" in output
+        return core_has_potential_conflict(self.repo_path, origin, dest)
 
     def _run_branch_action(self) -> None:
         if not self.repo_ready:
