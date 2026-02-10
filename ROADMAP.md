@@ -129,13 +129,13 @@ Legenda
 - [x] R6.9.2 Menu GitHub consolidado nas acoes de repositorio (2026-02-10)
   Escopo: organizar atalhos de navegador em um grupo consistente no menu de contexto de cards e combobox de repositorio, evitando duplicacao de comandos na barra superior.
   Aceite: menus de contexto ficam consistentes entre abas e centralizam todas as acoes de GitHub sem poluir a UI.
-- [ ] R6.10 Menu de contexto para arquivos do commit no Historico
+- [x] R6.10 Menu de contexto para arquivos do commit no Historico (2026-02-10)
   Escopo: adicionar menu de contexto na lista de arquivos de um commit selecionado com acoes de abrir arquivo no VS Code, copiar patch total do arquivo, copiar patch relativo (arquivo especifico) e abrir o caminho do arquivo no explorador.
   Aceite: cada acao respeita validacoes de caminho/arquivo, apresenta erros de forma segura quando o arquivo nao existir localmente e funciona sem alterar selecao de commit de forma inesperada.
-- [ ] R6.10.1 Padronizar menu de contexto de commits na aba Importar
+- [x] R6.10.1 Padronizar menu de contexto de commits na aba Importar (2026-02-10)
   Escopo: aplicar na lista de commits da aba Importar o mesmo padrao de menu (abrir commit no GitHub, copiar URL de commit, copiar hash, copiar patch e copiar lista de arquivos).
   Aceite: clique direito em commits da aba Importar abre menu consistente com Historico, sem mudar selecao de forma inesperada e com fechamento seguro ao trocar foco/aba.
-- [ ] R6.10.2 Padronizar menu de contexto de arquivos na aba Comparar
+- [x] R6.10.2 Padronizar menu de contexto de arquivos na aba Comparar (2026-02-10)
   Escopo: aplicar na lista de arquivos da aba Comparar o mesmo padrao de menu de arquivos (abrir no VS Code, abrir na pasta, copiar patch do arquivo e copiar caminho relativo).
   Aceite: menus na aba Comparar reaproveitam as mesmas validacoes e mensagens do Historico, mantendo comportamento uniforme de usabilidade.
 - [x] R6.7 Aba Commit com stage/unstage por interacao direta (2026-02-08)

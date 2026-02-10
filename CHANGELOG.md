@@ -10,6 +10,8 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - Menu de contexto de repositorios (cards e combobox) agora inclui atalhos de navegacao GitHub para branch atual, commits da branch, issues, actions e releases.
 - Menus de contexto agora permitem copiar URL do repositorio, URL da branch atual e URL do commit selecionado no GitHub.
 - Acoes de GitHub no menu de repositorio foram consolidadas em submenu unico para cards e combobox, reduzindo ruido visual e mantendo consistencia.
+- Aba Historico ganhou menu de contexto para arquivos do commit com abrir no VS Code, abrir na pasta e copiar patches (arquivo e commit completo).
+- Abas Importar e Comparar agora tambem usam menu de contexto padronizado (commits/arquivos), com fechamento seguro e acoes de copia/abertura consistentes.
 
 ## [0.2.0] - 2026-02-10
 
