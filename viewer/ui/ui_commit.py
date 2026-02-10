@@ -1637,8 +1637,106 @@ class CommitTabMixin:
         except RuntimeError as exc:
             messagebox.showerror("PR", str(exc))
             return
+        selection = self._prompt_pr_branch_selection()
+        if not selection:
+            return
+        base_branch, head_branch = selection
         opened = False
         if hasattr(self, "_open_pr_on_github"):
-            opened = self._open_pr_on_github(self.repo_path)
+            opened = self._open_pr_on_github(self.repo_path, base_branch=base_branch, head_branch=head_branch)
         if opened:
             self._set_status("Página de PR aberta no GitHub.")
+
+    def _prompt_pr_branch_selection(self) -> tuple[str, str] | None:
+        branch_options = list(getattr(self, "branch_list", []))
+        if not branch_options and hasattr(self, "_get_branches"):
+            try:
+                branch_options = self._get_branches()
+            except RuntimeError:
+                branch_options = []
+
+        default_base = "main"
+        base_getter = getattr(self, "_get_default_base_branch_for_pr", None)
+        if callable(base_getter):
+            resolved_base = str(base_getter(self.repo_path)).strip()
+            if resolved_base:
+                default_base = resolved_base
+        default_head = ""
+        head_getter = getattr(self, "_get_current_branch_for_pr", None)
+        if callable(head_getter):
+            default_head = str(head_getter(self.repo_path)).strip()
+        if not default_head and hasattr(self, "branch_var"):
+            default_head = self.branch_var.get().strip()
+
+        for branch in (default_base, default_head):
+            if branch and branch not in branch_options:
+                branch_options.append(branch)
+
+        if not branch_options:
+            messagebox.showwarning("PR", "Não foi possível listar branches para abrir a PR.")
+            return None
+
+        if not default_base:
+            default_base = branch_options[0]
+        if not default_head:
+            default_head = branch_options[0]
+        if default_base == default_head and len(branch_options) > 1:
+            for option in branch_options:
+                if option != default_head:
+                    default_base = option
+                    break
+
+        window = tk.Toplevel(self)
+        window.title("Abrir PR no GitHub")
+        window.transient(self)
+        window.grab_set()
+        window.resizable(False, False)
+
+        frame = ttk.Frame(window)
+        frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(
+            frame,
+            text="Escolha as branches para abrir a página de Pull Request.",
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        ttk.Label(frame, text="Destino (base):").grid(row=1, column=0, sticky="w")
+        base_var = tk.StringVar(value=default_base)
+        base_combo = ttk.Combobox(frame, textvariable=base_var, state="readonly", values=branch_options, width=36)
+        base_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+
+        ttk.Label(frame, text="Origem (head):").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        head_var = tk.StringVar(value=default_head)
+        head_combo = ttk.Combobox(frame, textvariable=head_var, state="readonly", values=branch_options, width=36)
+        head_combo.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(6, 0))
+
+        result: dict[str, tuple[str, str] | None] = {"value": None}
+
+        def cancel() -> None:
+            result["value"] = None
+            window.destroy()
+
+        def confirm() -> None:
+            base = base_var.get().strip()
+            head = head_var.get().strip()
+            if not base or not head:
+                messagebox.showwarning("PR", "Selecione as branches de destino e origem.")
+                return
+            if base == head:
+                messagebox.showwarning("PR", "Origem e destino devem ser diferentes.")
+                return
+            result["value"] = (base, head)
+            window.destroy()
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=3, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(actions, text="Cancelar", command=cancel).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(actions, text="Abrir PR", command=confirm).grid(row=0, column=1)
+
+        window.bind("<Escape>", lambda _event: cancel())
+        window.bind("<Return>", lambda _event: confirm())
+        base_combo.focus_set()
+        window.wait_window()
+        return result["value"]
