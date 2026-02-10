@@ -159,6 +159,9 @@ Legenda
 - [x] R7.1.4 Extrair estado de repositorio para o core (2026-02-10)
   Escopo: mover leitura de branches, branch atual, estado dirty e calculo upstream/ahead-behind para `viewer/core`.
   Aceite: `ui_global` passa a consumir helpers de estado de repo sem comandos Git inline para essas regras.
+- [x] R7.1.5 Extrair operacoes de branch para o core (2026-02-10)
+  Escopo: mover checkout/criacao de branch e stash previo para checkout em modulo de dominio reutilizavel no `viewer/core`.
+  Aceite: `ui_global` delega operacoes Git de branch ao core e mantem apenas validacao/interacao visual.
 - [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.

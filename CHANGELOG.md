@@ -16,6 +16,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou com extracao de links GitHub para `viewer/core/github_urls.py`, isolando no core a logica de origin/branch e montagem de URLs para repo/branch/commits/issues/actions/releases/PR/commit.
 - M7 avancou com `viewer/core/branch_compare.py`, centralizando comparacao de branches (commits, numstat, ahead/behind e heuristica de conflito) fora da camada de UI.
 - M7 avancou com `viewer/core/repo_state.py`, centralizando estado de repositorio (branches, branch atual, dirty, upstream e ahead/behind) consumido pela barra global.
+- M7 avancou com `viewer/core/branch_ops.py`, centralizando checkout/criacao de branch e stash previo para checkout fora da camada de UI.
 
 ## [0.2.0] - 2026-02-10
 
