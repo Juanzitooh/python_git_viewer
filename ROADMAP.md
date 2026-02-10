@@ -132,6 +132,12 @@ Legenda
 - [ ] R6.10 Menu de contexto para arquivos do commit no Historico
   Escopo: adicionar menu de contexto na lista de arquivos de um commit selecionado com acoes de abrir arquivo no VS Code, copiar patch total do arquivo, copiar patch relativo (arquivo especifico) e abrir o caminho do arquivo no explorador.
   Aceite: cada acao respeita validacoes de caminho/arquivo, apresenta erros de forma segura quando o arquivo nao existir localmente e funciona sem alterar selecao de commit de forma inesperada.
+- [ ] R6.10.1 Padronizar menu de contexto de commits na aba Importar
+  Escopo: aplicar na lista de commits da aba Importar o mesmo padrao de menu (abrir commit no GitHub, copiar URL de commit, copiar hash, copiar patch e copiar lista de arquivos).
+  Aceite: clique direito em commits da aba Importar abre menu consistente com Historico, sem mudar selecao de forma inesperada e com fechamento seguro ao trocar foco/aba.
+- [ ] R6.10.2 Padronizar menu de contexto de arquivos na aba Comparar
+  Escopo: aplicar na lista de arquivos da aba Comparar o mesmo padrao de menu de arquivos (abrir no VS Code, abrir na pasta, copiar patch do arquivo e copiar caminho relativo).
+  Aceite: menus na aba Comparar reaproveitam as mesmas validacoes e mensagens do Historico, mantendo comportamento uniforme de usabilidade.
 - [x] R6.7 Aba Commit com stage/unstage por interacao direta (2026-02-08)
   Escopo: remover dependencia dos botoes de acao em lote e usar clique para alternar stage/unstage em arquivo, hunk e linha; preservar ordem natural dos itens e indicar visualmente selecao de hunk/linha.
   Aceite: fluxo principal de stage/unstage funciona sem combinacao de teclado e sem passos extras.
@@ -178,15 +184,17 @@ Ordem de execucao sugerida
 - 9) R6.9.1
 - 10) R6.9.2
 - 11) R6.10
-- 12) R7.1
-- 13) R7.2
-- 14) R7.3
-- 15) R7.4
-- 16) R7.4.1
-- 17) R7.4.2
-- 18) R7.5
-- 19) R7.6
-- 20) R7.7
+- 12) R6.10.1
+- 13) R6.10.2
+- 14) R7.1
+- 15) R7.2
+- 16) R7.3
+- 17) R7.4
+- 18) R7.4.1
+- 19) R7.4.2
+- 20) R7.5
+- 21) R7.6
+- 22) R7.7
 
 ## Regras de Manutencao
 
