@@ -123,7 +123,7 @@ Legenda
 - [x] R6.9 Navegacao GitHub expandida (sem API) (2026-02-10)
   Escopo: adicionar acoes para abrir no navegador a branch atual (`/tree/<branch>`), historico de commits da branch (`/commits/<branch>`), issues (`/issues`), actions (`/actions`) e releases (`/releases`) do repositorio selecionado.
   Aceite: usuario consegue abrir cada destino GitHub por menu de contexto sem precisar copiar URL manualmente.
-- [ ] R6.9.1 Copiar links GitHub prontos (repo/branch/commit)
+- [x] R6.9.1 Copiar links GitHub prontos (repo/branch/commit) (2026-02-10)
   Escopo: incluir acoes de copia para URL do repositorio, URL da branch atual e URL de commit selecionado, aproveitando os utilitarios existentes de normalizacao do `origin`.
   Aceite: links copiados para clipboard funcionam diretamente no navegador e refletem o repo/branch/commit correto.
 - [ ] R6.9.2 Menu GitHub consolidado nas acoes de repositorio
