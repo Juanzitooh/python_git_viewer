@@ -7,8 +7,21 @@ import subprocess
 import tkinter as tk
 import webbrowser
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from urllib.parse import quote
 
+from ..core.github_urls import (
+    build_commit_url,
+    build_pr_compare_url,
+    build_repo_actions_url,
+    build_repo_branch_commits_url,
+    build_repo_branch_url,
+    build_repo_issues_url,
+    build_repo_releases_url,
+    get_current_branch_for_pr as core_get_current_branch_for_pr,
+    get_default_base_branch_for_pr as core_get_default_base_branch_for_pr,
+    get_repo_github_base_url as core_get_repo_github_base_url,
+    get_repo_origin_url as core_get_repo_origin_url,
+    normalize_remote_url_for_browser as core_normalize_remote_url_for_browser,
+)
 from ..core.git_client import is_git_repo, run_git
 
 
@@ -1140,8 +1153,7 @@ class GlobalBarMixin:
         if not branch:
             messagebox.showwarning("GitHub", "Nao foi possivel identificar a branch atual.")
             return False
-        branch_enc = quote(branch, safe="")
-        branch_url = f"{repo_base_url}/tree/{branch_enc}"
+        branch_url = build_repo_branch_url(repo_base_url, branch)
         copied = self._copy_to_clipboard(branch_url)
         if copied:
             self._set_status("URL da branch copiada.")
@@ -1267,40 +1279,13 @@ class GlobalBarMixin:
 
     @staticmethod
     def _normalize_remote_url_for_browser(remote_url: str) -> str:
-        value = remote_url.strip()
-        if not value:
-            return ""
-        if value.startswith("git@"):
-            prefix, sep, path = value.partition(":")
-            if not sep or "@" not in prefix:
-                return ""
-            host = prefix.split("@", 1)[1]
-            clean_path = path.removesuffix(".git").strip("/")
-            if not host or not clean_path:
-                return ""
-            return f"https://{host}/{clean_path}"
-        if value.startswith("ssh://"):
-            payload = value[len("ssh://") :]
-            if "@" in payload:
-                payload = payload.split("@", 1)[1]
-            host, sep, path = payload.partition("/")
-            clean_path = path.removesuffix(".git").strip("/")
-            if not sep or not host or not clean_path:
-                return ""
-            return f"https://{host}/{clean_path}"
-        if value.startswith("http://") or value.startswith("https://"):
-            return value.removesuffix(".git")
-        return ""
+        return core_normalize_remote_url_for_browser(remote_url)
 
     def _get_repo_origin_url(self, resolved_repo: str) -> str:
-        return run_git(resolved_repo, ["remote", "get-url", "origin"]).strip()
+        return core_get_repo_origin_url(resolved_repo)
 
     def _get_repo_github_base_url(self, resolved_repo: str) -> str:
-        remote_url_raw = self._get_repo_origin_url(resolved_repo)
-        remote_url = self._normalize_remote_url_for_browser(remote_url_raw)
-        if not remote_url or "github.com/" not in remote_url:
-            raise RuntimeError(f"Remote origin nao aponta para GitHub:\n{remote_url_raw}")
-        return remote_url.rstrip("/")
+        return core_get_repo_github_base_url(resolved_repo)
 
     def _open_browser_url(self, title: str, url: str) -> bool:
         try:
@@ -1315,32 +1300,11 @@ class GlobalBarMixin:
 
     @staticmethod
     def _get_default_base_branch_for_pr(repo_path: str) -> str:
-        try:
-            ref = run_git(repo_path, ["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
-        except RuntimeError:
-            return "main"
-        prefix = "refs/remotes/origin/"
-        if ref.startswith(prefix):
-            branch = ref[len(prefix) :].strip()
-            if branch:
-                return branch
-        return "main"
+        return core_get_default_base_branch_for_pr(repo_path)
 
     @staticmethod
     def _get_current_branch_for_pr(repo_path: str) -> str:
-        try:
-            current = run_git(repo_path, ["branch", "--show-current"]).strip()
-            if current:
-                return current
-        except RuntimeError:
-            pass
-        try:
-            current = run_git(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
-        except RuntimeError:
-            return ""
-        if current == "HEAD":
-            return ""
-        return current
+        return core_get_current_branch_for_pr(repo_path)
 
     def _open_repo_in_github(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1368,8 +1332,8 @@ class GlobalBarMixin:
         if not branch:
             messagebox.showwarning("GitHub", "Nao foi possivel identificar a branch atual.")
             return False
-        branch_enc = quote(branch, safe="")
-        return self._open_browser_url("GitHub", f"{repo_base_url}/tree/{branch_enc}")
+        branch_url = build_repo_branch_url(repo_base_url, branch)
+        return self._open_browser_url("GitHub", branch_url)
 
     def _open_repo_branch_commits_in_github(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1385,8 +1349,8 @@ class GlobalBarMixin:
         if not branch:
             messagebox.showwarning("GitHub", "Nao foi possivel identificar a branch atual.")
             return False
-        branch_enc = quote(branch, safe="")
-        return self._open_browser_url("GitHub", f"{repo_base_url}/commits/{branch_enc}")
+        commits_url = build_repo_branch_commits_url(repo_base_url, branch)
+        return self._open_browser_url("GitHub", commits_url)
 
     def _open_repo_issues_in_github(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1398,7 +1362,7 @@ class GlobalBarMixin:
         except RuntimeError as exc:
             messagebox.showerror("GitHub", str(exc))
             return False
-        return self._open_browser_url("GitHub", f"{repo_base_url}/issues")
+        return self._open_browser_url("GitHub", build_repo_issues_url(repo_base_url))
 
     def _open_repo_actions_in_github(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1410,7 +1374,7 @@ class GlobalBarMixin:
         except RuntimeError as exc:
             messagebox.showerror("GitHub", str(exc))
             return False
-        return self._open_browser_url("GitHub", f"{repo_base_url}/actions")
+        return self._open_browser_url("GitHub", build_repo_actions_url(repo_base_url))
 
     def _open_repo_releases_in_github(self, repo_path: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1422,7 +1386,7 @@ class GlobalBarMixin:
         except RuntimeError as exc:
             messagebox.showerror("GitHub", str(exc))
             return False
-        return self._open_browser_url("GitHub", f"{repo_base_url}/releases")
+        return self._open_browser_url("GitHub", build_repo_releases_url(repo_base_url))
 
     def _open_pr_on_github(self, repo_path: str = "", base_branch: str = "", head_branch: str = "") -> bool:
         resolved_repo = self._resolve_repo_action_path(repo_path)
@@ -1439,9 +1403,7 @@ class GlobalBarMixin:
             messagebox.showwarning("PR", "Nao foi possivel identificar a branch atual para montar a URL de PR.")
             return False
         resolved_base = base_branch.strip() or self._get_default_base_branch_for_pr(resolved_repo)
-        base_enc = quote(resolved_base, safe="")
-        head_enc = quote(resolved_head, safe="")
-        pr_url = f"{repo_base_url}/compare/{base_enc}...{head_enc}"
+        pr_url = build_pr_compare_url(repo_base_url, resolved_base, resolved_head)
         return self._open_browser_url("PR", pr_url)
 
     def _open_commit_in_github(self, commit_hash: str, repo_path: str = "") -> bool:
@@ -1458,7 +1420,7 @@ class GlobalBarMixin:
         except RuntimeError as exc:
             messagebox.showerror("GitHub", str(exc))
             return False
-        commit_url = f"{repo_base_url}/commit/{sha}"
+        commit_url = build_commit_url(repo_base_url, sha)
         return self._open_browser_url("GitHub", commit_url)
 
     def _copy_commit_github_url(self, commit_hash: str, repo_path: str = "") -> bool:
@@ -1475,7 +1437,7 @@ class GlobalBarMixin:
         except RuntimeError as exc:
             messagebox.showerror("GitHub", str(exc))
             return False
-        commit_url = f"{repo_base_url}/commit/{sha}"
+        commit_url = build_commit_url(repo_base_url, sha)
         copied = self._copy_to_clipboard(commit_url)
         if copied:
             self._set_status("URL do commit copiada.")
