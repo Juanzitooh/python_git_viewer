@@ -9,6 +9,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python3 main.py --repo /caminho/do/repo --limit 100
+# Shell inicial PySide6 (R7.2):
+python3 main_pyside6.py --repo /caminho/do/repo
 ```
 
 Parâmetros:
@@ -23,6 +25,8 @@ py -3 -m venv .venv
 .venv\\Scripts\\activate
 pip install -r requirements.txt
 py -3 main.py --repo C:\\caminho\\do\\repo --limit 100
+# Shell inicial PySide6 (R7.2):
+py -3 main_pyside6.py --repo C:\\caminho\\do\\repo
 ```
 
 ## Build (PyInstaller)
@@ -52,6 +56,7 @@ Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/versi
 .
   compile.py           # build via PyInstaller
   main.py              # entrypoint
+  main_pyside6.py      # entrypoint shell PySide6
   requirements.txt     # dependências de runtime
   requirements-dev.txt # dependências de build
   README.md
@@ -66,3 +71,4 @@ Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/versi
 - A listagem de commits usa carregamento incremental.
 - Diffs grandes só são carregados quando solicitado.
 - O estado do Git é atualizado automaticamente em intervalo configurável.
+- `main_pyside6.py` é o shell inicial da migração; a UI completa segue em `main.py` (Tkinter) até concluir o R7.

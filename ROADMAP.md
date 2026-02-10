@@ -180,9 +180,12 @@ Legenda
 - [x] R7.1.11 Extrair estado dos cards de workspace para o core (2026-02-10)
   Escopo: mover leitura de branch, upstream, ahead/behind e arquivos alterados dos cards da aba Repositorios para helpers do `viewer/core`, reaproveitando operacao de checkout de branch no core.
   Aceite: fluxo de cards/workspace em `ui_repos` deixa de executar `run_git` inline para status e checkout.
-- [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
+- [~] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
+- [x] R7.2.1 Bootstrap do shell PySide6 com barra global e tabs (2026-02-10)
+  Escopo: criar entrypoint dedicado (`main_pyside6.py`) e janela inicial com seletor de repositorio, branch, fetch/pull/push, status ahead/behind e abas principais.
+  Aceite: shell abre em PySide6, aplica tema claro/escuro via settings e persiste ultimo repo/aba.
 - [ ] R7.3 Migracao incremental das abas criticas (Repositorios, Commit, Historico)
   Escopo: portar as abas de maior uso para PySide6 sem perder funcionalidades atuais.
   Aceite: fluxos centrais (scan/selecionar repo, stage/commit/push, historico e filtros) operam no frontend PySide6.
