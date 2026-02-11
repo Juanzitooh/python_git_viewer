@@ -1,5 +1,15 @@
 """Controladores de fluxo da UI PySide6."""
 
+from .commit_controller import (
+    clear_commit_file_selection,
+    create_commit_from_selection,
+    get_selected_commit_paths,
+    iter_commit_items,
+    on_commit_file_item_changed,
+    refresh_commit_files,
+    select_all_commit_files,
+    update_commit_selection_label,
+)
 from .compare_controller import (
     clear_compare_view,
     get_compare_branches,
@@ -36,6 +46,14 @@ from .import_controller import (
 )
 
 __all__ = [
+    "refresh_commit_files",
+    "iter_commit_items",
+    "update_commit_selection_label",
+    "on_commit_file_item_changed",
+    "select_all_commit_files",
+    "clear_commit_file_selection",
+    "get_selected_commit_paths",
+    "create_commit_from_selection",
     "clear_compare_view",
     "get_compare_branches",
     "refresh_compare_branch_options",

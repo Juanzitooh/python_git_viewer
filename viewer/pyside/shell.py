@@ -7,13 +7,6 @@ import sys
 from pathlib import Path
 
 from ..core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
-from ..core.commit_ops import (
-    create_commit as core_create_commit,
-    has_staged_changes as core_has_staged_changes,
-    list_modified_files as core_list_modified_files,
-    stage_paths as core_stage_paths,
-    unstage_all as core_unstage_all,
-)
 from ..core.git_client import is_git_repo
 from ..core.models import CommitSummary
 from ..core.remote_ops import (
@@ -33,22 +26,30 @@ from ..core.settings_store import get_settings_path, load_settings, normalize_re
 from .controllers import (
     apply_import_source_repo_from_combo,
     clear_import_selection,
+    clear_commit_file_selection,
     clear_compare_view,
+    create_commit_from_selection,
     get_compare_branches,
+    get_selected_commit_paths,
     get_selected_import_summaries,
     import_selected_commits,
+    iter_commit_items,
     load_import_source_branches,
     load_import_source_commits,
+    on_commit_file_item_changed,
     on_compare_branches_changed,
     on_compare_file_selected,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
+    refresh_commit_files,
     refresh_import_source_repos,
     refresh_compare_branch_options,
     refresh_compare_patch,
     refresh_compare_view,
+    select_all_commit_files,
     sync_import_target_label,
     swap_compare_branches,
+    update_commit_selection_label,
     update_import_controls_state,
     use_current_repo_as_import_source,
     copy_selected_import_hashes,
@@ -735,102 +736,28 @@ class QtShellWindow(QMainWindow):
         self._set_repo(target_repo, save=True)
 
     def _refresh_commit_files(self) -> None:
-        self.commit_files_list.blockSignals(True)
-        self.commit_files_list.clear()
-        if not self.repo_path:
-            self.commit_files_list.blockSignals(False)
-            self._update_commit_selection_label()
-            return
-        try:
-            files = core_list_modified_files(self.repo_path)
-        except RuntimeError as exc:
-            self.commit_files_list.blockSignals(False)
-            QMessageBox.critical(self, "Commit", str(exc))
-            self._update_commit_selection_label()
-            return
-        for path in files:
-            item = QListWidgetItem(path, self.commit_files_list)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
-            item.setCheckState(Qt.CheckState.Checked)
-        self.commit_files_list.blockSignals(False)
-        self._update_commit_selection_label()
+        refresh_commit_files(self)
 
     def _iter_commit_items(self) -> list[QListWidgetItem]:
-        items: list[QListWidgetItem] = []
-        for index in range(self.commit_files_list.count()):
-            item = self.commit_files_list.item(index)
-            if item is not None:
-                items.append(item)
-        return items
+        return iter_commit_items(self)
 
     def _update_commit_selection_label(self) -> None:
-        items = self._iter_commit_items()
-        selected = 0
-        for item in items:
-            if item.checkState() == Qt.CheckState.Checked:
-                selected += 1
-        self.commit_selection_label.setText(f"Selecionados: {selected}/{len(items)}")
+        update_commit_selection_label(self)
 
     def _on_commit_file_item_changed(self, _item: QListWidgetItem) -> None:
-        self._update_commit_selection_label()
+        on_commit_file_item_changed(self, _item)
 
     def _select_all_commit_files(self) -> None:
-        self.commit_files_list.blockSignals(True)
-        for item in self._iter_commit_items():
-            item.setCheckState(Qt.CheckState.Checked)
-        self.commit_files_list.blockSignals(False)
-        self._update_commit_selection_label()
+        select_all_commit_files(self)
 
     def _clear_commit_file_selection(self) -> None:
-        self.commit_files_list.blockSignals(True)
-        for item in self._iter_commit_items():
-            item.setCheckState(Qt.CheckState.Unchecked)
-        self.commit_files_list.blockSignals(False)
-        self._update_commit_selection_label()
+        clear_commit_file_selection(self)
 
     def _get_selected_commit_paths(self) -> list[str]:
-        selected: list[str] = []
-        for item in self._iter_commit_items():
-            if item.checkState() != Qt.CheckState.Checked:
-                continue
-            path = item.text().strip()
-            if path:
-                selected.append(path)
-        return selected
+        return get_selected_commit_paths(self)
 
     def _create_commit_from_selection(self) -> None:
-        if not self.repo_path:
-            QMessageBox.information(self, "Commit", "Selecione um repositorio valido primeiro.")
-            return
-        title = self.commit_title_input.text().strip()
-        if not title:
-            QMessageBox.warning(self, "Commit", "Titulo do commit e obrigatorio.")
-            return
-        selected_paths = self._get_selected_commit_paths()
-        if not selected_paths:
-            QMessageBox.warning(self, "Commit", "Selecione ao menos um arquivo para commit.")
-            return
-        description = self.commit_description_input.toPlainText().strip()
-        try:
-            core_unstage_all(self.repo_path)
-            core_stage_paths(self.repo_path, selected_paths)
-            if not core_has_staged_changes(self.repo_path):
-                QMessageBox.warning(self, "Commit", "Nenhuma alteracao ficou staged para commit.")
-                return
-            core_create_commit(self.repo_path, title, description)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Commit", str(exc))
-            self._refresh_commit_files()
-            self._refresh_repo_state_ui()
-            self._refresh_workspace_tree()
-            return
-        self.commit_title_input.clear()
-        self.commit_description_input.clear()
-        self._set_status("Commit concluido.")
-        self._refresh_commit_files()
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
-        self._reload_history_commits()
+        create_commit_from_selection(self)
 
     def _set_repo(self, repo_path: str, *, save: bool) -> None:
         normalized = normalize_repo_path(repo_path) if repo_path else ""
