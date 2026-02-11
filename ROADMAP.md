@@ -276,6 +276,9 @@ Legenda
 - [x] R7.4.1.7 Fluxo de conflitos em PySide6 para Importar/Comparar (2026-02-11)
   Escopo: adicionar dialogo de conflitos com lista de arquivos, abertura no VS Code e acoes de continuar/abortar para operacoes de cherry-pick, merge, rebase e squash.
   Aceite: ao detectar conflito em Importar ou Comparar, o app abre o dialogo de resolucao e permite continuar/abortar sem sair do PySide6.
+- [x] R7.4.1.8 Clonagem de repositório na aba Repositorios em PySide6 (2026-02-11)
+  Escopo: adicionar dialogo de clonagem com URL/SSH, pasta opcional e progresso textual, incluindo re-scan automatico e selecao do repo ao concluir.
+  Aceite: usuario consegue clonar novo repositorio direto no PySide6 e o workspace e atualizado automaticamente no fim da operacao.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.

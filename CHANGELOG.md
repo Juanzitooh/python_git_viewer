@@ -49,6 +49,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na paridade da aba Comparar em PySide6 com execucao de Merge/Rebase/Squash, validacoes de worktree e mensagem obrigatoria para squash, incluindo CTA para ir rapido a aba Commit quando houver alteracoes locais.
 - M7 avancou na paridade da lista de commits em Comparar (PySide6) com menu de contexto para abrir no GitHub e copiar hash/URL/lista de arquivos/patch.
 - M7 avancou na paridade de conflitos no PySide6 com novo dialogo de resolucao (arquivos em conflito, abrir no VS Code, continuar e abortar) integrado aos fluxos de Importar e Comparar.
+- M7 avancou na paridade da aba Repositorios em PySide6 com dialogo de clonagem (URL/SSH, pasta opcional, progresso) e atualizacao automatica do workspace/repo ativo apos concluir.
 
 ## [0.2.0] - 2026-02-10
 
