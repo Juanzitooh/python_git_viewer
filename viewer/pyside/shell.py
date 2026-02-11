@@ -15,41 +15,56 @@ from ..core.remote_ops import (
     push_current_branch as core_push_current_branch,
 )
 from ..core.repo_state import (
-    get_ahead_behind as core_get_ahead_behind,
     get_current_branch as core_get_current_branch,
-    get_upstream as core_get_upstream,
-    list_branches as core_list_branches,
-    list_worktree_changed_files as core_list_worktree_changed_files,
 )
-from ..core.repo_workspace import default_repo_scan_root, discover_git_repositories
+from ..core.repo_workspace import default_repo_scan_root
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
 from .controllers import (
+    add_recent_repo,
     apply_import_source_repo_from_combo,
     clear_import_selection,
     clear_commit_file_selection,
     clear_compare_view,
+    collect_known_repos,
+    collect_repo_paths_from_settings,
     create_commit_from_selection,
+    format_repo_display_label,
+    format_workspace_relative_path,
+    build_repo_snapshot,
+    build_repo_status_summary,
     get_compare_branches,
     get_selected_commit_paths,
     get_selected_import_summaries,
     import_selected_commits,
     iter_commit_items,
+    load_repo_selector_items,
     load_import_source_branches,
     load_import_source_commits,
     on_commit_file_item_changed,
     on_compare_branches_changed,
     on_compare_file_selected,
+    on_workspace_item_double_clicked,
+    on_workspace_root_edited,
+    on_workspace_selection_changed,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
+    pick_workspace_root,
     refresh_commit_files,
     refresh_import_source_repos,
     refresh_compare_branch_options,
     refresh_compare_patch,
     refresh_compare_view,
+    refresh_repo_state_ui,
+    refresh_workspace_tree,
+    repo_is_favorite,
+    scan_workspace_repos,
+    select_repo_combo_item,
+    set_repo,
     load_settings_into_tab,
     pick_settings_workspace_root,
     save_settings_from_tab,
     select_all_commit_files,
+    sync_workspace_tree_selection,
     sync_import_target_label,
     swap_compare_branches,
     update_commit_selection_label,
@@ -79,7 +94,6 @@ try:
     from PySide6.QtGui import QCloseEvent, QFont
     from PySide6.QtWidgets import (
         QApplication,
-        QFileDialog,
         QInputDialog,
         QListWidget,
         QListWidgetItem,
@@ -87,7 +101,6 @@ try:
         QMainWindow,
         QMessageBox,
         QTabWidget,
-        QTreeWidget,
         QTreeWidgetItem,
         QVBoxLayout,
         QWidget,
@@ -106,9 +119,6 @@ TAB_NAMES = [
     "Comparar",
     "Configuracoes",
 ]
-
-RECENT_REPOS_LIMIT = 20
-
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Git Viewer - shell PySide6.")
@@ -477,210 +487,49 @@ class QtShellWindow(QMainWindow):
         save_settings_from_tab(self)
 
     def _collect_repo_paths_from_settings(self, key: str) -> list[str]:
-        items = self.settings_data.get(key, [])
-        if not isinstance(items, list):
-            return []
-        repos: list[str] = []
-        for raw in items:
-            if not isinstance(raw, str):
-                continue
-            normalized = normalize_repo_path(raw)
-            if not os.path.isdir(normalized) or not is_git_repo(normalized):
-                continue
-            if normalized not in repos:
-                repos.append(normalized)
-        return repos
+        return collect_repo_paths_from_settings(self, key)
 
     def _repo_is_favorite(self, repo_path: str) -> bool:
-        favorites = self._collect_repo_paths_from_settings("favorite_repos")
-        return normalize_repo_path(repo_path) in favorites
+        return repo_is_favorite(self, repo_path)
 
     def _format_workspace_relative_path(self, repo_path: str) -> str:
-        normalized_repo = normalize_repo_path(repo_path)
-        root = normalize_repo_path(self.repo_scan_root) if self.repo_scan_root else ""
-        if root:
-            try:
-                relative = os.path.relpath(normalized_repo, root)
-            except ValueError:
-                relative = normalized_repo
-            if not relative.startswith(".."):
-                return f"/{relative}".replace("\\", "/")
-        return normalized_repo
+        return format_workspace_relative_path(self, repo_path)
 
     def _format_repo_display_label(self, repo_path: str) -> str:
-        base_name = os.path.basename(repo_path.rstrip(os.sep)) or repo_path
-        relative = self._format_workspace_relative_path(repo_path)
-        favorite_prefix = "★ " if self._repo_is_favorite(repo_path) else ""
-        return f"{favorite_prefix}{base_name} {relative}"
+        return format_repo_display_label(self, repo_path)
 
     def _collect_known_repos(self) -> list[str]:
-        ordered: list[str] = []
-        for source in (
-            self._collect_repo_paths_from_settings("favorite_repos"),
-            self._collect_repo_paths_from_settings("recent_repos"),
-            self.scanned_repos,
-            [self.repo_path] if self.repo_path else [],
-        ):
-            for repo in source:
-                normalized = normalize_repo_path(repo)
-                if normalized in ordered:
-                    continue
-                if not os.path.isdir(normalized) or not is_git_repo(normalized):
-                    continue
-                ordered.append(normalized)
-        return ordered
+        return collect_known_repos(self)
 
     def _load_repo_selector_items(self) -> None:
-        selected = self.repo_path
-        if not selected:
-            current = self.repo_combo.currentData()
-            selected = str(current).strip() if current is not None else ""
-        repos = self._collect_known_repos()
-        self._setting_repo_programmatically = True
-        try:
-            self.repo_combo.clear()
-            for repo in repos:
-                self.repo_combo.addItem(self._format_repo_display_label(repo), repo)
-            if selected:
-                index = self.repo_combo.findData(selected)
-                if index >= 0:
-                    self.repo_combo.setCurrentIndex(index)
-        finally:
-            self._setting_repo_programmatically = False
+        load_repo_selector_items(self)
 
     def _on_workspace_root_edited(self) -> None:
-        candidate = self.workspace_root_edit.text().strip()
-        normalized = normalize_repo_path(candidate) if candidate else normalize_repo_path(default_repo_scan_root())
-        if normalized == self.repo_scan_root:
-            return
-        self.repo_scan_root = normalized
-        self.workspace_root_edit.setText(self.repo_scan_root)
-        self._scan_workspace_repos()
-        self._persist_state()
+        on_workspace_root_edited(self)
 
     def _pick_workspace_root(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "Selecionar raiz do workspace", self.repo_scan_root)
-        if not selected:
-            return
-        self.repo_scan_root = normalize_repo_path(selected)
-        self.workspace_root_edit.setText(self.repo_scan_root)
-        self._scan_workspace_repos()
-        self._persist_state()
+        pick_workspace_root(self)
 
     def _scan_workspace_repos(self) -> None:
-        self._begin_busy("Escaneando workspace...")
-        try:
-            root = normalize_repo_path(self.repo_scan_root) if self.repo_scan_root else normalize_repo_path(default_repo_scan_root())
-            os.makedirs(root, exist_ok=True)
-            self.repo_scan_root = root
-            self.workspace_root_edit.setText(root)
-            discovered = discover_git_repositories(root, max_depth=4)
-            self.scanned_repos = [normalize_repo_path(path) for path in discovered]
-            self.workspace_scan_status_label.setText(
-                f"Scan inicial: {len(self.scanned_repos)} encontrados em {root}"
-            )
-            self._load_repo_selector_items()
-            self._refresh_workspace_tree()
-            self._refresh_import_source_repos()
-        finally:
-            self._end_busy()
+        scan_workspace_repos(self)
 
     def _build_repo_status_summary(self, repo_path: str) -> str:
-        try:
-            changed = core_list_worktree_changed_files(repo_path)
-        except RuntimeError:
-            return "(indisponivel)"
-        if not changed:
-            return "limpo"
-        if len(changed) <= 2:
-            suffix = "arquivo" if len(changed) == 1 else "arquivos"
-            return f"{len(changed)} {suffix}: {', '.join(changed)}"
-        return f"{len(changed)} arquivos: {changed[0]}, {changed[1]}, +{len(changed) - 2}"
+        return build_repo_status_summary(self, repo_path)
 
     def _build_repo_snapshot(self, repo_path: str) -> tuple[str, int, int, str]:
-        branch = "(desconhecida)"
-        ahead = 0
-        behind = 0
-        try:
-            branch = core_get_current_branch(repo_path).strip() or branch
-        except RuntimeError:
-            return branch, ahead, behind, "(indisponivel)"
-        upstream = core_get_upstream(repo_path)
-        if upstream:
-            try:
-                behind, ahead = core_get_ahead_behind(repo_path, upstream)
-            except RuntimeError:
-                behind, ahead = 0, 0
-        status = self._build_repo_status_summary(repo_path)
-        return branch, ahead, behind, status
+        return build_repo_snapshot(self, repo_path)
 
     def _refresh_workspace_tree(self) -> None:
-        self.workspace_tree.clear()
-        repos = self._collect_known_repos()
-        if not repos:
-            placeholder = QTreeWidgetItem(["(sem repositorios)", "", "", "", "", ""])
-            placeholder.setData(0, Qt.ItemDataRole.UserRole, "")
-            self.workspace_tree.addTopLevelItem(placeholder)
-            self.workspace_tree.resizeColumnToContents(0)
-            self.workspace_tree.resizeColumnToContents(2)
-            self.workspace_tree.resizeColumnToContents(3)
-            self.workspace_tree.resizeColumnToContents(4)
-            return
-        for repo in repos:
-            branch, ahead, behind, status = self._build_repo_snapshot(repo)
-            item = QTreeWidgetItem(
-                [
-                    self._format_repo_display_label(repo),
-                    self._format_workspace_relative_path(repo),
-                    branch,
-                    str(ahead),
-                    str(behind),
-                    status,
-                ]
-            )
-            item.setData(0, Qt.ItemDataRole.UserRole, repo)
-            self.workspace_tree.addTopLevelItem(item)
-        self.workspace_tree.resizeColumnToContents(0)
-        self.workspace_tree.resizeColumnToContents(2)
-        self.workspace_tree.resizeColumnToContents(3)
-        self.workspace_tree.resizeColumnToContents(4)
-        self._sync_workspace_tree_selection()
+        refresh_workspace_tree(self)
 
     def _sync_workspace_tree_selection(self) -> None:
-        self._setting_workspace_selection = True
-        try:
-            for index in range(self.workspace_tree.topLevelItemCount()):
-                item = self.workspace_tree.topLevelItem(index)
-                path_value = item.data(0, Qt.ItemDataRole.UserRole)
-                repo = str(path_value).strip() if path_value is not None else ""
-                should_select = bool(self.repo_path and repo == self.repo_path)
-                item.setSelected(should_select)
-                if should_select:
-                    self.workspace_tree.scrollToItem(item)
-        finally:
-            self._setting_workspace_selection = False
+        sync_workspace_tree_selection(self)
 
     def _on_workspace_selection_changed(self) -> None:
-        if self._setting_workspace_selection:
-            return
-        selected_items = self.workspace_tree.selectedItems()
-        if not selected_items:
-            return
-        item = selected_items[0]
-        path_value = item.data(0, Qt.ItemDataRole.UserRole)
-        target_repo = str(path_value).strip() if path_value is not None else ""
-        if not target_repo:
-            return
-        if self.repo_path and normalize_repo_path(self.repo_path) == normalize_repo_path(target_repo):
-            return
-        self._set_repo(target_repo, save=True)
+        on_workspace_selection_changed(self)
 
     def _on_workspace_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        path_value = item.data(0, Qt.ItemDataRole.UserRole)
-        target_repo = str(path_value).strip() if path_value is not None else ""
-        if not target_repo:
-            return
-        self._set_repo(target_repo, save=True)
+        on_workspace_item_double_clicked(self, item, _column)
 
     def _refresh_commit_files(self) -> None:
         refresh_commit_files(self)
@@ -707,111 +556,16 @@ class QtShellWindow(QMainWindow):
         create_commit_from_selection(self)
 
     def _set_repo(self, repo_path: str, *, save: bool) -> None:
-        normalized = normalize_repo_path(repo_path) if repo_path else ""
-        if not normalized or not os.path.isdir(normalized) or not is_git_repo(normalized):
-            self.repo_path = ""
-            self._refresh_repo_state_ui()
-            self._refresh_commit_files()
-            self._clear_history_view()
-            self._refresh_compare_branch_options()
-            self._sync_import_target_label()
-            self._sync_workspace_tree_selection()
-            if save:
-                self._persist_state()
-            return
-        self.repo_path = normalized
-        self._add_recent_repo(normalized)
-        self._select_repo_combo_item(normalized)
-        self._refresh_repo_state_ui()
-        self._refresh_commit_files()
-        self._reload_history_commits()
-        self._refresh_compare_branch_options()
-        self._refresh_import_source_repos()
-        self._sync_import_target_label()
-        self._sync_workspace_tree_selection()
-        self._set_status(f"Repositorio ativo: {normalized}")
-        if save:
-            self._persist_state()
+        set_repo(self, repo_path, save=save)
 
     def _select_repo_combo_item(self, repo_path: str) -> None:
-        self._setting_repo_programmatically = True
-        try:
-            index = self.repo_combo.findData(repo_path)
-            if index < 0:
-                self.repo_combo.addItem(repo_path, repo_path)
-                index = self.repo_combo.findData(repo_path)
-            if index >= 0:
-                self.repo_combo.setCurrentIndex(index)
-        finally:
-            self._setting_repo_programmatically = False
+        select_repo_combo_item(self, repo_path)
 
     def _refresh_repo_state_ui(self) -> None:
-        has_repo = bool(self.repo_path)
-        self.fetch_button.setEnabled(has_repo)
-        self.new_branch_button.setEnabled(has_repo)
-        self.branch_combo.setEnabled(has_repo)
-        if not has_repo:
-            self.pull_button.setEnabled(False)
-            self.push_button.setEnabled(False)
-            self.sync_label.setText("Ahead: 0 | Behind: 0")
-            self.branch_combo.clear()
-            self._sync_import_target_label()
-            return
-
-        try:
-            branches = core_list_branches(self.repo_path)
-            current = core_get_current_branch(self.repo_path).strip()
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Erro", str(exc))
-            self.repo_path = ""
-            self._refresh_repo_state_ui()
-            return
-
-        self._setting_branch_programmatically = True
-        try:
-            self.branch_combo.clear()
-            for branch in branches:
-                self.branch_combo.addItem(branch, branch)
-            index = self.branch_combo.findData(current)
-            if index >= 0:
-                self.branch_combo.setCurrentIndex(index)
-        finally:
-            self._setting_branch_programmatically = False
-
-        upstream = core_get_upstream(self.repo_path)
-        if not upstream:
-            self.pull_button.setEnabled(False)
-            self.push_button.setEnabled(False)
-            self.sync_label.setText("Ahead: 0 | Behind: 0 (sem upstream)")
-            self.fetch_button.setText("Fetch")
-            self._sync_import_target_label()
-            return
-
-        behind, ahead = core_get_ahead_behind(self.repo_path, upstream)
-        self.sync_label.setText(f"Ahead: {ahead} | Behind: {behind}")
-        self.pull_button.setEnabled(behind > 0)
-        self.push_button.setEnabled(ahead > 0)
-        self.fetch_button.setText(f"Fetch ({behind})" if behind > 0 else "Fetch")
-        self.pull_button.setText(f"Pull ({behind})" if behind > 0 else "Pull")
-        self.push_button.setText(f"Push ({ahead})" if ahead > 0 else "Push")
-        self._sync_import_target_label()
+        refresh_repo_state_ui(self)
 
     def _add_recent_repo(self, repo_path: str) -> None:
-        normalized = normalize_repo_path(repo_path)
-        current_items = self.settings_data.get("recent_repos", [])
-        items: list[str] = []
-        if isinstance(current_items, list):
-            for raw in current_items:
-                if isinstance(raw, str) and raw.strip():
-                    entry = normalize_repo_path(raw)
-                    if entry not in items and os.path.isdir(entry) and is_git_repo(entry):
-                        items.append(entry)
-        if normalized in items:
-            items.remove(normalized)
-        items.insert(0, normalized)
-        self.settings_data["recent_repos"] = items[:RECENT_REPOS_LIMIT]
-        self._load_repo_selector_items()
-        self._refresh_workspace_tree()
+        add_recent_repo(self, repo_path)
 
     def _persist_state(self) -> None:
         self.settings_data["last_repo_path"] = self.repo_path
