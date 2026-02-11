@@ -36,6 +36,10 @@ def build_repositories_tab(window: object) -> None:
     window.workspace_rescan_button.clicked.connect(window._scan_workspace_repos)
     root_row_layout.addWidget(window.workspace_rescan_button)
 
+    window.workspace_clone_button = QPushButton("Adicionar repositório", root_row)
+    window.workspace_clone_button.clicked.connect(window._open_clone_dialog)
+    root_row_layout.addWidget(window.workspace_clone_button)
+
     layout.addWidget(root_row)
 
     window.workspace_scan_status_label = QLabel("Aguardando scan do workspace...", window.repositories_tab)

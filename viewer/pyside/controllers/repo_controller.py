@@ -3,7 +3,21 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QFileDialog, QMenu, QMessageBox, QTreeWidgetItem
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...core.git_client import is_git_repo
 from ...core.repo_state import (
@@ -13,7 +27,7 @@ from ...core.repo_state import (
     list_branches as core_list_branches,
     list_worktree_changed_files as core_list_worktree_changed_files,
 )
-from ...core.repo_workspace import default_repo_scan_root, discover_git_repositories
+from ...core.repo_workspace import clone_repository, default_repo_scan_root, discover_git_repositories
 from ...core.settings_store import normalize_repo_path
 
 
@@ -331,6 +345,149 @@ def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
     if not repo_path:
         return
     _show_repo_context_menu(window, window.workspace_tree.viewport().mapToGlobal(pos), repo_path)
+
+
+def open_clone_dialog(window: object) -> None:
+    default_root = normalize_repo_path(window.repo_scan_root) if window.repo_scan_root else normalize_repo_path(default_repo_scan_root())
+
+    dialog = QDialog(window)
+    dialog.setWindowTitle("Adicionar repositório")
+    dialog.setModal(True)
+    dialog.resize(760, 480)
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(12, 12, 12, 12)
+    layout.setSpacing(8)
+
+    root_row = QWidget(dialog)
+    root_layout = QHBoxLayout(root_row)
+    root_layout.setContentsMargins(0, 0, 0, 0)
+    root_layout.setSpacing(6)
+    root_layout.addWidget(QLabel("Raiz do workspace:", root_row))
+    root_input = QLineEdit(root_row)
+    root_input.setText(default_root)
+    root_layout.addWidget(root_input, stretch=1)
+    root_pick_button = QPushButton("Pasta...", root_row)
+    root_layout.addWidget(root_pick_button)
+    layout.addWidget(root_row)
+
+    url_row = QWidget(dialog)
+    url_layout = QHBoxLayout(url_row)
+    url_layout.setContentsMargins(0, 0, 0, 0)
+    url_layout.setSpacing(6)
+    url_layout.addWidget(QLabel("Clone URL/SSH:", url_row))
+    url_input = QLineEdit(url_row)
+    url_input.setPlaceholderText("git@github.com:owner/repo.git")
+    url_layout.addWidget(url_input, stretch=1)
+    layout.addWidget(url_row)
+
+    folder_row = QWidget(dialog)
+    folder_layout = QHBoxLayout(folder_row)
+    folder_layout.setContentsMargins(0, 0, 0, 0)
+    folder_layout.setSpacing(6)
+    folder_layout.addWidget(QLabel("Pasta (opcional):", folder_row))
+    folder_input = QLineEdit(folder_row)
+    folder_input.setPlaceholderText("grupo/repositorio (ou vazio para nome automático)")
+    folder_layout.addWidget(folder_input, stretch=1)
+    layout.addWidget(folder_row)
+
+    progress_view = QPlainTextEdit(dialog)
+    progress_view.setReadOnly(True)
+    progress_view.setPlaceholderText("O progresso do clone será exibido aqui.")
+    layout.addWidget(progress_view, stretch=1)
+
+    status_label = QLabel("Informe uma URL para clonar.", dialog)
+    layout.addWidget(status_label)
+
+    actions_row = QWidget(dialog)
+    actions_layout = QHBoxLayout(actions_row)
+    actions_layout.setContentsMargins(0, 0, 0, 0)
+    actions_layout.setSpacing(6)
+    actions_layout.addStretch(1)
+    cancel_button = QPushButton("Cancelar", actions_row)
+    clone_button = QPushButton("Clonar", actions_row)
+    clone_button.setProperty("role", "primary")
+    actions_layout.addWidget(cancel_button)
+    actions_layout.addWidget(clone_button)
+    layout.addWidget(actions_row)
+
+    state = {"cloning": False, "cancelled": False}
+
+    def choose_root() -> None:
+        selected = QFileDialog.getExistingDirectory(dialog, "Selecionar raiz do workspace", root_input.text().strip() or default_root)
+        if selected:
+            root_input.setText(normalize_repo_path(selected))
+
+    def append_progress(text: str) -> None:
+        progress_view.appendPlainText(text)
+        status_label.setText(text)
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+
+    def cancel_action() -> None:
+        if state["cloning"]:
+            state["cancelled"] = True
+            status_label.setText("Cancelando clone...")
+            cancel_button.setEnabled(False)
+            return
+        dialog.reject()
+
+    def run_clone() -> None:
+        repo_url = url_input.text().strip()
+        destination_root = normalize_repo_path(root_input.text().strip())
+        folder_name = folder_input.text().strip()
+        if not repo_url:
+            QMessageBox.warning(dialog, "Clone", "Informe a URL/SSH do repositório.")
+            return
+        if not destination_root:
+            QMessageBox.warning(dialog, "Clone", "Informe a raiz do workspace.")
+            return
+        state["cloning"] = True
+        state["cancelled"] = False
+        clone_button.setEnabled(False)
+        root_pick_button.setEnabled(False)
+        url_input.setEnabled(False)
+        folder_input.setEnabled(False)
+        root_input.setEnabled(False)
+        window.setEnabled(False)
+        append_progress(f"Clonando em: {destination_root}")
+        cloned_repo = ""
+        try:
+            cloned_repo = clone_repository(
+                repo_url,
+                destination_root,
+                folder_name,
+                on_progress=append_progress,
+                is_cancelled=lambda: bool(state["cancelled"]),
+            )
+        except RuntimeError as exc:
+            QMessageBox.critical(dialog, "Clone", str(exc))
+            return
+        finally:
+            state["cloning"] = False
+            window.setEnabled(True)
+            clone_button.setEnabled(True)
+            root_pick_button.setEnabled(True)
+            url_input.setEnabled(True)
+            folder_input.setEnabled(True)
+            root_input.setEnabled(True)
+            cancel_button.setEnabled(True)
+
+        if not cloned_repo:
+            return
+        append_progress(f"Clone concluído: {cloned_repo}")
+        window.repo_scan_root = destination_root
+        window.workspace_root_edit.setText(destination_root)
+        scan_workspace_repos(window)
+        set_repo(window, cloned_repo, save=True)
+        window._persist_state()
+        QMessageBox.information(dialog, "Clone", f"Repositório clonado com sucesso:\n{cloned_repo}")
+        dialog.accept()
+
+    root_pick_button.clicked.connect(choose_root)
+    cancel_button.clicked.connect(cancel_action)
+    clone_button.clicked.connect(run_clone)
+    dialog.exec()
 
 
 def set_repo(window: object, repo_path: str, *, save: bool) -> None:

@@ -58,6 +58,7 @@ from .controllers import (
     on_workspace_selection_changed,
     on_repo_combo_context_menu,
     on_repo_combo_dropdown_context_menu,
+    open_clone_dialog,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
     pick_workspace_root,
@@ -575,6 +576,9 @@ class QtShellWindow(QMainWindow):
 
     def _scan_workspace_repos(self) -> None:
         scan_workspace_repos(self)
+
+    def _open_clone_dialog(self) -> None:
+        open_clone_dialog(self)
 
     def _build_repo_status_summary(self, repo_path: str) -> str:
         return build_repo_status_summary(self, repo_path)
