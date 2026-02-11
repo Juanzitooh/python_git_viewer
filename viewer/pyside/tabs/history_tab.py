@@ -23,6 +23,8 @@ def build_history_tab(window: object) -> None:
     window.history_summary_by_hash: dict[str, CommitSummary] = {}
     window.history_current_commit_hash = ""
     window.history_current_file_path = ""
+    window.history_local_only_hashes: set[str] = set()
+    window.history_has_upstream = False
 
     layout = QVBoxLayout(window.history_tab)
     layout.setContentsMargins(12, 12, 12, 12)
@@ -36,6 +38,15 @@ def build_history_tab(window: object) -> None:
     window.history_refresh_button = QPushButton("Atualizar", top_row)
     window.history_refresh_button.clicked.connect(window._reload_history_commits)
     top_layout.addWidget(window.history_refresh_button)
+
+    window.history_export_button = QPushButton("Exportar", top_row)
+    window.history_export_button.clicked.connect(window._open_history_export_dialog)
+    top_layout.addWidget(window.history_export_button)
+
+    window.history_reorder_button = QPushButton("Reordenar locais", top_row)
+    window.history_reorder_button.clicked.connect(window._open_history_reorder_dialog)
+    top_layout.addWidget(window.history_reorder_button)
+    window.history_reorder_button.setVisible(False)
 
     top_layout.addWidget(QLabel("Buscar:", top_row))
     window.history_search_input = QLineEdit(top_row)
@@ -55,6 +66,10 @@ def build_history_tab(window: object) -> None:
     window.history_word_diff_check = QCheckBox("Diff por palavra", top_row)
     window.history_word_diff_check.stateChanged.connect(window._refresh_history_patch_view)
     top_layout.addWidget(window.history_word_diff_check)
+
+    top_layout.addStretch(1)
+    window.history_legend_label = QLabel("Legenda: [L] local | [L+O] local+online", top_row)
+    top_layout.addWidget(window.history_legend_label)
 
     layout.addWidget(top_row)
 

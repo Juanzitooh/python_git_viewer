@@ -109,6 +109,8 @@ from .controllers import (
     on_history_file_context_menu,
     on_import_commit_context_menu,
     on_history_file_selected,
+    open_history_export_dialog,
+    open_history_reorder_dialog,
     refresh_history_patch_view,
     reload_history_commits,
     show_conflicts_dialog,
@@ -128,10 +130,14 @@ try:
     from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont
     from PySide6.QtWidgets import (
         QApplication,
+        QComboBox,
+        QDialog,
+        QHBoxLayout,
         QListWidgetItem,
         QLabel,
         QMainWindow,
         QMessageBox,
+        QPushButton,
         QTabWidget,
         QTreeWidgetItem,
         QVBoxLayout,
@@ -425,6 +431,12 @@ class QtShellWindow(QMainWindow):
 
     def _reload_history_commits(self) -> None:
         reload_history_commits(self)
+
+    def _open_history_export_dialog(self) -> None:
+        open_history_export_dialog(self)
+
+    def _open_history_reorder_dialog(self) -> None:
+        open_history_reorder_dialog(self)
 
     def _on_history_commit_selected(self) -> None:
         on_history_commit_selected(self)
@@ -886,6 +898,118 @@ class QtShellWindow(QMainWindow):
         branch_url = core_build_repo_branch_url(repo_base_url, branch)
         return self._copy_to_clipboard(branch_url, status="URL da branch copiada.")
 
+    def _prompt_pr_branch_selection(self, resolved_repo: str) -> tuple[str, str] | None:
+        try:
+            branch_options = core_list_branches(resolved_repo)
+            default_base = core_get_default_base_branch_for_pr(resolved_repo).strip() or "main"
+            default_head = core_get_current_branch_for_pr(resolved_repo).strip()
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return None
+        if not default_head:
+            default_head = self._get_repo_branch_name(resolved_repo)
+        for branch_name in (default_base, default_head):
+            if branch_name and branch_name not in branch_options:
+                branch_options.append(branch_name)
+        if not branch_options:
+            QMessageBox.warning(self, "GitHub", "Nao foi possivel listar branches para abrir a PR.")
+            return None
+        if not default_base:
+            default_base = branch_options[0]
+        if not default_head:
+            default_head = branch_options[0]
+        if default_head == default_base and len(branch_options) > 1:
+            for option in branch_options:
+                if option != default_base:
+                    default_head = option
+                    break
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Abrir PR no GitHub")
+        dialog.setModal(True)
+        dialog.resize(520, 190)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        layout.addWidget(QLabel("Escolha as branches para abrir a pagina de Pull Request.", dialog))
+
+        base_row = QWidget(dialog)
+        base_layout = QHBoxLayout(base_row)
+        base_layout.setContentsMargins(0, 0, 0, 0)
+        base_layout.setSpacing(6)
+        base_layout.addWidget(QLabel("Destino (base):", base_row))
+        base_combo = QComboBox(base_row)
+        for branch_name in branch_options:
+            base_combo.addItem(branch_name, branch_name)
+        base_index = base_combo.findData(default_base)
+        if base_index >= 0:
+            base_combo.setCurrentIndex(base_index)
+        base_layout.addWidget(base_combo, stretch=1)
+        layout.addWidget(base_row)
+
+        head_row = QWidget(dialog)
+        head_layout = QHBoxLayout(head_row)
+        head_layout.setContentsMargins(0, 0, 0, 0)
+        head_layout.setSpacing(6)
+        head_layout.addWidget(QLabel("Origem (head):", head_row))
+        head_combo = QComboBox(head_row)
+        for branch_name in branch_options:
+            head_combo.addItem(branch_name, branch_name)
+        head_index = head_combo.findData(default_head)
+        if head_index >= 0:
+            head_combo.setCurrentIndex(head_index)
+        head_layout.addWidget(head_combo, stretch=1)
+        layout.addWidget(head_row)
+
+        warning_label = QLabel("", dialog)
+        layout.addWidget(warning_label)
+
+        actions_row = QWidget(dialog)
+        actions_layout = QHBoxLayout(actions_row)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
+        actions_layout.addStretch(1)
+        cancel_button = QPushButton("Cancelar", actions_row)
+        confirm_button = QPushButton("Abrir PR", actions_row)
+        confirm_button.setProperty("role", "primary")
+        actions_layout.addWidget(cancel_button)
+        actions_layout.addWidget(confirm_button)
+        layout.addWidget(actions_row)
+
+        result: dict[str, tuple[str, str] | None] = {"value": None}
+
+        def validate() -> None:
+            base_branch = str(base_combo.currentData() or "").strip()
+            head_branch = str(head_combo.currentData() or "").strip()
+            valid = bool(base_branch and head_branch and base_branch != head_branch)
+            if not valid:
+                warning_label.setText("Origem e destino devem ser diferentes.")
+            else:
+                warning_label.setText("")
+            confirm_button.setEnabled(valid)
+
+        def cancel() -> None:
+            result["value"] = None
+            dialog.reject()
+
+        def confirm() -> None:
+            base_branch = str(base_combo.currentData() or "").strip()
+            head_branch = str(head_combo.currentData() or "").strip()
+            if not base_branch or not head_branch or base_branch == head_branch:
+                validate()
+                return
+            result["value"] = (base_branch, head_branch)
+            dialog.accept()
+
+        base_combo.currentIndexChanged.connect(validate)
+        head_combo.currentIndexChanged.connect(validate)
+        cancel_button.clicked.connect(cancel)
+        confirm_button.clicked.connect(confirm)
+        validate()
+        dialog.exec()
+        return result["value"]
+
     def _open_commit_pr_in_github(self) -> bool:
         resolved_repo = self._get_resolved_repo_path(self.repo_path)
         if not resolved_repo:
@@ -893,21 +1017,13 @@ class QtShellWindow(QMainWindow):
             return False
         try:
             repo_base_url = self._get_repo_github_base_url(resolved_repo)
-            base_branch = core_get_default_base_branch_for_pr(resolved_repo).strip() or "main"
-            head_branch = core_get_current_branch_for_pr(resolved_repo).strip()
         except RuntimeError as exc:
             QMessageBox.warning(self, "GitHub", str(exc))
             return False
-        if not head_branch:
-            QMessageBox.information(self, "GitHub", "Nao foi possivel identificar a branch atual.")
+        selection = self._prompt_pr_branch_selection(resolved_repo)
+        if not selection:
             return False
-        if head_branch == base_branch:
-            QMessageBox.information(
-                self,
-                "GitHub",
-                "Branch atual igual a branch base. Crie ou troque para uma branch de trabalho.",
-            )
-            return False
+        base_branch, head_branch = selection
         pr_url = core_build_pr_compare_url(repo_base_url, base_branch, head_branch)
         return self._open_url_in_browser(pr_url)
 

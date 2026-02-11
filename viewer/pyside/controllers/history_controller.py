@@ -1,14 +1,42 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QListWidgetItem, QMenu, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from ...core.branch_ops import checkout_branch as core_checkout_branch
+from ...core.cherry_pick_ops import (
+    cherry_pick_commit as core_cherry_pick_commit,
+    has_unmerged_conflicts as core_has_unmerged_conflicts,
+)
 from ...core.commit_content import (
     get_commit_patch as core_get_commit_patch,
     list_commit_files as core_list_commit_files,
 )
 from ...core.git_client import load_commit_details, load_commit_summaries
+from ...core.history_local_ops import (
+    apply_local_commit_reorder as core_apply_local_commit_reorder,
+    load_local_only_commit_hashes as core_load_local_only_commit_hashes,
+    load_reorderable_local_commits as core_load_reorderable_local_commits,
+)
 from ...core.models import CommitFilters
+from ...core.repo_state import (
+    get_current_branch as core_get_current_branch,
+    get_upstream as core_get_upstream,
+    list_branches as core_list_branches,
+)
 
 
 def clear_history_view(window: object) -> None:
@@ -16,6 +44,8 @@ def clear_history_view(window: object) -> None:
     window.history_summary_by_hash = {}
     window.history_current_commit_hash = ""
     window.history_current_file_path = ""
+    window.history_local_only_hashes = set()
+    window.history_has_upstream = False
     if hasattr(window, "history_commits_list"):
         window.history_commits_list.clear()
     if hasattr(window, "history_files_list"):
@@ -24,6 +54,7 @@ def clear_history_view(window: object) -> None:
         window.history_commit_info.setPlainText("")
     if hasattr(window, "history_patch_view"):
         window.history_patch_view.setPlainText("")
+    _update_history_reorder_button_visibility(window)
 
 
 def get_history_limit_value(window: object) -> int:
@@ -35,12 +66,77 @@ def get_history_limit_value(window: object) -> int:
     return max(1, value)
 
 
+def _history_commit_presence(window: object, commit_hash: str) -> str:
+    if not getattr(window, "history_has_upstream", False):
+        return "L"
+    local_only_hashes = getattr(window, "history_local_only_hashes", set())
+    if commit_hash in local_only_hashes:
+        return "L"
+    return "L+O"
+
+
+def _format_history_commit_label(window: object, commit_hash: str, subject: str) -> str:
+    presence = _history_commit_presence(window, commit_hash)
+    return f"[{presence}] {commit_hash[:7]} | {subject}"
+
+
+def _refresh_history_local_state(window: object) -> None:
+    if not window.repo_path:
+        window.history_local_only_hashes = set()
+        window.history_has_upstream = False
+        return
+    upstream = core_get_upstream(window.repo_path)
+    if not upstream:
+        window.history_local_only_hashes = set()
+        window.history_has_upstream = False
+        return
+    try:
+        hashes = core_load_local_only_commit_hashes(window.repo_path, upstream)
+    except RuntimeError:
+        hashes = set()
+    window.history_local_only_hashes = set(hashes)
+    window.history_has_upstream = True
+
+
+def _update_history_reorder_button_visibility(window: object) -> None:
+    if not hasattr(window, "history_reorder_button"):
+        return
+    visible = bool(
+        window.repo_path
+        and getattr(window, "history_has_upstream", False)
+        and len(getattr(window, "history_local_only_hashes", set())) >= 2
+    )
+    window.history_reorder_button.setVisible(visible)
+
+
+def _selected_history_summaries_for_export(window: object) -> list[object]:
+    selected_indexes = window.history_commits_list.selectedIndexes()
+    if not selected_indexes:
+        return []
+    summaries_by_hash = getattr(window, "history_summary_by_hash", {})
+    ordered_rows = sorted((int(index.row()) for index in selected_indexes), reverse=True)
+    selected: list[object] = []
+    for row in ordered_rows:
+        item = window.history_commits_list.item(row)
+        if item is None:
+            continue
+        value = item.data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+        if not commit_hash:
+            continue
+        summary = summaries_by_hash.get(commit_hash)
+        if summary is not None:
+            selected.append(summary)
+    return selected
+
+
 def reload_history_commits(window: object) -> None:
     window._begin_busy("Carregando historico...")
     try:
         if not window.repo_path:
             clear_history_view(window)
             return
+        _refresh_history_local_state(window)
         text_filter = window.history_search_input.text().strip()
         filters = CommitFilters(text=text_filter)
         limit = get_history_limit_value(window)
@@ -59,10 +155,15 @@ def reload_history_commits(window: object) -> None:
         window.history_commits_list.blockSignals(True)
         window.history_commits_list.clear()
         for summary in summaries:
-            label = f"{summary.commit_hash[:7]} | {summary.subject}"
+            label = _format_history_commit_label(window, summary.commit_hash, summary.subject)
             item = QListWidgetItem(label, window.history_commits_list)
             item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+            marker = _history_commit_presence(window, summary.commit_hash)
+            marker_text = "Local (ainda nao enviado)" if marker == "L" else "Local + online"
+            tooltip = f"{summary.commit_hash}\n{summary.date}\n{marker_text}"
+            item.setToolTip(tooltip.strip())
         window.history_commits_list.blockSignals(False)
+        _update_history_reorder_button_visibility(window)
 
         if summaries:
             window.history_commits_list.setCurrentRow(0)
@@ -286,3 +387,337 @@ def on_history_file_context_menu(window: object, pos: QPoint) -> None:
         return
     if selected_action == action_copy_commit_patch:
         _copy_commit_patch(window, commit_hash)
+
+
+def _refresh_after_history_export(window: object) -> None:
+    window._refresh_repo_state_ui()
+    window._refresh_workspace_tree()
+    window._refresh_commit_files()
+    window._reload_history_commits()
+    window._refresh_compare_branch_options()
+    window._refresh_import_source_repos()
+
+
+def open_history_export_dialog(window: object) -> None:
+    if not window.repo_path:
+        QMessageBox.information(window, "Exportar", "Selecione um repositorio valido primeiro.")
+        return
+    selected = _selected_history_summaries_for_export(window)
+    if not selected:
+        QMessageBox.information(window, "Exportar", "Selecione commits na aba Historico.")
+        return
+    try:
+        branches = core_list_branches(window.repo_path)
+        current = core_get_current_branch(window.repo_path).strip()
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Exportar", str(exc))
+        return
+    target_options = [branch for branch in branches if branch != current]
+    if not target_options:
+        QMessageBox.information(
+            window,
+            "Exportar",
+            "E necessario ter pelo menos duas branches para exportar commits.",
+        )
+        return
+
+    dialog = QDialog(window)
+    dialog.setWindowTitle("Exportar commits")
+    dialog.setModal(True)
+    dialog.resize(760, 520)
+
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(12, 12, 12, 12)
+    layout.setSpacing(8)
+    layout.addWidget(QLabel(f"Origem: {current}", dialog))
+
+    commits_list = QListWidget(dialog)
+    for summary in selected:
+        commits_list.addItem(f"{summary.commit_hash[:7]} | {summary.subject}")
+    layout.addWidget(commits_list, stretch=1)
+
+    target_row = QWidget(dialog)
+    target_layout = QHBoxLayout(target_row)
+    target_layout.setContentsMargins(0, 0, 0, 0)
+    target_layout.setSpacing(6)
+    target_layout.addWidget(QLabel("Destino:", target_row))
+    target_combo = QComboBox(target_row)
+    for branch in target_options:
+        target_combo.addItem(branch, branch)
+    target_layout.addWidget(target_combo, stretch=1)
+    layout.addWidget(target_row)
+
+    status_label = QLabel("", dialog)
+    layout.addWidget(status_label)
+
+    actions_row = QWidget(dialog)
+    actions_layout = QHBoxLayout(actions_row)
+    actions_layout.setContentsMargins(0, 0, 0, 0)
+    actions_layout.setSpacing(6)
+    actions_layout.addStretch(1)
+    copy_button = QPushButton("Copiar hashes", actions_row)
+    confirm_button = QPushButton("Confirmar exportacao", actions_row)
+    confirm_button.setProperty("role", "primary")
+    cancel_button = QPushButton("Cancelar", actions_row)
+    actions_layout.addWidget(copy_button)
+    actions_layout.addWidget(confirm_button)
+    actions_layout.addWidget(cancel_button)
+    layout.addWidget(actions_row)
+
+    def sync_status() -> None:
+        target = str(target_combo.currentData() or "").strip()
+        if not target:
+            status_label.setText("Destino nao definido.")
+            confirm_button.setEnabled(False)
+            return
+        status_label.setText(f"Destino atual: {target}")
+        confirm_button.setEnabled(True)
+
+    def copy_hashes() -> None:
+        payload = "\n".join(summary.commit_hash for summary in selected)
+        QApplication.clipboard().setText(payload)
+        window._set_status("Hashes copiados.")
+
+    def confirm_export() -> None:
+        target = str(target_combo.currentData() or "").strip()
+        if not target:
+            QMessageBox.warning(dialog, "Exportar", "Selecione a branch de destino.")
+            return
+        question = QMessageBox.question(
+            dialog,
+            "Confirmar exportacao",
+            (
+                f"Exportar {len(selected)} commit(s)\n"
+                f"Origem: {current}\n"
+                f"Destino: {target}\n\n"
+                "Deseja continuar?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if question != QMessageBox.StandardButton.Yes:
+            return
+
+        dialog.setEnabled(False)
+        window._begin_busy("Exportando commits...")
+        applied = 0
+        try:
+            core_checkout_branch(window.repo_path, target)
+            for summary in selected:
+                try:
+                    core_cherry_pick_commit(window.repo_path, summary.commit_hash)
+                except RuntimeError as exc:
+                    has_conflicts = False
+                    try:
+                        has_conflicts = core_has_unmerged_conflicts(window.repo_path)
+                    except RuntimeError:
+                        has_conflicts = False
+                    if has_conflicts:
+                        QMessageBox.warning(
+                            dialog,
+                            "Exportar",
+                            (
+                                f"Falha ao exportar {summary.commit_hash[:7]}.\n{exc}\n\n"
+                                "Conflitos detectados."
+                            ),
+                        )
+                        window._show_conflicts_dialog(
+                            operation="cherry-pick",
+                            source_label="Exportar",
+                        )
+                    else:
+                        QMessageBox.critical(
+                            dialog,
+                            "Exportar",
+                            f"Falha ao exportar {summary.commit_hash[:7]}.\n{exc}",
+                        )
+                    _refresh_after_history_export(window)
+                    dialog.setEnabled(True)
+                    return
+                applied += 1
+        finally:
+            window._end_busy()
+            dialog.setEnabled(True)
+
+        window._set_status(f"Exportacao concluida em {target}: {applied} commit(s).")
+        _refresh_after_history_export(window)
+        dialog.accept()
+
+    target_combo.currentIndexChanged.connect(sync_status)
+    copy_button.clicked.connect(copy_hashes)
+    confirm_button.clicked.connect(confirm_export)
+    cancel_button.clicked.connect(dialog.reject)
+    sync_status()
+    dialog.exec()
+
+
+def open_history_reorder_dialog(window: object) -> None:
+    if not window.repo_path:
+        QMessageBox.information(window, "Reordenar commits", "Selecione um repositorio valido primeiro.")
+        return
+    if not getattr(window, "history_has_upstream", False):
+        QMessageBox.information(
+            window,
+            "Reordenar commits",
+            "A branch atual nao possui upstream configurado.",
+        )
+        return
+    try:
+        upstream = core_get_upstream(window.repo_path) or ""
+        current = core_get_current_branch(window.repo_path).strip()
+        commits = core_load_reorderable_local_commits(window.repo_path, upstream)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Reordenar commits", str(exc))
+        return
+    if len(commits) < 2:
+        QMessageBox.information(
+            window,
+            "Reordenar commits",
+            "E necessario ao menos 2 commits locais [L] para reordenar.",
+        )
+        return
+
+    commit_rows = list(commits)
+    dialog = QDialog(window)
+    dialog.setWindowTitle("Reordenar commits locais")
+    dialog.setModal(True)
+    dialog.resize(900, 560)
+
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(12, 12, 12, 12)
+    layout.setSpacing(8)
+    layout.addWidget(
+        QLabel(
+            (
+                f"Branch atual: {current}\n"
+                f"Upstream: {upstream}\n"
+                "Lista em ordem de aplicacao (mais antigo -> mais novo)."
+            ),
+            dialog,
+        )
+    )
+
+    list_widget = QListWidget(dialog)
+    layout.addWidget(list_widget, stretch=1)
+
+    actions_row = QWidget(dialog)
+    actions_layout = QHBoxLayout(actions_row)
+    actions_layout.setContentsMargins(0, 0, 0, 0)
+    actions_layout.setSpacing(6)
+    move_up_button = QPushButton("Subir", actions_row)
+    move_down_button = QPushButton("Descer", actions_row)
+    copy_hashes_button = QPushButton("Copiar hashes", actions_row)
+    apply_button = QPushButton("Aplicar ordem", actions_row)
+    apply_button.setProperty("role", "primary")
+    close_button = QPushButton("Fechar", actions_row)
+    actions_layout.addWidget(move_up_button)
+    actions_layout.addWidget(move_down_button)
+    actions_layout.addWidget(copy_hashes_button)
+    actions_layout.addWidget(apply_button)
+    actions_layout.addStretch(1)
+    actions_layout.addWidget(close_button)
+    layout.addWidget(actions_row)
+
+    def render_list(selected_index: int | None = None) -> None:
+        list_widget.clear()
+        for index, summary in enumerate(commit_rows, start=1):
+            list_widget.addItem(f"{index:>2}. {summary.commit_hash[:7]} | {summary.subject}")
+        if selected_index is None:
+            return
+        if 0 <= selected_index < len(commit_rows):
+            list_widget.setCurrentRow(selected_index)
+
+    def move_selected(delta: int) -> None:
+        current_row = list_widget.currentRow()
+        if current_row < 0:
+            return
+        new_row = current_row + delta
+        if new_row < 0 or new_row >= len(commit_rows):
+            return
+        commit_rows[current_row], commit_rows[new_row] = commit_rows[new_row], commit_rows[current_row]
+        render_list(new_row)
+
+    def copy_hashes() -> None:
+        payload = "\n".join(summary.commit_hash for summary in commit_rows)
+        QApplication.clipboard().setText(payload)
+        window._set_status("Hashes copiados.")
+
+    def apply_reorder() -> None:
+        original_order = [summary.commit_hash for summary in commits]
+        new_order = [summary.commit_hash for summary in commit_rows]
+        if new_order == original_order:
+            QMessageBox.information(dialog, "Reordenar commits", "A ordem nao foi alterada.")
+            return
+        question = QMessageBox.question(
+            dialog,
+            "Confirmar reordenacao",
+            (
+                "Isto vai reescrever o historico local [L] da branch atual.\n"
+                "Pode exigir push com --force-with-lease.\n\n"
+                "Deseja continuar?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if question != QMessageBox.StandardButton.Yes:
+            return
+
+        dialog.setEnabled(False)
+        window._begin_busy("Reordenando commits locais...")
+        try:
+            result = core_apply_local_commit_reorder(
+                window.repo_path,
+                upstream,
+                commit_rows,
+                current_branch=current,
+            )
+        except RuntimeError as exc:
+            window._end_busy()
+            dialog.setEnabled(True)
+            QMessageBox.critical(dialog, "Reordenar commits", str(exc))
+            return
+        finally:
+            if getattr(window, "_busy_depth", 0) > 0:
+                window._end_busy()
+        dialog.setEnabled(True)
+
+        if not result.ok:
+            if result.restore_error_message:
+                QMessageBox.critical(
+                    dialog,
+                    "Reordenar commits",
+                    (
+                        f"Falha ao reordenar commits:\n{result.error_message}\n\n"
+                        f"Tambem falhou ao restaurar backup automaticamente:\n"
+                        f"{result.restore_error_message}\n\n"
+                        f"Backup disponivel em: {result.backup_branch}"
+                    ),
+                )
+            else:
+                QMessageBox.critical(
+                    dialog,
+                    "Reordenar commits",
+                    (
+                        f"Falha ao reordenar commits:\n{result.error_message}\n\n"
+                        f"Estado restaurado com backup: {result.backup_branch}"
+                    ),
+                )
+            _refresh_after_history_export(window)
+            return
+
+        QMessageBox.information(
+            dialog,
+            "Reordenar commits",
+            f"Reordenacao concluida com sucesso.\nBackup criado em: {result.backup_branch}",
+        )
+        window._set_status(f"Commits locais reordenados. Backup: {result.backup_branch}")
+        _refresh_after_history_export(window)
+        dialog.accept()
+
+    move_up_button.clicked.connect(lambda: move_selected(-1))
+    move_down_button.clicked.connect(lambda: move_selected(1))
+    copy_hashes_button.clicked.connect(copy_hashes)
+    apply_button.clicked.connect(apply_reorder)
+    close_button.clicked.connect(dialog.reject)
+    render_list(0)
+    dialog.exec()
