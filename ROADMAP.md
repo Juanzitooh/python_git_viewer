@@ -261,6 +261,9 @@ Legenda
 - [x] R7.4.1.2 Menus de contexto de Importar e Comparar em PySide6 (2026-02-11)
   Escopo: aplicar menu de contexto nos commits da aba Importar e nos arquivos da aba Comparar com as mesmas acoes-chave da UI Tk (GitHub, copia de dados e abertura local).
   Aceite: clique direito em commit de Importar e arquivo de Comparar abre menu funcional e consistente com os fluxos equivalentes da UI Tk.
+- [x] R7.4.1.3 Menus de contexto de repositorio no PySide6 (2026-02-11)
+  Escopo: aplicar menu de contexto de repositorio no seletor global e na lista da aba Repositorios com acoes locais e atalhos GitHub.
+  Aceite: clique direito no combo/lista de repositorios abre menu com abrir VS Code/pasta, copiar caminho e atalhos GitHub (repo/branch/commits/issues/actions/releases e copias de URL).
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.

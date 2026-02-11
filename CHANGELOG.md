@@ -44,6 +44,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 concluiu limpeza de bootstrap: `viewer/pyside/window.py` concentra implementacao da janela e `viewer/pyside/shell.py` ficou como entrada enxuta/delegadora.
 - M7 avancou na paridade do Historico em PySide6 com menus de contexto em commits/arquivos (copiar hash/URL/patch/lista, abrir commit no GitHub, abrir arquivo no VS Code/pasta).
 - M7 avancou na paridade de menus no PySide6 com contexto na aba Importar (commits) e na aba Comparar (arquivos), incluindo acoes de GitHub, copia e abertura local.
+- M7 avancou na paridade de repositorio no PySide6 com menu de contexto no seletor global e na lista da aba Repositorios, incluindo abrir no VS Code/pasta, copiar caminho e submenu GitHub completo.
 
 ## [0.2.0] - 2026-02-10
 
