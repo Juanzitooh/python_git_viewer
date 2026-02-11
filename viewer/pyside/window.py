@@ -14,8 +14,11 @@ from ..core.github_urls import (
     build_repo_branch_commits_url as core_build_repo_branch_commits_url,
     build_repo_branch_url as core_build_repo_branch_url,
     build_commit_url as core_build_commit_url,
+    build_pr_compare_url as core_build_pr_compare_url,
     build_repo_issues_url as core_build_repo_issues_url,
     build_repo_releases_url as core_build_repo_releases_url,
+    get_current_branch_for_pr as core_get_current_branch_for_pr,
+    get_default_base_branch_for_pr as core_get_default_base_branch_for_pr,
     get_repo_github_base_url as core_get_repo_github_base_url,
 )
 from ..core.models import CommitSummary
@@ -798,6 +801,31 @@ class QtShellWindow(QMainWindow):
             return False
         branch_url = core_build_repo_branch_url(repo_base_url, branch)
         return self._copy_to_clipboard(branch_url, status="URL da branch copiada.")
+
+    def _open_commit_pr_in_github(self) -> bool:
+        resolved_repo = self._get_resolved_repo_path(self.repo_path)
+        if not resolved_repo:
+            QMessageBox.information(self, "GitHub", "Selecione um repositorio valido.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(resolved_repo)
+            base_branch = core_get_default_base_branch_for_pr(resolved_repo).strip() or "main"
+            head_branch = core_get_current_branch_for_pr(resolved_repo).strip()
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        if not head_branch:
+            QMessageBox.information(self, "GitHub", "Nao foi possivel identificar a branch atual.")
+            return False
+        if head_branch == base_branch:
+            QMessageBox.information(
+                self,
+                "GitHub",
+                "Branch atual igual a branch base. Crie ou troque para uma branch de trabalho.",
+            )
+            return False
+        pr_url = core_build_pr_compare_url(repo_base_url, base_branch, head_branch)
+        return self._open_url_in_browser(pr_url)
 
     def _open_commit_in_github(self, commit_hash: str, repo_path: str = "") -> bool:
         selected_hash = commit_hash.strip()

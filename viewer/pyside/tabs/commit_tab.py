@@ -63,5 +63,9 @@ def build_commit_tab(window: object) -> None:
     window.commit_run_button.clicked.connect(window._create_commit_from_selection)
     action_layout.addWidget(window.commit_run_button)
 
+    window.commit_open_pr_button = QPushButton("Abrir PR", action_row)
+    window.commit_open_pr_button.clicked.connect(window._open_commit_pr_in_github)
+    action_layout.addWidget(window.commit_open_pr_button)
+
     layout.addWidget(action_row)
     window._refresh_commit_files()

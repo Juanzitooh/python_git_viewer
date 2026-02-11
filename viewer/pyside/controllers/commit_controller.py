@@ -12,17 +12,26 @@ from ...core.commit_ops import (
 )
 
 
+def _sync_commit_pr_button_state(window: object, file_count: int) -> None:
+    if not hasattr(window, "commit_open_pr_button"):
+        return
+    can_open_pr = bool(window.repo_path and file_count == 0)
+    window.commit_open_pr_button.setEnabled(can_open_pr)
+
+
 def refresh_commit_files(window: object) -> None:
     window.commit_files_list.blockSignals(True)
     window.commit_files_list.clear()
     if not window.repo_path:
         window.commit_files_list.blockSignals(False)
+        _sync_commit_pr_button_state(window, 0)
         update_commit_selection_label(window)
         return
     try:
         files = core_list_modified_files(window.repo_path)
     except RuntimeError as exc:
         window.commit_files_list.blockSignals(False)
+        _sync_commit_pr_button_state(window, 0)
         QMessageBox.critical(window, "Commit", str(exc))
         update_commit_selection_label(window)
         return
@@ -31,6 +40,7 @@ def refresh_commit_files(window: object) -> None:
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
         item.setCheckState(Qt.CheckState.Checked)
     window.commit_files_list.blockSignals(False)
+    _sync_commit_pr_button_state(window, len(files))
     update_commit_selection_label(window)
 
 
