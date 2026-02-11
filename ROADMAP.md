@@ -291,9 +291,21 @@ Legenda
 - [x] R7.4.1.12 Stash e Undo commit na aba Commit em PySide6 (2026-02-11)
   Escopo: adicionar na aba Commit as acoes de stash (com mensagem) e undo do ultimo commit por modo (`soft`, `mixed`, `hard`) com confirmacao para o modo destrutivo.
   Aceite: usuario consegue criar stash e desfazer o ultimo commit pelo PySide6 com feedback de status e atualizacao das abas dependentes.
-- [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
+- [x] R7.4.1.13 Historico em PySide6 com marcadores locais, exportar e reordenar (2026-02-11)
+  Escopo: portar para a aba Historico os marcadores de presenca `[L]/[L+O]`, o fluxo de exportacao de commits selecionados para outra branch e a reordenacao dos commits locais com backup automatico.
+  Aceite: lista do Historico identifica commits locais/remotos, botao Exportar aplica cherry-pick em branch destino e botao Reordenar locais permite mover commits [L] com confirmacao e rollback seguro.
+- [x] R7.4.1.14 Abrir PR no PySide6 com selecao de branches (2026-02-11)
+  Escopo: evoluir o botao "Abrir PR" da aba Commit para abrir um dialogo de escolha de branch base/head antes de montar a URL de compare no GitHub.
+  Aceite: usuario escolhe origem e destino no dialogo e abre no navegador a pagina correta de criacao de PR sem editar URL manualmente.
+- [~] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
+- [x] R7.4.2.1 Validacao automatizada do shell PySide6 (2026-02-11)
+  Escopo: executar `py_compile` no shell/controllers/tabs PySide6, suite `unittest` no ambiente padrao e no `.venv`, incluindo smoke test headless do shell.
+  Aceite: sem traceback em startup headless e testes automatizados passando no `.venv` com cobertura minima de inicializacao e refresh dos fluxos principais.
+- [ ] R7.4.2.2 Checklist manual de usabilidade final
+  Escopo: validar interativamente os fluxos de Repositorios, Commit, Historico, Importar, Comparar e Configuracoes no shell PySide6, incluindo menus de contexto, conflitos, clone e fluxos de PR.
+  Aceite: sem regressao funcional percebida nos fluxos principais e sem bloqueios de UX para uso diario.
 - [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
   Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
   Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.

@@ -4,6 +4,11 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 
 ## [Unreleased]
 
+- R7.4.2 iniciado com validacao automatizada do shell PySide6: `py_compile` dos modulos PySide, startup headless sem traceback e suite `unittest` validada no `.venv`.
+- Adicionado teste de smoke `tests/test_pyside_shell_smoke.py` cobrindo inicializacao da janela PySide6 com repo temporario e refresh dos fluxos principais (repo/commit/historico/comparar/importar).
+- Aba Historico no PySide6 agora marca commits com `[L]` (apenas local) e `[L+O]` (local+online), usando upstream para diferenciar o que ainda nao foi enviado.
+- Aba Historico no PySide6 agora inclui fluxo de "Exportar" commits selecionados para outra branch e ferramenta de "Reordenar locais" com backup automatico antes da reescrita.
+- Aba Commit no PySide6 agora abre dialogo de selecao de branches base/head ao acionar "Abrir PR", montando a URL de compare com as escolhas do usuario.
 - Menu de contexto do Histórico agora inclui ação para abrir commit selecionado no GitHub.
 - Aba Commit agora mostra botão "Abrir PR" quando o worktree está limpo, abrindo direto a página de compare/PR no navegador.
 - Fluxos GitHub ganharam utilitários para abrir repositório, commit e página de PR com URL montada a partir do `origin`.
