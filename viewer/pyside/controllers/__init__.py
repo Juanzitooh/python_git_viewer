@@ -44,6 +44,11 @@ from .import_controller import (
     update_import_controls_state,
     use_current_repo_as_import_source,
 )
+from .settings_controller import (
+    load_settings_into_tab,
+    pick_settings_workspace_root,
+    save_settings_from_tab,
+)
 
 __all__ = [
     "refresh_commit_files",
@@ -82,4 +87,7 @@ __all__ = [
     "copy_selected_import_hashes",
     "import_selected_commits",
     "update_import_controls_state",
+    "load_settings_into_tab",
+    "pick_settings_workspace_root",
+    "save_settings_from_tab",
 ]

@@ -46,6 +46,9 @@ from .controllers import (
     refresh_compare_branch_options,
     refresh_compare_patch,
     refresh_compare_view,
+    load_settings_into_tab,
+    pick_settings_workspace_root,
+    save_settings_from_tab,
     select_all_commit_files,
     sync_import_target_label,
     swap_compare_branches,
@@ -465,69 +468,13 @@ class QtShellWindow(QMainWindow):
         build_settings_tab(self)
 
     def _load_settings_into_tab(self) -> None:
-        if not hasattr(self, "settings_theme_combo"):
-            return
-        theme = str(self.settings_data.get("theme", "light"))
-        theme_index = self.settings_theme_combo.findData(theme)
-        if theme_index < 0:
-            theme_index = self.settings_theme_combo.findData("light")
-        if theme_index >= 0:
-            self.settings_theme_combo.setCurrentIndex(theme_index)
-
-        commit_limit_raw = self.settings_data.get("commit_limit", 100)
-        try:
-            commit_limit = int(commit_limit_raw)
-        except (TypeError, ValueError):
-            commit_limit = 100
-        limit_index = self.settings_commit_limit_combo.findData(commit_limit)
-        if limit_index < 0:
-            limit_index = self.settings_commit_limit_combo.findData(100)
-        if limit_index >= 0:
-            self.settings_commit_limit_combo.setCurrentIndex(limit_index)
-
-        workspace_root = str(self.settings_data.get("repo_scan_root", self.repo_scan_root)).strip()
-        if workspace_root:
-            workspace_root = normalize_repo_path(workspace_root)
-        else:
-            workspace_root = normalize_repo_path(default_repo_scan_root())
-        self.settings_workspace_root_edit.setText(workspace_root)
+        load_settings_into_tab(self)
 
     def _pick_settings_workspace_root(self) -> None:
-        current = self.settings_workspace_root_edit.text().strip() or self.repo_scan_root
-        selected = QFileDialog.getExistingDirectory(self, "Selecionar raiz do workspace", current)
-        if not selected:
-            return
-        normalized = normalize_repo_path(selected)
-        self.settings_workspace_root_edit.setText(normalized)
+        pick_settings_workspace_root(self)
 
     def _save_settings_from_tab(self) -> None:
-        theme_data = self.settings_theme_combo.currentData()
-        theme = str(theme_data).strip() if theme_data is not None else "light"
-        if theme not in ("light", "dark"):
-            theme = "light"
-
-        limit_data = self.settings_commit_limit_combo.currentData()
-        try:
-            commit_limit = int(limit_data)
-        except (TypeError, ValueError):
-            commit_limit = 100
-        commit_limit = max(1, commit_limit)
-
-        workspace_text = self.settings_workspace_root_edit.text().strip()
-        workspace_root = normalize_repo_path(workspace_text) if workspace_text else normalize_repo_path(default_repo_scan_root())
-
-        self.settings_data["theme"] = theme
-        self.settings_data["commit_limit"] = commit_limit
-        self.settings_data["repo_scan_root"] = workspace_root
-        self.repo_scan_root = workspace_root
-
-        self._persist_state()
-        self._apply_theme_from_settings()
-        self.workspace_root_edit.setText(self.repo_scan_root)
-        self._scan_workspace_repos()
-        self._reload_history_commits()
-        self.settings_status_label.setText("Configurações salvas.")
-        self._set_status("Configurações salvas.")
+        save_settings_from_tab(self)
 
     def _collect_repo_paths_from_settings(self, key: str) -> list[str]:
         items = self.settings_data.get(key, [])
