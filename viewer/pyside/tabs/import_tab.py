@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -58,6 +59,8 @@ def build_import_tab(window: object) -> None:
     window.import_commits_list = QListWidget(window.import_tab)
     window.import_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
     window.import_commits_list.itemSelectionChanged.connect(window._update_import_controls_state)
+    window.import_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.import_commits_list.customContextMenuRequested.connect(window._on_import_commit_context_menu)
     layout.addWidget(window.import_commits_list, stretch=1)
 
     actions_row = QWidget(window.import_tab)

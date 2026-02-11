@@ -63,6 +63,8 @@ def build_compare_tab(window: object) -> None:
     window.compare_commits_list = QListWidget(body_splitter)
     window.compare_files_list = QListWidget(body_splitter)
     window.compare_files_list.itemSelectionChanged.connect(window._on_compare_file_selected)
+    window.compare_files_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.compare_files_list.customContextMenuRequested.connect(window._on_compare_file_context_menu)
     window.compare_patch_view = QPlainTextEdit(body_splitter)
     window.compare_patch_view.setReadOnly(True)
 

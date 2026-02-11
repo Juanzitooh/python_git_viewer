@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem, QMessageBox
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QListWidgetItem, QMenu, QMessageBox
 
 from ...core.branch_compare import (
     get_ahead_behind_between as core_get_ahead_behind_between,
@@ -219,3 +219,67 @@ def refresh_compare_patch(window: object) -> None:
         return
     window.compare_patch_view.setPlainText(patch or "(sem diff para este arquivo)")
 
+
+def _is_compare_file_binary(window: object, selected_path: str) -> bool:
+    for entry in window.compare_file_entries:
+        path = str(entry.get("path", "")).strip()
+        if path != selected_path:
+            continue
+        return bool(entry.get("binary", False))
+    return False
+
+
+def _copy_compare_file_patch(window: object, path: str) -> None:
+    origin, dest = get_compare_branches(window)
+    if not origin or not dest or origin == dest:
+        QMessageBox.information(window, "Comparar", "Selecione origem e destino validos para copiar o patch.")
+        return
+    try:
+        patch = core_load_compare_file_patch(
+            window.repo_path,
+            origin,
+            dest,
+            path=path,
+            word_diff=False,
+        )
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Comparar", str(exc))
+        return
+    if window._copy_to_clipboard(patch, status=f"Patch do arquivo copiado: {path}"):
+        return
+    QMessageBox.information(window, "Comparar", "Sem diff textual para copiar neste arquivo.")
+
+
+def on_compare_file_context_menu(window: object, pos: QPoint) -> None:
+    item = window.compare_files_list.itemAt(pos)
+    if item is not None:
+        value = item.data(Qt.ItemDataRole.UserRole)
+        selected_path = str(value).strip() if value is not None else ""
+    else:
+        selected_path = window.compare_current_file_path.strip()
+    if not selected_path:
+        return
+
+    is_binary = _is_compare_file_binary(window, selected_path)
+    menu = QMenu(window.compare_files_list)
+    action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
+    action_open_folder = menu.addAction("Abrir na pasta")
+    action_copy_relative = menu.addAction("Copiar caminho relativo")
+    menu.addSeparator()
+    action_copy_patch = menu.addAction("Copiar patch do arquivo")
+    action_copy_patch.setEnabled(not is_binary)
+
+    selected_action = menu.exec(window.compare_files_list.mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_open_vscode:
+        window._open_repo_file_in_vscode(selected_path)
+        return
+    if selected_action == action_open_folder:
+        window._open_repo_file_in_explorer(selected_path)
+        return
+    if selected_action == action_copy_relative:
+        window._copy_to_clipboard(selected_path, status="Caminho relativo copiado.")
+        return
+    if selected_action == action_copy_patch:
+        _copy_compare_file_patch(window, selected_path)

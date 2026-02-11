@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QListWidgetItem, QMessageBox
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QApplication, QListWidgetItem, QMenu, QMessageBox
 
 from ...core.cherry_pick_ops import (
     cherry_pick_commit as core_cherry_pick_commit,
     has_unmerged_conflicts as core_has_unmerged_conflicts,
+)
+from ...core.commit_content import (
+    get_commit_patch as core_get_commit_patch,
+    list_commit_files as core_list_commit_files,
 )
 from ...core.git_client import is_git_repo, load_commit_summaries
 from ...core.models import CommitFilters, CommitSummary
@@ -218,6 +222,86 @@ def copy_selected_import_hashes(window: object) -> None:
     payload = "\n".join(item.commit_hash for item in selected)
     QApplication.clipboard().setText(payload)
     window._set_status("Hashes copiados.")
+
+
+def _copy_import_commit_hash(window: object, commit_hash: str) -> None:
+    if window._copy_to_clipboard(commit_hash, status="Hash do commit copiado."):
+        return
+    QMessageBox.information(window, "Importar", "Nao foi possivel copiar o hash do commit.")
+
+
+def _copy_import_commit_files_list(window: object, commit_hash: str) -> None:
+    source_repo = window.import_source_repo_path.strip()
+    if not source_repo:
+        QMessageBox.warning(window, "Importar", "Selecione repositorio e branch de origem.")
+        return
+    try:
+        files = core_list_commit_files(source_repo, commit_hash)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Importar", str(exc))
+        return
+    payload = "\n".join(files).strip()
+    if window._copy_to_clipboard(payload, status="Lista de arquivos do commit copiada."):
+        return
+    QMessageBox.information(window, "Importar", "Esse commit nao possui arquivos listaveis.")
+
+
+def _copy_import_commit_patch(window: object, commit_hash: str) -> None:
+    source_repo = window.import_source_repo_path.strip()
+    if not source_repo:
+        QMessageBox.warning(window, "Importar", "Selecione repositorio e branch de origem.")
+        return
+    try:
+        patch = core_get_commit_patch(source_repo, commit_hash, path=None, word_diff=False)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Importar", str(exc))
+        return
+    if window._copy_to_clipboard(patch, status="Patch completo do commit copiado."):
+        return
+    QMessageBox.information(window, "Importar", "Sem patch para copiar neste commit.")
+
+
+def on_import_commit_context_menu(window: object, pos: QPoint) -> None:
+    if not window.import_source_repo_path.strip():
+        return
+    item = window.import_commits_list.itemAt(pos)
+    if item is not None:
+        value = item.data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+    else:
+        selected_items = window.import_commits_list.selectedItems()
+        if not selected_items:
+            return
+        value = selected_items[-1].data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+    if not commit_hash:
+        return
+
+    menu = QMenu(window.import_commits_list)
+    action_open_github = menu.addAction("Abrir commit no GitHub")
+    action_copy_github = menu.addAction("Copiar URL do commit")
+    menu.addSeparator()
+    action_copy_hash = menu.addAction("Copiar hash completo")
+    action_copy_files = menu.addAction("Copiar lista de arquivos")
+    action_copy_patch = menu.addAction("Copiar patch completo")
+
+    selected_action = menu.exec(window.import_commits_list.mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_open_github:
+        window._open_commit_in_github(commit_hash, window.import_source_repo_path)
+        return
+    if selected_action == action_copy_github:
+        window._copy_commit_github_url(commit_hash, window.import_source_repo_path)
+        return
+    if selected_action == action_copy_hash:
+        _copy_import_commit_hash(window, commit_hash)
+        return
+    if selected_action == action_copy_files:
+        _copy_import_commit_files_list(window, commit_hash)
+        return
+    if selected_action == action_copy_patch:
+        _copy_import_commit_patch(window, commit_hash)
 
 
 def import_selected_commits(window: object) -> None:

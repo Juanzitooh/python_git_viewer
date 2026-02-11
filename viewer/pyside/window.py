@@ -76,9 +76,11 @@ from .controllers import (
     clear_history_view,
     get_history_limit_value,
     load_history_commit_content,
+    on_compare_file_context_menu,
     on_history_commit_context_menu,
     on_history_commit_selected,
     on_history_file_context_menu,
+    on_import_commit_context_menu,
     on_history_file_selected,
     refresh_history_patch_view,
     reload_history_commits,
@@ -443,6 +445,9 @@ class QtShellWindow(QMainWindow):
     def _load_import_source_commits(self) -> None:
         load_import_source_commits(self)
 
+    def _on_import_commit_context_menu(self, pos: QPoint) -> None:
+        on_import_commit_context_menu(self, pos)
+
     def _get_selected_import_summaries(self) -> list[CommitSummary]:
         return get_selected_import_summaries(self)
 
@@ -478,6 +483,9 @@ class QtShellWindow(QMainWindow):
 
     def _on_compare_file_selected(self) -> None:
         on_compare_file_selected(self)
+
+    def _on_compare_file_context_menu(self, pos: QPoint) -> None:
+        on_compare_file_context_menu(self, pos)
 
     def _refresh_compare_patch(self) -> None:
         refresh_compare_patch(self)
