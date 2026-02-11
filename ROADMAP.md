@@ -279,6 +279,9 @@ Legenda
 - [x] R7.4.1.8 Clonagem de repositório na aba Repositorios em PySide6 (2026-02-11)
   Escopo: adicionar dialogo de clonagem com URL/SSH, pasta opcional e progresso textual, incluindo re-scan automatico e selecao do repo ao concluir.
   Aceite: usuario consegue clonar novo repositorio direto no PySide6 e o workspace e atualizado automaticamente no fim da operacao.
+- [x] R7.4.1.9 Commit em PySide6 com status real, diff e stage/unstage por arquivo (2026-02-11)
+  Escopo: evoluir aba Commit do PySide6 para listar estado real de stage (`[x]/[~]/[ ]`), exibir preview de diff do arquivo selecionado e permitir stage/unstage direto do arquivo selecionado.
+  Aceite: usuario enxerga estado staged/unstaged por arquivo no PySide6, visualiza diff (normal/palavra) e consegue alternar stage por arquivo sem sair da aba.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
