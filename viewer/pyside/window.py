@@ -47,6 +47,7 @@ from .controllers import (
     load_import_source_branches,
     load_import_source_commits,
     on_commit_file_item_changed,
+    on_commit_file_selected,
     on_compare_action_changed,
     on_compare_branches_changed,
     on_compare_commit_context_menu,
@@ -65,6 +66,7 @@ from .controllers import (
     pull_repo,
     push_repo,
     refresh_commit_files,
+    refresh_commit_diff,
     refresh_import_source_repos,
     refresh_compare_branch_options,
     refresh_compare_patch,
@@ -81,12 +83,14 @@ from .controllers import (
     pick_settings_workspace_root,
     save_settings_from_tab,
     select_all_commit_files,
+    stage_selected_commit_file,
     sync_workspace_tree_selection,
     sync_import_target_label,
     swap_compare_branches,
     update_commit_selection_label,
     update_import_controls_state,
     use_current_repo_as_import_source,
+    unstage_selected_commit_file,
     copy_selected_import_hashes,
     fetch_repo,
     clear_history_view,
@@ -269,6 +273,7 @@ class QtShellWindow(QMainWindow):
             "compare_patch_view",
             "history_commit_info",
             "commit_description_input",
+            "commit_diff_view",
         ):
             widget = getattr(self, widget_name, None)
             if widget is not None:
@@ -612,6 +617,18 @@ class QtShellWindow(QMainWindow):
 
     def _on_commit_file_item_changed(self, _item: QListWidgetItem) -> None:
         on_commit_file_item_changed(self, _item)
+
+    def _on_commit_file_selected(self) -> None:
+        on_commit_file_selected(self)
+
+    def _refresh_commit_diff(self) -> None:
+        refresh_commit_diff(self)
+
+    def _stage_selected_commit_file(self) -> None:
+        stage_selected_commit_file(self)
+
+    def _unstage_selected_commit_file(self) -> None:
+        unstage_selected_commit_file(self)
 
     def _select_all_commit_files(self) -> None:
         select_all_commit_files(self)
