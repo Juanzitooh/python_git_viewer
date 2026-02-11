@@ -252,9 +252,12 @@ Legenda
 - [x] R7.4.3.4.5 Limpeza final do shell para bootstrap (2026-02-10)
   Escopo: remover wrappers redundantes e consolidar no `shell.py` apenas inicializacao da janela, wiring principal de sinais e persistencia minima.
   Aceite: `shell.py` vira ponto de entrada enxuto e previsivel, com baixa responsabilidade de dominio.
-- [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
+- [~] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
+- [x] R7.4.1.1 Menus de contexto do Historico em PySide6 (2026-02-11)
+  Escopo: adicionar menu de contexto em commits e arquivos da aba Historico com acoes de abrir commit no GitHub, copiar hash/URL/patch/lista de arquivos e abrir arquivo no VS Code/pasta.
+  Aceite: clique direito na lista de commits e arquivos abre menu com acoes funcionais sem alterar selecao automaticamente.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.

@@ -42,6 +42,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na reducao do `shell.py` com `viewer/pyside/controllers/repo_controller.py`, isolando fluxos de scan do workspace, selecao de repositorio e sincronizacao do estado global.
 - M7 avancou na reducao do `shell.py` com `viewer/pyside/controllers/sync_controller.py`, isolando checkout/criacao de branch e operacoes remotas fetch/pull/push.
 - M7 concluiu limpeza de bootstrap: `viewer/pyside/window.py` concentra implementacao da janela e `viewer/pyside/shell.py` ficou como entrada enxuta/delegadora.
+- M7 avancou na paridade do Historico em PySide6 com menus de contexto em commits/arquivos (copiar hash/URL/patch/lista, abrir commit no GitHub, abrir arquivo no VS Code/pasta).
 
 ## [0.2.0] - 2026-02-10
 
