@@ -273,6 +273,9 @@ Legenda
 - [x] R7.4.1.6 Menu de contexto de commits na aba Comparar em PySide6 (2026-02-11)
   Escopo: aplicar na lista de commits da aba Comparar o mesmo padrao de menu de commit das outras abas (GitHub, hash, lista de arquivos e patch).
   Aceite: clique direito em commit da comparacao abre menu funcional sem acao manual extra de copia/abertura.
+- [x] R7.4.1.7 Fluxo de conflitos em PySide6 para Importar/Comparar (2026-02-11)
+  Escopo: adicionar dialogo de conflitos com lista de arquivos, abertura no VS Code e acoes de continuar/abortar para operacoes de cherry-pick, merge, rebase e squash.
+  Aceite: ao detectar conflito em Importar ou Comparar, o app abre o dialogo de resolucao e permite continuar/abortar sem sair do PySide6.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
