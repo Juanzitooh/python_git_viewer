@@ -213,6 +213,27 @@ Legenda
 - [x] R7.4.0 Polimento inicial do shell PySide6 (2026-02-10)
   Escopo: evoluir layout visual (top bar, tabs, splitters nas abas criticas) e adicionar estado global de carregamento com badge/progresso para operacoes mais pesadas.
   Aceite: interface PySide6 fica mais consistente visualmente e apresenta feedback claro durante scan/fetch/pull/push/carga de historico/importar/comparar.
+- [~] R7.4.3 Modularizacao da UI PySide6 por modulos
+  Escopo: reduzir acoplamento de `shell.py` separando montagem visual, componentes compartilhados e controladores por fluxo, mantendo paridade funcional no meio da migracao.
+  Aceite: arquitetura em modulos permite evoluir cada aba/fluxo com menor risco, com `shell.py` atuando como orquestrador leve.
+- [x] R7.4.3.1 Extrair builders das abas para `viewer/pyside/tabs/` (2026-02-10)
+  Escopo: mover a construcao das abas Repositorios, Commit, Historico, Importar, Comparar e Configuracoes para modulos dedicados em `viewer/pyside/tabs`.
+  Aceite: `shell.py` deixa de carregar blocos extensos de layout das abas e passa a delegar para builders modulares sem regressao funcional.
+- [x] R7.4.3.2 Extrair barra global e status para modulo dedicado (2026-02-10)
+  Escopo: mover criacao e wiring da barra superior (repo/branch/sync) e status bar (mensagens/busy) para modulo de composicao reutilizavel.
+  Aceite: `shell.py` passa a apenas conectar callbacks e estado; montagem visual da barra fica isolada.
+- [~] R7.4.3.3 Extrair controladores de estado por fluxo
+  Escopo: separar em controladores os fluxos de repositorio, historico, importacao e comparacao para reduzir metodos longos na janela principal.
+  Aceite: handlers de evento ficam por dominio, com responsabilidades claras e menor acoplamento entre abas.
+- [x] R7.4.3.3.1 Extrair controlador do Historico em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/history_controller.py` o fluxo de carga/selecionar commit/selecionar arquivo/patch da aba Historico.
+  Aceite: callbacks do Historico continuam funcionais via wrappers no `shell.py`, reduzindo tamanho do arquivo principal.
+- [x] R7.4.3.3.2 Extrair controlador da aba Comparar em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/compare_controller.py` o fluxo de origem/destino, refresh de comparacao, selecao de arquivo e leitura de patch.
+  Aceite: callbacks da aba Comparar seguem funcionais via wrappers no `shell.py`, com logica de dominio UI isolada em controlador.
+- [ ] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao
+  Escopo: consolidar a janela principal como ponto de inicializacao, roteamento de eventos e persistencia, removendo logica de montagem/fluxo espalhada.
+  Aceite: arquivo principal do PySide6 fica significativamente menor e com manutencao simplificada.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
@@ -247,11 +268,16 @@ Ordem de execucao sugerida
 - 15) R7.2
 - 16) R7.3
 - 17) R7.4
-- 18) R7.4.1
-- 19) R7.4.2
-- 20) R7.5
-- 21) R7.6
-- 22) R7.7
+- 18) R7.4.3
+- 19) R7.4.3.1
+- 20) R7.4.3.2
+- 21) R7.4.3.3
+- 22) R7.4.3.4
+- 23) R7.4.1
+- 24) R7.4.2
+- 25) R7.5
+- 26) R7.6
+- 27) R7.7
 
 ## Regras de Manutencao
 
