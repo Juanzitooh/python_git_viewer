@@ -234,7 +234,7 @@ Legenda
 - [x] R7.4.3.3.3 Extrair controlador da aba Importar em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/import_controller.py` o fluxo de origem/branch, carga de commits, copia de hashes e importacao por cherry-pick.
   Aceite: callbacks da aba Importar seguem funcionais via wrappers no `shell.py`, mantendo o fluxo completo com atualizacao das abas relacionadas.
-- [ ] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao
+- [~] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao
   Escopo: consolidar a janela principal como ponto de inicializacao, roteamento de eventos e persistencia, removendo logica de montagem/fluxo espalhada.
   Aceite: arquivo principal do PySide6 fica significativamente menor e com manutencao simplificada.
 - [x] R7.4.3.4.1 Extrair controlador da aba Commit em PySide6 (2026-02-10)
@@ -246,6 +246,12 @@ Legenda
 - [x] R7.4.3.4.3 Extrair controlador de workspace/repositorio em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/repo_controller.py` os fluxos de scan do workspace, lista/selecao de repositorio, snapshot dos cards e sincronizacao do estado de repositorio ativo.
   Aceite: fluxos de repositorio/workspace seguem funcionais via wrappers no `shell.py`, reduzindo significativamente o acoplamento da janela principal.
+- [x] R7.4.3.4.4 Extrair controlador de branch/sincronizacao em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/sync_controller.py` os fluxos de checkout de branch, criacao de branch e acoes remotas fetch/pull/push.
+  Aceite: operacoes de branch/sincronizacao seguem funcionais via wrappers no `shell.py`, mantendo feedback de erro/estado e atualizacoes de UI.
+- [ ] R7.4.3.4.5 Limpeza final do shell para bootstrap
+  Escopo: remover wrappers redundantes e consolidar no `shell.py` apenas inicializacao da janela, wiring principal de sinais e persistencia minima.
+  Aceite: `shell.py` vira ponto de entrada enxuto e previsivel, com baixa responsabilidade de dominio.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
