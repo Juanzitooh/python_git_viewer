@@ -99,6 +99,7 @@ from .controllers import (
     on_history_file_selected,
     refresh_history_patch_view,
     reload_history_commits,
+    show_conflicts_dialog,
 )
 from .layout import build_status_bar, build_top_bar
 from .tabs import (
@@ -509,6 +510,20 @@ class QtShellWindow(QMainWindow):
             if self.tabs.tabText(index) == "Commit":
                 self.tabs.setCurrentIndex(index)
                 return
+
+    def _show_conflicts_dialog(
+        self,
+        operation: str,
+        *,
+        source_label: str = "",
+        continue_message: str = "",
+    ) -> None:
+        show_conflicts_dialog(
+            self,
+            operation,
+            source_label=source_label,
+            continue_message=continue_message,
+        )
 
     def _on_compare_file_selected(self) -> None:
         on_compare_file_selected(self)

@@ -377,13 +377,16 @@ def run_compare_action(window: object) -> None:
         except RuntimeError:
             has_conflicts = False
         if has_conflicts:
-            QMessageBox.warning(
-                window,
-                "Comparar",
-                (
-                    f"{exc}\n\nForam detectados conflitos. Resolva os arquivos e finalize com Git "
-                    "(continue/abort) antes de seguir."
-                ),
+            operation = "merge"
+            if action == "rebase":
+                operation = "rebase"
+            elif action == "squash":
+                operation = "squash_merge"
+            QMessageBox.warning(window, "Comparar", f"{exc}\n\nConflitos detectados.")
+            window._show_conflicts_dialog(
+                operation=operation,
+                source_label="Comparar",
+                continue_message=squash_message,
             )
         else:
             QMessageBox.critical(window, "Comparar", str(exc))

@@ -10,6 +10,7 @@ from .commit_controller import (
     select_all_commit_files,
     update_commit_selection_label,
 )
+from .conflict_controller import show_conflicts_dialog
 from .compare_controller import (
     clear_compare_view,
     get_compare_branches,
@@ -97,6 +98,7 @@ __all__ = [
     "clear_commit_file_selection",
     "get_selected_commit_paths",
     "create_commit_from_selection",
+    "show_conflicts_dialog",
     "clear_compare_view",
     "get_compare_branches",
     "on_compare_action_changed",

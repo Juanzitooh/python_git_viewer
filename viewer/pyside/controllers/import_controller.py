@@ -357,12 +357,22 @@ def import_selected_commits(window: object) -> None:
                     has_conflicts = core_has_unmerged_conflicts(window.repo_path)
                 except RuntimeError:
                     has_conflicts = False
-                suffix = "Conflitos detectados." if has_conflicts else "Importação interrompida."
-                QMessageBox.critical(
-                    window,
-                    "Importar",
-                    f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\n{suffix}",
-                )
+                if has_conflicts:
+                    QMessageBox.warning(
+                        window,
+                        "Importar",
+                        f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\nConflitos detectados.",
+                    )
+                    window._show_conflicts_dialog(
+                        operation="cherry-pick",
+                        source_label="Importar",
+                    )
+                else:
+                    QMessageBox.critical(
+                        window,
+                        "Importar",
+                        f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\nImportação interrompida.",
+                    )
                 window.import_status_label.setText(f"Importação interrompida após {applied} commit(s).")
                 window._refresh_repo_state_ui()
                 window._refresh_workspace_tree()
