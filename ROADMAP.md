@@ -258,6 +258,9 @@ Legenda
 - [x] R7.4.1.1 Menus de contexto do Historico em PySide6 (2026-02-11)
   Escopo: adicionar menu de contexto em commits e arquivos da aba Historico com acoes de abrir commit no GitHub, copiar hash/URL/patch/lista de arquivos e abrir arquivo no VS Code/pasta.
   Aceite: clique direito na lista de commits e arquivos abre menu com acoes funcionais sem alterar selecao automaticamente.
+- [x] R7.4.1.2 Menus de contexto de Importar e Comparar em PySide6 (2026-02-11)
+  Escopo: aplicar menu de contexto nos commits da aba Importar e nos arquivos da aba Comparar com as mesmas acoes-chave da UI Tk (GitHub, copia de dados e abertura local).
+  Aceite: clique direito em commit de Importar e arquivo de Comparar abre menu funcional e consistente com os fluxos equivalentes da UI Tk.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
