@@ -240,6 +240,9 @@ Legenda
 - [x] R7.4.3.4.1 Extrair controlador da aba Commit em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/commit_controller.py` o fluxo de listagem de arquivos modificados, selecao e criacao de commit.
   Aceite: callbacks da aba Commit seguem funcionais via wrappers no `shell.py`, reduzindo metodos de manipulacao direta no arquivo principal.
+- [x] R7.4.3.4.2 Extrair controlador da aba Configuracoes em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/settings_controller.py` os fluxos de carregar configuracoes, selecionar pasta e salvar configuracoes.
+  Aceite: aba Configuracoes permanece funcional via wrappers no `shell.py`, com persistencia e aplicacao imediata mantidas.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
