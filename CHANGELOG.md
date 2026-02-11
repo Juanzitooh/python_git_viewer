@@ -52,6 +52,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na paridade da aba Repositorios em PySide6 com dialogo de clonagem (URL/SSH, pasta opcional, progresso) e atualizacao automatica do workspace/repo ativo apos concluir.
 - M7 avancou na paridade da aba Commit em PySide6 com status real por arquivo (`[x]/[~]/[ ]`), preview de diff (normal/palavra) e acoes de stage/unstage direto no arquivo selecionado.
 - M7 avancou na aba Commit em PySide6 com stage/unstage por bloco (hunk) no diff selecionado, usando aplicacao de patch no index.
+- M7 avancou na aba Commit em PySide6 com stage/unstage por linha no diff selecionado, permitindo aplicar/reverter alteracao granular sem sair da UI.
 
 ## [0.2.0] - 2026-02-10
 

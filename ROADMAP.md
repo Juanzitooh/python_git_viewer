@@ -285,6 +285,9 @@ Legenda
 - [x] R7.4.1.10 Stage/unstage por bloco (hunk) na aba Commit em PySide6 (2026-02-11)
   Escopo: adicionar acoes de stage/unstage por bloco do diff selecionado na aba Commit, com aplicacao de patch no index via `git apply --cached`.
   Aceite: com diff selecionado, usuario consegue aplicar ou reverter hunk no stage direto pelo PySide6 sem usar CLI.
+- [x] R7.4.1.11 Stage/unstage por linha na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar acoes de stage/unstage por linha alterada no diff selecionado da aba Commit, com aplicacao de patch unidiff-zero por linha.
+  Aceite: com uma linha de diff selecionada, usuario consegue aplicar ou reverter apenas aquela linha no stage direto pelo PySide6.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
