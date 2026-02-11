@@ -237,6 +237,9 @@ Legenda
 - [ ] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao
   Escopo: consolidar a janela principal como ponto de inicializacao, roteamento de eventos e persistencia, removendo logica de montagem/fluxo espalhada.
   Aceite: arquivo principal do PySide6 fica significativamente menor e com manutencao simplificada.
+- [x] R7.4.3.4.1 Extrair controlador da aba Commit em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/commit_controller.py` o fluxo de listagem de arquivos modificados, selecao e criacao de commit.
+  Aceite: callbacks da aba Commit seguem funcionais via wrappers no `shell.py`, reduzindo metodos de manipulacao direta no arquivo principal.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
