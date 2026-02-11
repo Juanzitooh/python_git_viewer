@@ -100,6 +100,14 @@ def build_commit_tab(window: object) -> None:
     window.commit_run_button.clicked.connect(window._create_commit_from_selection)
     action_layout.addWidget(window.commit_run_button)
 
+    window.commit_stash_button = QPushButton("Stash", action_row)
+    window.commit_stash_button.clicked.connect(window._create_stash_from_commit_tab)
+    action_layout.addWidget(window.commit_stash_button)
+
+    window.commit_undo_button = QPushButton("Undo commit", action_row)
+    window.commit_undo_button.clicked.connect(window._undo_last_commit_from_commit_tab)
+    action_layout.addWidget(window.commit_undo_button)
+
     window.commit_open_pr_button = QPushButton("Abrir PR", action_row)
     window.commit_open_pr_button.clicked.connect(window._open_commit_pr_in_github)
     action_layout.addWidget(window.commit_open_pr_button)

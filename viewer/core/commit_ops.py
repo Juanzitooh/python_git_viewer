@@ -74,6 +74,28 @@ def create_commit(repo_path: str, title: str, description: str = "") -> None:
     run_git(repo_path, ["commit", "-m", subject])
 
 
+def create_stash(repo_path: str, message: str = "git_viewer", include_untracked: bool = True) -> None:
+    args = ["stash", "push"]
+    if include_untracked:
+        args.append("-u")
+    text = message.strip()
+    if text:
+        args.extend(["-m", text])
+    run_git(repo_path, args)
+
+
+def undo_last_commit(repo_path: str, mode: str = "mixed") -> None:
+    normalized = mode.strip().lower()
+    if normalized not in {"soft", "mixed", "hard"}:
+        raise RuntimeError("Modo de undo inválido. Use: soft, mixed ou hard.")
+    run_git(repo_path, ["reset", f"--{normalized}", "HEAD~1"])
+
+
+def get_last_commit_subject(repo_path: str) -> str:
+    output = run_git(repo_path, ["log", "-1", "--pretty=%s"])
+    return output.strip()
+
+
 def list_status_entries(repo_path: str) -> list[dict[str, str | bool]]:
     output = run_git(repo_path, ["status", "--porcelain", "-z"])
     entries: list[dict[str, str | bool]] = []

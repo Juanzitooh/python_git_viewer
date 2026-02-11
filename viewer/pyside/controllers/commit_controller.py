@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem, QMessageBox
+from PySide6.QtWidgets import QInputDialog, QListWidgetItem, QMessageBox
 
 from ...core.commit_ops import (
     apply_patch_to_index as core_apply_patch_to_index,
+    create_stash as core_create_stash,
     create_commit as core_create_commit,
     get_file_patch as core_get_file_patch,
+    get_last_commit_subject as core_get_last_commit_subject,
     has_staged_changes as core_has_staged_changes,
     list_status_entries as core_list_status_entries,
     stage_paths as core_stage_paths,
     unstage_all as core_unstage_all,
     unstage_paths as core_unstage_paths,
+    undo_last_commit as core_undo_last_commit,
 )
 from ...core.diff_utils import build_patch_for_hunk, build_patch_for_line, parse_diff_data
 
@@ -485,6 +488,77 @@ def unstage_selected_commit_line(window: object) -> None:
     refresh_commit_files(window)
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
+
+
+def create_stash_from_commit_tab(window: object) -> None:
+    if not window.repo_path:
+        QMessageBox.information(window, "Stash", "Selecione um repositório válido primeiro.")
+        return
+    message, accepted = QInputDialog.getText(
+        window,
+        "Criar stash",
+        "Mensagem do stash:",
+        text="git_viewer",
+    )
+    if not accepted:
+        return
+    stash_message = message.strip() or "git_viewer"
+    try:
+        core_create_stash(window.repo_path, message=stash_message, include_untracked=True)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Stash", str(exc))
+        return
+    window._set_status("Stash criado com sucesso.")
+    refresh_commit_files(window)
+    window._refresh_repo_state_ui()
+    window._refresh_workspace_tree()
+    window._reload_history_commits()
+
+
+def undo_last_commit_from_commit_tab(window: object) -> None:
+    if not window.repo_path:
+        QMessageBox.information(window, "Undo commit", "Selecione um repositório válido primeiro.")
+        return
+    try:
+        subject = core_get_last_commit_subject(window.repo_path)
+    except RuntimeError as exc:
+        QMessageBox.warning(window, "Undo commit", str(exc))
+        return
+    if not subject:
+        QMessageBox.information(window, "Undo commit", "Nenhum commit encontrado para desfazer.")
+        return
+    modes = ["soft", "mixed", "hard"]
+    selected_mode, accepted = QInputDialog.getItem(
+        window,
+        "Undo commit",
+        f"Commit alvo: {subject}\nModo de reset:",
+        modes,
+        current=1,
+        editable=False,
+    )
+    if not accepted or not selected_mode:
+        return
+    mode = str(selected_mode).strip().lower()
+    if mode == "hard":
+        confirm = QMessageBox.question(
+            window,
+            "Confirmar reset --hard",
+            "Modo hard descarta alterações locais. Deseja continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+    try:
+        core_undo_last_commit(window.repo_path, mode=mode)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Undo commit", str(exc))
+        return
+    window._set_status(f"Último commit desfeito ({mode}).")
+    refresh_commit_files(window)
+    window._refresh_repo_state_ui()
+    window._refresh_workspace_tree()
+    window._reload_history_commits()
 
 
 def select_all_commit_files(window: object) -> None:

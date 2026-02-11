@@ -536,6 +536,10 @@ def refresh_repo_state_ui(window: object) -> None:
     window.fetch_button.setEnabled(has_repo)
     window.new_branch_button.setEnabled(has_repo)
     window.branch_combo.setEnabled(has_repo)
+    if hasattr(window, "commit_stash_button"):
+        window.commit_stash_button.setEnabled(has_repo)
+    if hasattr(window, "commit_undo_button"):
+        window.commit_undo_button.setEnabled(has_repo)
     if not has_repo:
         window.pull_button.setEnabled(False)
         window.push_button.setEnabled(False)

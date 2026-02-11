@@ -29,6 +29,7 @@ from .controllers import (
     add_recent_repo,
     apply_import_source_repo_from_combo,
     clear_import_selection,
+    create_stash_from_commit_tab,
     clear_commit_file_selection,
     clear_compare_view,
     collect_known_repos,
@@ -87,6 +88,7 @@ from .controllers import (
     stage_selected_commit_hunk,
     stage_selected_commit_line,
     stage_selected_commit_file,
+    undo_last_commit_from_commit_tab,
     sync_workspace_tree_selection,
     sync_import_target_label,
     swap_compare_branches,
@@ -649,6 +651,12 @@ class QtShellWindow(QMainWindow):
 
     def _unstage_selected_commit_line(self) -> None:
         unstage_selected_commit_line(self)
+
+    def _create_stash_from_commit_tab(self) -> None:
+        create_stash_from_commit_tab(self)
+
+    def _undo_last_commit_from_commit_tab(self) -> None:
+        undo_last_commit_from_commit_tab(self)
 
     def _select_all_commit_files(self) -> None:
         select_all_commit_files(self)

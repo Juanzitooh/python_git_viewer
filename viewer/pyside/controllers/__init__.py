@@ -2,6 +2,7 @@
 
 from .commit_controller import (
     clear_commit_file_selection,
+    create_stash_from_commit_tab,
     create_commit_from_selection,
     get_selected_commit_paths,
     iter_commit_items,
@@ -14,6 +15,7 @@ from .commit_controller import (
     stage_selected_commit_hunk,
     stage_selected_commit_line,
     stage_selected_commit_file,
+    undo_last_commit_from_commit_tab,
     unstage_selected_commit_hunk,
     unstage_selected_commit_line,
     unstage_selected_commit_file,
@@ -108,10 +110,12 @@ __all__ = [
     "on_commit_file_selected",
     "select_all_commit_files",
     "clear_commit_file_selection",
+    "create_stash_from_commit_tab",
     "refresh_commit_diff",
     "stage_selected_commit_hunk",
     "stage_selected_commit_line",
     "stage_selected_commit_file",
+    "undo_last_commit_from_commit_tab",
     "unstage_selected_commit_hunk",
     "unstage_selected_commit_line",
     "unstage_selected_commit_file",
