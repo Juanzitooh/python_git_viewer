@@ -19,6 +19,21 @@ from .history_controller import (
     refresh_history_patch_view,
     reload_history_commits,
 )
+from .import_controller import (
+    apply_import_source_repo_from_combo,
+    clear_import_selection,
+    copy_selected_import_hashes,
+    get_selected_import_summaries,
+    import_selected_commits,
+    load_import_source_branches,
+    load_import_source_commits,
+    on_import_source_branch_changed,
+    on_import_source_repo_changed,
+    refresh_import_source_repos,
+    sync_import_target_label,
+    update_import_controls_state,
+    use_current_repo_as_import_source,
+)
 
 __all__ = [
     "clear_compare_view",
@@ -36,4 +51,17 @@ __all__ = [
     "load_history_commit_content",
     "on_history_file_selected",
     "refresh_history_patch_view",
+    "sync_import_target_label",
+    "clear_import_selection",
+    "refresh_import_source_repos",
+    "on_import_source_repo_changed",
+    "apply_import_source_repo_from_combo",
+    "use_current_repo_as_import_source",
+    "load_import_source_branches",
+    "on_import_source_branch_changed",
+    "load_import_source_commits",
+    "get_selected_import_summaries",
+    "copy_selected_import_hashes",
+    "import_selected_commits",
+    "update_import_controls_state",
 ]
