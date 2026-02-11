@@ -264,6 +264,9 @@ Legenda
 - [x] R7.4.1.3 Menus de contexto de repositorio no PySide6 (2026-02-11)
   Escopo: aplicar menu de contexto de repositorio no seletor global e na lista da aba Repositorios com acoes locais e atalhos GitHub.
   Aceite: clique direito no combo/lista de repositorios abre menu com abrir VS Code/pasta, copiar caminho e atalhos GitHub (repo/branch/commits/issues/actions/releases e copias de URL).
+- [x] R7.4.1.4 Fluxo de abrir PR na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar botao "Abrir PR" na aba Commit, habilitado quando o worktree estiver limpo, abrindo compare URL do GitHub para branch atual vs branch base padrao.
+  Aceite: com worktree limpo, usuario abre a pagina de criacao de PR no navegador sem montar URL manualmente.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
