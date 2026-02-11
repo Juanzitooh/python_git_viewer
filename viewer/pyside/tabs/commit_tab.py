@@ -54,6 +54,14 @@ def build_commit_tab(window: object) -> None:
     window.commit_unstage_selected_button.clicked.connect(window._unstage_selected_commit_file)
     top_layout.addWidget(window.commit_unstage_selected_button)
 
+    window.commit_stage_hunk_button = QPushButton("Stage bloco", top_row)
+    window.commit_stage_hunk_button.clicked.connect(window._stage_selected_commit_hunk)
+    top_layout.addWidget(window.commit_stage_hunk_button)
+
+    window.commit_unstage_hunk_button = QPushButton("Unstage bloco", top_row)
+    window.commit_unstage_hunk_button.clicked.connect(window._unstage_selected_commit_hunk)
+    top_layout.addWidget(window.commit_unstage_hunk_button)
+
     top_layout.addStretch(1)
     window.commit_selection_label = QLabel("Selecionados: 0/0", top_row)
     top_layout.addWidget(window.commit_selection_label)
@@ -109,6 +117,7 @@ def build_commit_tab(window: object) -> None:
     window.commit_diff_view = QPlainTextEdit(right_column)
     window.commit_diff_view.setReadOnly(True)
     window.commit_diff_view.setPlaceholderText("Selecione um arquivo para visualizar o diff.")
+    window.commit_diff_view.cursorPositionChanged.connect(window._on_commit_diff_cursor_changed)
     right_layout.addWidget(window.commit_diff_view, stretch=1)
 
     splitter.addWidget(left_column)

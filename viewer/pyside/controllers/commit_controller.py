@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem, QMessageBox
 
 from ...core.commit_ops import (
+    apply_patch_to_index as core_apply_patch_to_index,
     create_commit as core_create_commit,
     get_file_patch as core_get_file_patch,
     has_staged_changes as core_has_staged_changes,
@@ -12,6 +13,7 @@ from ...core.commit_ops import (
     unstage_all as core_unstage_all,
     unstage_paths as core_unstage_paths,
 )
+from ...core.diff_utils import build_patch_for_hunk, parse_diff_data
 
 
 def _sync_commit_pr_button_state(window: object, file_count: int) -> None:
@@ -52,12 +54,23 @@ def _sync_commit_stage_buttons(window: object) -> None:
     if not path:
         window.commit_stage_selected_button.setEnabled(False)
         window.commit_unstage_selected_button.setEnabled(False)
+        if hasattr(window, "commit_stage_hunk_button"):
+            window.commit_stage_hunk_button.setEnabled(False)
+        if hasattr(window, "commit_unstage_hunk_button"):
+            window.commit_unstage_hunk_button.setEnabled(False)
         return
     entry = window.commit_status_entries_by_path.get(path, {})
     has_unstaged = bool(entry.get("unstaged", False))
     has_staged = bool(entry.get("staged", False))
     window.commit_stage_selected_button.setEnabled(has_unstaged)
     window.commit_unstage_selected_button.setEnabled(has_staged)
+    selected_hunk = _selected_commit_hunk_index(window)
+    has_hunk = selected_hunk is not None
+    scope = str(getattr(window, "commit_diff_scope", "")).strip()
+    if hasattr(window, "commit_stage_hunk_button"):
+        window.commit_stage_hunk_button.setEnabled(has_hunk and scope == "unstaged")
+    if hasattr(window, "commit_unstage_hunk_button"):
+        window.commit_unstage_hunk_button.setEnabled(has_hunk and scope == "staged")
 
 
 def _restore_commit_selection(window: object, preferred_path: str) -> None:
@@ -95,11 +108,15 @@ def refresh_commit_files(window: object) -> None:
     window.commit_files_list.blockSignals(True)
     window.commit_files_list.clear()
     window.commit_status_entries_by_path = {}
+    window.commit_diff_scope = ""
     if not window.repo_path:
         window.commit_files_list.blockSignals(False)
         window.commit_selected_path = ""
         if hasattr(window, "commit_diff_view"):
             window.commit_diff_view.setPlainText("")
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
         _sync_commit_pr_button_state(window, 0)
         _sync_commit_stage_buttons(window)
         update_commit_selection_label(window)
@@ -111,6 +128,9 @@ def refresh_commit_files(window: object) -> None:
         window.commit_selected_path = ""
         if hasattr(window, "commit_diff_view"):
             window.commit_diff_view.setPlainText("")
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
         _sync_commit_pr_button_state(window, 0)
         _sync_commit_stage_buttons(window)
         QMessageBox.critical(window, "Commit", str(exc))
@@ -170,14 +190,28 @@ def refresh_commit_diff(window: object) -> None:
         return
     if not window.repo_path:
         window.commit_diff_view.setPlainText("")
+        window.commit_diff_scope = ""
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
         return
     path = _current_commit_file_path(window)
     if not path:
         window.commit_diff_view.setPlainText("(selecione um arquivo)")
+        window.commit_diff_scope = ""
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
+        _sync_commit_stage_buttons(window)
         return
     entry = window.commit_status_entries_by_path.get(path)
     if entry is None:
         window.commit_diff_view.setPlainText("(arquivo não encontrado no status atual)")
+        window.commit_diff_scope = ""
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
+        _sync_commit_stage_buttons(window)
         return
     word_diff = bool(getattr(window, "commit_word_diff_check", None) and window.commit_word_diff_check.isChecked())
     status_code = str(entry.get("status", "")).strip()
@@ -187,6 +221,7 @@ def refresh_commit_diff(window: object) -> None:
     try:
         patch = ""
         if untracked or has_unstaged:
+            window.commit_diff_scope = "unstaged"
             patch = core_get_file_patch(
                 window.repo_path,
                 path,
@@ -195,6 +230,7 @@ def refresh_commit_diff(window: object) -> None:
                 untracked=untracked,
             )
         if not patch and has_staged:
+            window.commit_diff_scope = "staged"
             patch = core_get_file_patch(
                 window.repo_path,
                 path,
@@ -204,8 +240,61 @@ def refresh_commit_diff(window: object) -> None:
     except RuntimeError as exc:
         QMessageBox.critical(window, "Commit", str(exc))
         window.commit_diff_view.setPlainText("")
+        window.commit_diff_scope = ""
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
+        _sync_commit_stage_buttons(window)
         return
-    window.commit_diff_view.setPlainText(patch or "(sem diff para este arquivo)")
+    display_patch = patch or "(sem diff para este arquivo)"
+    window.commit_diff_view.setPlainText(display_patch)
+    if patch:
+        _build_commit_diff_maps(window, patch)
+    else:
+        window.commit_diff_data = None
+        window.commit_diff_hunk_by_line = {}
+        window.commit_diff_selected_line = 0
+    _sync_commit_stage_buttons(window)
+
+
+def _build_commit_diff_maps(window: object, patch: str) -> None:
+    diff_data = parse_diff_data(patch)
+    line_to_hunk: dict[int, int] = {}
+    line_no = 1
+    for _ in diff_data.header_lines:
+        line_no += 1
+    for hunk_index, hunk in enumerate(diff_data.hunks):
+        line_to_hunk[line_no] = hunk_index
+        line_no += 1
+        for _line in hunk.lines:
+            line_to_hunk[line_no] = hunk_index
+            line_no += 1
+    window.commit_diff_data = diff_data
+    window.commit_diff_hunk_by_line = line_to_hunk
+    if line_to_hunk:
+        window.commit_diff_selected_line = min(line_to_hunk.keys())
+
+
+def _selected_commit_hunk_index(window: object) -> int | None:
+    line_to_hunk = getattr(window, "commit_diff_hunk_by_line", {})
+    if not line_to_hunk:
+        return None
+    selected_line = int(getattr(window, "commit_diff_selected_line", 0) or 0)
+    if selected_line in line_to_hunk:
+        return int(line_to_hunk[selected_line])
+    smaller = [line for line in line_to_hunk if line <= selected_line]
+    if not smaller:
+        return None
+    nearest = max(smaller)
+    return int(line_to_hunk[nearest])
+
+
+def on_commit_diff_cursor_changed(window: object) -> None:
+    if not hasattr(window, "commit_diff_view"):
+        return
+    cursor = window.commit_diff_view.textCursor()
+    window.commit_diff_selected_line = cursor.blockNumber() + 1
+    _sync_commit_stage_buttons(window)
 
 
 def stage_selected_commit_file(window: object) -> None:
@@ -242,6 +331,66 @@ def unstage_selected_commit_file(window: object) -> None:
         QMessageBox.critical(window, "Commit", str(exc))
         return
     window._set_status(f"Arquivo removido do stage: {path}")
+    window.commit_selected_path = path
+    refresh_commit_files(window)
+    window._refresh_repo_state_ui()
+    window._refresh_workspace_tree()
+
+
+def stage_selected_commit_hunk(window: object) -> None:
+    if not window.repo_path:
+        return
+    if str(getattr(window, "commit_diff_scope", "")).strip() != "unstaged":
+        QMessageBox.information(window, "Commit", "Selecione um diff unstaged para stage do bloco.")
+        return
+    diff_data = getattr(window, "commit_diff_data", None)
+    if diff_data is None:
+        QMessageBox.information(window, "Commit", "Selecione um arquivo com diff disponível.")
+        return
+    hunk_index = _selected_commit_hunk_index(window)
+    if hunk_index is None:
+        QMessageBox.information(window, "Commit", "Selecione um bloco de diff.")
+        return
+    patch = build_patch_for_hunk(diff_data, hunk_index)
+    if not patch:
+        return
+    try:
+        core_apply_patch_to_index(window.repo_path, patch, reverse=False)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Commit", str(exc))
+        return
+    path = _current_commit_file_path(window)
+    window._set_status("Bloco adicionado ao stage.")
+    window.commit_selected_path = path
+    refresh_commit_files(window)
+    window._refresh_repo_state_ui()
+    window._refresh_workspace_tree()
+
+
+def unstage_selected_commit_hunk(window: object) -> None:
+    if not window.repo_path:
+        return
+    if str(getattr(window, "commit_diff_scope", "")).strip() != "staged":
+        QMessageBox.information(window, "Commit", "Selecione um diff staged para unstage do bloco.")
+        return
+    diff_data = getattr(window, "commit_diff_data", None)
+    if diff_data is None:
+        QMessageBox.information(window, "Commit", "Selecione um arquivo com diff disponível.")
+        return
+    hunk_index = _selected_commit_hunk_index(window)
+    if hunk_index is None:
+        QMessageBox.information(window, "Commit", "Selecione um bloco de diff.")
+        return
+    patch = build_patch_for_hunk(diff_data, hunk_index)
+    if not patch:
+        return
+    try:
+        core_apply_patch_to_index(window.repo_path, patch, reverse=True)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Commit", str(exc))
+        return
+    path = _current_commit_file_path(window)
+    window._set_status("Bloco removido do stage.")
     window.commit_selected_path = path
     refresh_commit_files(window)
     window._refresh_repo_state_ui()

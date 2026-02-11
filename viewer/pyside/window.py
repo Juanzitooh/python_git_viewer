@@ -46,6 +46,7 @@ from .controllers import (
     load_repo_selector_items,
     load_import_source_branches,
     load_import_source_commits,
+    on_commit_diff_cursor_changed,
     on_commit_file_item_changed,
     on_commit_file_selected,
     on_compare_action_changed,
@@ -83,6 +84,7 @@ from .controllers import (
     pick_settings_workspace_root,
     save_settings_from_tab,
     select_all_commit_files,
+    stage_selected_commit_hunk,
     stage_selected_commit_file,
     sync_workspace_tree_selection,
     sync_import_target_label,
@@ -90,6 +92,7 @@ from .controllers import (
     update_commit_selection_label,
     update_import_controls_state,
     use_current_repo_as_import_source,
+    unstage_selected_commit_hunk,
     unstage_selected_commit_file,
     copy_selected_import_hashes,
     fetch_repo,
@@ -618,6 +621,9 @@ class QtShellWindow(QMainWindow):
     def _on_commit_file_item_changed(self, _item: QListWidgetItem) -> None:
         on_commit_file_item_changed(self, _item)
 
+    def _on_commit_diff_cursor_changed(self) -> None:
+        on_commit_diff_cursor_changed(self)
+
     def _on_commit_file_selected(self) -> None:
         on_commit_file_selected(self)
 
@@ -629,6 +635,12 @@ class QtShellWindow(QMainWindow):
 
     def _unstage_selected_commit_file(self) -> None:
         unstage_selected_commit_file(self)
+
+    def _stage_selected_commit_hunk(self) -> None:
+        stage_selected_commit_hunk(self)
+
+    def _unstage_selected_commit_hunk(self) -> None:
+        unstage_selected_commit_hunk(self)
 
     def _select_all_commit_files(self) -> None:
         select_all_commit_files(self)

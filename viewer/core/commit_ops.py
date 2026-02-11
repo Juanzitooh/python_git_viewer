@@ -138,3 +138,23 @@ def get_file_patch(
         args.append("--word-diff=plain")
     args.extend(["--", path])
     return run_git(repo_path, args)
+
+
+def apply_patch_to_index(repo_path: str, patch: str, *, reverse: bool = False) -> None:
+    payload = patch.strip()
+    if not payload:
+        return
+    cmd = ["git", "-C", repo_path, "apply", "--recount", "--unidiff-zero", "--cached"]
+    if reverse:
+        cmd.append("-R")
+    result = subprocess.run(
+        cmd,
+        input=payload + "\n",
+        text=True,
+        capture_output=True,
+        errors="replace",
+    )
+    if result.returncode == 0:
+        return
+    stderr = result.stderr.strip() or "falha ao aplicar patch"
+    raise RuntimeError(stderr)
