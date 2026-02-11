@@ -3,10 +3,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from ..core.git_client import is_git_repo
+from ..core.github_urls import (
+    build_commit_url as core_build_commit_url,
+    get_repo_github_base_url as core_get_repo_github_base_url,
+)
 from ..core.models import CommitSummary
 from ..core.repo_workspace import default_repo_scan_root
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
@@ -70,7 +76,9 @@ from .controllers import (
     clear_history_view,
     get_history_limit_value,
     load_history_commit_content,
+    on_history_commit_context_menu,
     on_history_commit_selected,
+    on_history_file_context_menu,
     on_history_file_selected,
     refresh_history_patch_view,
     reload_history_commits,
@@ -86,13 +94,14 @@ from .tabs import (
 )
 
 try:
-    from PySide6.QtCore import Qt
-    from PySide6.QtGui import QCloseEvent, QFont
+    from PySide6.QtCore import QPoint, Qt, QUrl
+    from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont
     from PySide6.QtWidgets import (
         QApplication,
         QListWidgetItem,
         QLabel,
         QMainWindow,
+        QMessageBox,
         QTabWidget,
         QTreeWidgetItem,
         QVBoxLayout,
@@ -389,11 +398,17 @@ class QtShellWindow(QMainWindow):
     def _on_history_commit_selected(self) -> None:
         on_history_commit_selected(self)
 
+    def _on_history_commit_context_menu(self, pos: QPoint) -> None:
+        on_history_commit_context_menu(self, pos)
+
     def _load_history_commit_content(self, commit_hash: str) -> None:
         load_history_commit_content(self, commit_hash)
 
     def _on_history_file_selected(self) -> None:
         on_history_file_selected(self)
+
+    def _on_history_file_context_menu(self, pos: QPoint) -> None:
+        on_history_file_context_menu(self, pos)
 
     def _refresh_history_patch_view(self) -> None:
         refresh_history_patch_view(self)
@@ -565,6 +580,119 @@ class QtShellWindow(QMainWindow):
         self.settings_data["last_tab_index"] = self.tabs.currentIndex()
         self.settings_data["repo_scan_root"] = self.repo_scan_root
         save_settings(self.settings_path, self.settings_data)
+
+    def _get_resolved_repo_path(self, repo_path: str = "") -> str:
+        target = normalize_repo_path(repo_path) if repo_path else self.repo_path
+        normalized = normalize_repo_path(target) if target else ""
+        if not normalized or not os.path.isdir(normalized) or not is_git_repo(normalized):
+            return ""
+        return normalized
+
+    def _resolve_repo_file_path(self, repo_relative_path: str, repo_path: str = "") -> str:
+        repo_root = self._get_resolved_repo_path(repo_path)
+        relative = repo_relative_path.replace("\\", "/").strip().lstrip("/")
+        if not repo_root or not relative:
+            return ""
+        absolute_path = os.path.abspath(os.path.join(repo_root, relative))
+        try:
+            if os.path.commonpath([repo_root, absolute_path]) != repo_root:
+                return ""
+        except ValueError:
+            return ""
+        return absolute_path
+
+    def _copy_to_clipboard(self, payload: str, *, status: str) -> bool:
+        value = payload.strip()
+        if not value:
+            return False
+        QApplication.clipboard().setText(value)
+        self._set_status(status)
+        return True
+
+    def _open_url_in_browser(self, url: str) -> bool:
+        target = url.strip()
+        if not target:
+            return False
+        ok = QDesktopServices.openUrl(QUrl(target))
+        if not ok:
+            QMessageBox.warning(self, "Git Viewer", f"Nao foi possivel abrir URL:\n{target}")
+            return False
+        return True
+
+    def _open_local_path_in_explorer(self, path: str) -> bool:
+        normalized = os.path.abspath(path)
+        if not os.path.exists(normalized):
+            QMessageBox.warning(self, "Git Viewer", f"Caminho nao encontrado:\n{normalized}")
+            return False
+        ok = QDesktopServices.openUrl(QUrl.fromLocalFile(normalized))
+        if not ok:
+            QMessageBox.warning(self, "Git Viewer", f"Nao foi possivel abrir caminho:\n{normalized}")
+            return False
+        return True
+
+    def _open_repo_file_in_vscode(self, repo_relative_path: str, repo_path: str = "") -> bool:
+        absolute_path = self._resolve_repo_file_path(repo_relative_path, repo_path)
+        if not absolute_path:
+            QMessageBox.warning(self, "VS Code", "Arquivo invalido para abrir no VS Code.")
+            return False
+        code_bin = shutil.which("code")
+        if not code_bin:
+            QMessageBox.warning(self, "VS Code", "Comando 'code' nao encontrado no PATH.")
+            return False
+        try:
+            subprocess.Popen([code_bin, "--goto", absolute_path])
+        except OSError as exc:
+            QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
+            return False
+        return True
+
+    def _open_repo_file_in_explorer(self, repo_relative_path: str, repo_path: str = "") -> bool:
+        absolute_path = self._resolve_repo_file_path(repo_relative_path, repo_path)
+        if not absolute_path:
+            QMessageBox.warning(self, "Git Viewer", "Arquivo invalido para abrir na pasta.")
+            return False
+        if os.path.isdir(absolute_path):
+            target = absolute_path
+        elif os.path.exists(absolute_path):
+            target = os.path.dirname(absolute_path)
+        else:
+            target = os.path.dirname(absolute_path)
+            if not os.path.isdir(target):
+                target = self._get_resolved_repo_path(repo_path or self.repo_path)
+        if not target:
+            QMessageBox.warning(self, "Git Viewer", "Pasta do arquivo nao encontrada.")
+            return False
+        return self._open_local_path_in_explorer(target)
+
+    def _get_repo_github_base_url(self, repo_path: str = "") -> str:
+        resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
+        if not resolved_repo:
+            raise RuntimeError("Repositorio invalido para acao de GitHub.")
+        return core_get_repo_github_base_url(resolved_repo)
+
+    def _open_commit_in_github(self, commit_hash: str, repo_path: str = "") -> bool:
+        selected_hash = commit_hash.strip()
+        if not selected_hash:
+            QMessageBox.information(self, "GitHub", "Selecione um commit valido.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(core_build_commit_url(repo_base_url, selected_hash))
+
+    def _copy_commit_github_url(self, commit_hash: str, repo_path: str = "") -> bool:
+        selected_hash = commit_hash.strip()
+        if not selected_hash:
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        url = core_build_commit_url(repo_base_url, selected_hash)
+        return self._copy_to_clipboard(url, status="URL do commit copiada.")
 
     def _set_status(self, text: str) -> None:
         self.status.showMessage(text, 5000)

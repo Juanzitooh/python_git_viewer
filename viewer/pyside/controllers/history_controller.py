@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem, QMessageBox
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QListWidgetItem, QMenu, QMessageBox
 
 from ...core.commit_content import (
     get_commit_patch as core_get_commit_patch,
@@ -160,3 +160,129 @@ def refresh_history_patch_view(window: object) -> None:
         window.history_patch_view.setPlainText("")
         return
     window.history_patch_view.setPlainText(patch)
+
+
+def _get_context_commit_hash(window: object, pos: QPoint) -> str:
+    item = window.history_commits_list.itemAt(pos)
+    if item is not None:
+        value = item.data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+        if commit_hash:
+            return commit_hash
+    return window.history_current_commit_hash.strip()
+
+
+def _copy_commit_hash(window: object, commit_hash: str) -> None:
+    if window._copy_to_clipboard(commit_hash, status="Hash do commit copiado."):
+        return
+    QMessageBox.information(window, "Historico", "Nao foi possivel copiar o hash do commit.")
+
+
+def _copy_commit_files_list(window: object, commit_hash: str) -> None:
+    try:
+        files = core_list_commit_files(window.repo_path, commit_hash)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Historico", str(exc))
+        return
+    payload = "\n".join(files).strip()
+    if window._copy_to_clipboard(payload, status="Lista de arquivos copiada."):
+        return
+    QMessageBox.information(window, "Historico", "Esse commit nao possui arquivos listaveis.")
+
+
+def _copy_commit_patch(window: object, commit_hash: str) -> None:
+    try:
+        patch = core_get_commit_patch(window.repo_path, commit_hash, path=None, word_diff=False)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Historico", str(exc))
+        return
+    if window._copy_to_clipboard(patch, status="Patch do commit copiado."):
+        return
+    QMessageBox.information(window, "Historico", "Nao foi possivel copiar o patch do commit.")
+
+
+def _copy_file_patch(window: object, commit_hash: str, file_path: str) -> None:
+    try:
+        patch = core_get_commit_patch(window.repo_path, commit_hash, path=file_path, word_diff=False)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Historico", str(exc))
+        return
+    if window._copy_to_clipboard(patch, status="Patch do arquivo copiado."):
+        return
+    QMessageBox.information(window, "Historico", "Nao foi possivel copiar o patch do arquivo.")
+
+
+def on_history_commit_context_menu(window: object, pos: QPoint) -> None:
+    commit_hash = _get_context_commit_hash(window, pos)
+    if not commit_hash:
+        return
+
+    menu = QMenu(window.history_commits_list)
+    action_copy_hash = menu.addAction("Copiar hash")
+    action_copy_patch = menu.addAction("Copiar patch completo")
+    action_copy_files = menu.addAction("Copiar lista de arquivos")
+    menu.addSeparator()
+    action_open_github = menu.addAction("Abrir commit no GitHub")
+    action_copy_github = menu.addAction("Copiar URL do commit")
+
+    selected_action = menu.exec(window.history_commits_list.mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_copy_hash:
+        _copy_commit_hash(window, commit_hash)
+        return
+    if selected_action == action_copy_patch:
+        _copy_commit_patch(window, commit_hash)
+        return
+    if selected_action == action_copy_files:
+        _copy_commit_files_list(window, commit_hash)
+        return
+    if selected_action == action_open_github:
+        window._open_commit_in_github(commit_hash)
+        return
+    if selected_action == action_copy_github:
+        window._copy_commit_github_url(commit_hash)
+
+
+def on_history_file_context_menu(window: object, pos: QPoint) -> None:
+    commit_hash = window.history_current_commit_hash.strip()
+    if not commit_hash:
+        return
+    item = window.history_files_list.itemAt(pos)
+    if item is not None:
+        value = item.data(Qt.ItemDataRole.UserRole)
+        file_path = str(value).strip() if value is not None else ""
+    else:
+        file_path = window.history_current_file_path.strip()
+
+    menu = QMenu(window.history_files_list)
+    action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
+    action_open_folder = menu.addAction("Abrir na pasta")
+    action_copy_relative = menu.addAction("Copiar caminho relativo")
+    menu.addSeparator()
+    action_copy_file_patch = menu.addAction("Copiar patch do arquivo")
+    action_copy_commit_patch = menu.addAction("Copiar patch completo")
+
+    has_file = bool(file_path)
+    action_open_vscode.setEnabled(has_file)
+    action_open_folder.setEnabled(has_file)
+    action_copy_relative.setEnabled(has_file)
+    action_copy_file_patch.setEnabled(has_file)
+
+    selected_action = menu.exec(window.history_files_list.mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_open_vscode:
+        window._open_repo_file_in_vscode(file_path)
+        return
+    if selected_action == action_open_folder:
+        window._open_repo_file_in_explorer(file_path)
+        return
+    if selected_action == action_copy_relative:
+        window._copy_to_clipboard(file_path, status="Caminho relativo copiado.")
+        return
+    if selected_action == action_copy_file_patch:
+        _copy_file_patch(window, commit_hash, file_path)
+        return
+    if selected_action == action_copy_commit_patch:
+        _copy_commit_patch(window, commit_hash)

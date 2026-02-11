@@ -63,6 +63,8 @@ def build_history_tab(window: object) -> None:
 
     window.history_commits_list = QListWidget(body_splitter)
     window.history_commits_list.itemSelectionChanged.connect(window._on_history_commit_selected)
+    window.history_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.history_commits_list.customContextMenuRequested.connect(window._on_history_commit_context_menu)
 
     right_splitter = QSplitter(Qt.Orientation.Vertical, body_splitter)
     right_splitter.setChildrenCollapsible(False)
@@ -72,6 +74,8 @@ def build_history_tab(window: object) -> None:
 
     window.history_files_list = QListWidget(right_splitter)
     window.history_files_list.itemSelectionChanged.connect(window._on_history_file_selected)
+    window.history_files_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.history_files_list.customContextMenuRequested.connect(window._on_history_file_context_menu)
 
     window.history_patch_view = QPlainTextEdit(right_splitter)
     window.history_patch_view.setReadOnly(True)
