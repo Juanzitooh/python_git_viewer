@@ -97,6 +97,8 @@ def build_compare_tab(window: object) -> None:
     body_splitter.setChildrenCollapsible(False)
 
     window.compare_commits_list = QListWidget(body_splitter)
+    window.compare_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.compare_commits_list.customContextMenuRequested.connect(window._on_compare_commit_context_menu)
     window.compare_files_list = QListWidget(body_splitter)
     window.compare_files_list.itemSelectionChanged.connect(window._on_compare_file_selected)
     window.compare_files_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

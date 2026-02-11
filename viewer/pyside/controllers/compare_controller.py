@@ -12,6 +12,10 @@ from ...core.branch_compare import (
     load_compare_file_stats as core_load_compare_file_stats,
 )
 from ...core.cherry_pick_ops import has_unmerged_conflicts as core_has_unmerged_conflicts
+from ...core.commit_content import (
+    get_commit_patch as core_get_commit_patch,
+    list_commit_files as core_list_commit_files,
+)
 from ...core.commit_ops import list_modified_files as core_list_modified_files
 from ...core.git_client import run_git
 from ...core.repo_state import (
@@ -151,7 +155,9 @@ def refresh_compare_view(window: object) -> None:
 
         window.compare_commits_list.clear()
         for line in commits:
-            window.compare_commits_list.addItem(line)
+            item = QListWidgetItem(line, window.compare_commits_list)
+            commit_hash = line.split(" ", 1)[0].strip() if line else ""
+            item.setData(Qt.ItemDataRole.UserRole, commit_hash)
 
         window.compare_files_list.blockSignals(True)
         window.compare_files_list.clear()
@@ -455,3 +461,57 @@ def on_compare_file_context_menu(window: object, pos: QPoint) -> None:
         return
     if selected_action == action_copy_patch:
         _copy_compare_file_patch(window, selected_path)
+
+
+def on_compare_commit_context_menu(window: object, pos: QPoint) -> None:
+    item = window.compare_commits_list.itemAt(pos)
+    if item is None:
+        selected_items = window.compare_commits_list.selectedItems()
+        if not selected_items:
+            return
+        item = selected_items[-1]
+    value = item.data(Qt.ItemDataRole.UserRole)
+    commit_hash = str(value).strip() if value is not None else ""
+    if not commit_hash:
+        return
+
+    menu = QMenu(window.compare_commits_list)
+    action_open_github = menu.addAction("Abrir commit no GitHub")
+    action_copy_github = menu.addAction("Copiar URL do commit")
+    menu.addSeparator()
+    action_copy_hash = menu.addAction("Copiar hash completo")
+    action_copy_files = menu.addAction("Copiar lista de arquivos")
+    action_copy_patch = menu.addAction("Copiar patch completo")
+
+    selected_action = menu.exec(window.compare_commits_list.mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_open_github:
+        window._open_commit_in_github(commit_hash, window.repo_path)
+        return
+    if selected_action == action_copy_github:
+        window._copy_commit_github_url(commit_hash, window.repo_path)
+        return
+    if selected_action == action_copy_hash:
+        window._copy_to_clipboard(commit_hash, status="Hash do commit copiado.")
+        return
+    if selected_action == action_copy_files:
+        try:
+            files = core_list_commit_files(window.repo_path, commit_hash)
+        except RuntimeError as exc:
+            QMessageBox.critical(window, "Comparar", str(exc))
+            return
+        payload = "\n".join(files).strip()
+        if window._copy_to_clipboard(payload, status="Lista de arquivos do commit copiada."):
+            return
+        QMessageBox.information(window, "Comparar", "Esse commit nao possui arquivos listaveis.")
+        return
+    if selected_action == action_copy_patch:
+        try:
+            patch = core_get_commit_patch(window.repo_path, commit_hash, path=None, word_diff=False)
+        except RuntimeError as exc:
+            QMessageBox.critical(window, "Comparar", str(exc))
+            return
+        if window._copy_to_clipboard(patch, status="Patch completo do commit copiado."):
+            return
+        QMessageBox.information(window, "Comparar", "Sem patch para copiar neste commit.")

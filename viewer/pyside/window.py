@@ -49,6 +49,7 @@ from .controllers import (
     on_commit_file_item_changed,
     on_compare_action_changed,
     on_compare_branches_changed,
+    on_compare_commit_context_menu,
     on_compare_file_selected,
     on_branch_changed,
     on_workspace_item_double_clicked,
@@ -511,6 +512,9 @@ class QtShellWindow(QMainWindow):
 
     def _on_compare_file_selected(self) -> None:
         on_compare_file_selected(self)
+
+    def _on_compare_commit_context_menu(self, pos: QPoint) -> None:
+        on_compare_commit_context_menu(self, pos)
 
     def _on_compare_file_context_menu(self, pos: QPoint) -> None:
         on_compare_file_context_menu(self, pos)
