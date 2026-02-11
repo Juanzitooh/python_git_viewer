@@ -282,6 +282,9 @@ Legenda
 - [x] R7.4.1.9 Commit em PySide6 com status real, diff e stage/unstage por arquivo (2026-02-11)
   Escopo: evoluir aba Commit do PySide6 para listar estado real de stage (`[x]/[~]/[ ]`), exibir preview de diff do arquivo selecionado e permitir stage/unstage direto do arquivo selecionado.
   Aceite: usuario enxerga estado staged/unstaged por arquivo no PySide6, visualiza diff (normal/palavra) e consegue alternar stage por arquivo sem sair da aba.
+- [x] R7.4.1.10 Stage/unstage por bloco (hunk) na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar acoes de stage/unstage por bloco do diff selecionado na aba Commit, com aplicacao de patch no index via `git apply --cached`.
+  Aceite: com diff selecionado, usuario consegue aplicar ou reverter hunk no stage direto pelo PySide6 sem usar CLI.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
