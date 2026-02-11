@@ -213,7 +213,7 @@ Legenda
 - [x] R7.4.0 Polimento inicial do shell PySide6 (2026-02-10)
   Escopo: evoluir layout visual (top bar, tabs, splitters nas abas criticas) e adicionar estado global de carregamento com badge/progresso para operacoes mais pesadas.
   Aceite: interface PySide6 fica mais consistente visualmente e apresenta feedback claro durante scan/fetch/pull/push/carga de historico/importar/comparar.
-- [~] R7.4.3 Modularizacao da UI PySide6 por modulos
+- [x] R7.4.3 Modularizacao da UI PySide6 por modulos (2026-02-10)
   Escopo: reduzir acoplamento de `shell.py` separando montagem visual, componentes compartilhados e controladores por fluxo, mantendo paridade funcional no meio da migracao.
   Aceite: arquitetura em modulos permite evoluir cada aba/fluxo com menor risco, com `shell.py` atuando como orquestrador leve.
 - [x] R7.4.3.1 Extrair builders das abas para `viewer/pyside/tabs/` (2026-02-10)
@@ -222,7 +222,7 @@ Legenda
 - [x] R7.4.3.2 Extrair barra global e status para modulo dedicado (2026-02-10)
   Escopo: mover criacao e wiring da barra superior (repo/branch/sync) e status bar (mensagens/busy) para modulo de composicao reutilizavel.
   Aceite: `shell.py` passa a apenas conectar callbacks e estado; montagem visual da barra fica isolada.
-- [~] R7.4.3.3 Extrair controladores de estado por fluxo
+- [x] R7.4.3.3 Extrair controladores de estado por fluxo (2026-02-10)
   Escopo: separar em controladores os fluxos de repositorio, historico, importacao e comparacao para reduzir metodos longos na janela principal.
   Aceite: handlers de evento ficam por dominio, com responsabilidades claras e menor acoplamento entre abas.
 - [x] R7.4.3.3.1 Extrair controlador do Historico em PySide6 (2026-02-10)
@@ -234,7 +234,7 @@ Legenda
 - [x] R7.4.3.3.3 Extrair controlador da aba Importar em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/import_controller.py` o fluxo de origem/branch, carga de commits, copia de hashes e importacao por cherry-pick.
   Aceite: callbacks da aba Importar seguem funcionais via wrappers no `shell.py`, mantendo o fluxo completo com atualizacao das abas relacionadas.
-- [~] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao
+- [x] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao (2026-02-10)
   Escopo: consolidar a janela principal como ponto de inicializacao, roteamento de eventos e persistencia, removendo logica de montagem/fluxo espalhada.
   Aceite: arquivo principal do PySide6 fica significativamente menor e com manutencao simplificada.
 - [x] R7.4.3.4.1 Extrair controlador da aba Commit em PySide6 (2026-02-10)
@@ -249,7 +249,7 @@ Legenda
 - [x] R7.4.3.4.4 Extrair controlador de branch/sincronizacao em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/sync_controller.py` os fluxos de checkout de branch, criacao de branch e acoes remotas fetch/pull/push.
   Aceite: operacoes de branch/sincronizacao seguem funcionais via wrappers no `shell.py`, mantendo feedback de erro/estado e atualizacoes de UI.
-- [ ] R7.4.3.4.5 Limpeza final do shell para bootstrap
+- [x] R7.4.3.4.5 Limpeza final do shell para bootstrap (2026-02-10)
   Escopo: remover wrappers redundantes e consolidar no `shell.py` apenas inicializacao da janela, wiring principal de sinais e persistencia minima.
   Aceite: `shell.py` vira ponto de entrada enxuto e previsivel, com baixa responsabilidade de dominio.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
