@@ -18,10 +18,6 @@ from ..core.cherry_pick_ops import (
     cherry_pick_commit as core_cherry_pick_commit,
     has_unmerged_conflicts as core_has_unmerged_conflicts,
 )
-from ..core.commit_content import (
-    get_commit_patch as core_get_commit_patch,
-    list_commit_files as core_list_commit_files,
-)
 from ..core.commit_ops import (
     create_commit as core_create_commit,
     has_staged_changes as core_has_staged_changes,
@@ -29,7 +25,7 @@ from ..core.commit_ops import (
     stage_paths as core_stage_paths,
     unstage_all as core_unstage_all,
 )
-from ..core.git_client import is_git_repo, load_commit_details, load_commit_summaries
+from ..core.git_client import is_git_repo, load_commit_summaries
 from ..core.models import CommitFilters, CommitSummary
 from ..core.remote_ops import (
     fetch_all_prune as core_fetch_all_prune,
@@ -45,6 +41,24 @@ from ..core.repo_state import (
 )
 from ..core.repo_workspace import default_repo_scan_root, discover_git_repositories
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
+from .controllers import (
+    clear_history_view,
+    get_history_limit_value,
+    load_history_commit_content,
+    on_history_commit_selected,
+    on_history_file_selected,
+    refresh_history_patch_view,
+    reload_history_commits,
+)
+from .layout import build_status_bar, build_top_bar
+from .tabs import (
+    build_commit_tab,
+    build_compare_tab,
+    build_history_tab,
+    build_import_tab,
+    build_repositories_tab,
+    build_settings_tab,
+)
 
 try:
     from PySide6.QtCore import Qt
@@ -55,7 +69,6 @@ try:
         QCheckBox,
         QFileDialog,
         QComboBox,
-        QHBoxLayout,
         QInputDialog,
         QListWidget,
         QListWidgetItem,
@@ -64,11 +77,8 @@ try:
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
-        QProgressBar,
         QPushButton,
         QSizePolicy,
-        QSplitter,
-        QStatusBar,
         QTabWidget,
         QTreeWidget,
         QTreeWidgetItem,
@@ -165,49 +175,7 @@ class QtShellWindow(QMainWindow):
         root_layout.setContentsMargins(8, 8, 8, 8)
         root_layout.setSpacing(8)
         self.setCentralWidget(root)
-
-        bar = QWidget(root)
-        bar.setObjectName("TopBar")
-        bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(10, 8, 10, 8)
-        bar_layout.setSpacing(6)
-
-        self.repo_combo = QComboBox(bar)
-        self.repo_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.repo_combo.currentIndexChanged.connect(self._on_repo_changed)
-        bar_layout.addWidget(self.repo_combo, stretch=1)
-
-        self.branch_combo = QComboBox(bar)
-        self.branch_combo.setMinimumWidth(180)
-        self.branch_combo.currentIndexChanged.connect(self._on_branch_changed)
-        bar_layout.addWidget(QLabel("Branch:", bar))
-        bar_layout.addWidget(self.branch_combo)
-
-        self.new_branch_button = QPushButton("Nova branch", bar)
-        self.new_branch_button.clicked.connect(self._create_new_branch)
-        bar_layout.addWidget(self.new_branch_button)
-
-        bar_layout.addStretch(1)
-
-        self.fetch_button = QPushButton("Fetch", bar)
-        self.fetch_button.clicked.connect(self._fetch_repo)
-        bar_layout.addWidget(self.fetch_button)
-
-        self.pull_button = QPushButton("Pull", bar)
-        self.pull_button.setProperty("role", "primary")
-        self.pull_button.clicked.connect(self._pull_repo)
-        bar_layout.addWidget(self.pull_button)
-
-        self.push_button = QPushButton("Push", bar)
-        self.push_button.setProperty("role", "primary")
-        self.push_button.clicked.connect(self._push_repo)
-        bar_layout.addWidget(self.push_button)
-
-        self.sync_label = QLabel("Ahead: 0 | Behind: 0", bar)
-        self.sync_label.setObjectName("SyncChip")
-        bar_layout.addWidget(self.sync_label)
-
-        root_layout.addWidget(bar)
+        build_top_bar(self, root_layout, root)
 
         self.tabs = QTabWidget(root)
         self.tabs.setDocumentMode(True)
@@ -235,18 +203,7 @@ class QtShellWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         root_layout.addWidget(self.tabs, stretch=1)
 
-        self.status = QStatusBar(root)
-        self.setStatusBar(self.status)
-        self.status_busy_label = QLabel("Pronto", self.status)
-        self.status_busy_label.setObjectName("BusyBadge")
-        self.status_busy_progress = QProgressBar(self.status)
-        self.status_busy_progress.setObjectName("BusyBar")
-        self.status_busy_progress.setMaximum(0)
-        self.status_busy_progress.setFixedWidth(120)
-        self.status_busy_progress.setTextVisible(False)
-        self.status_busy_progress.setVisible(False)
-        self.status.addPermanentWidget(self.status_busy_label)
-        self.status.addPermanentWidget(self.status_busy_progress)
+        build_status_bar(self, root)
         self._set_status("PySide6 shell iniciado.")
         self._set_busy_message("Pronto")
 
@@ -402,381 +359,37 @@ class QtShellWindow(QMainWindow):
         layout.addStretch(1)
 
     def _build_repositories_tab(self) -> None:
-        layout = QVBoxLayout(self.repositories_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        root_row = QWidget(self.repositories_tab)
-        root_row_layout = QHBoxLayout(root_row)
-        root_row_layout.setContentsMargins(0, 0, 0, 0)
-        root_row_layout.setSpacing(6)
-
-        root_row_layout.addWidget(QLabel("Raiz local do Workspace GitHub:", root_row))
-        self.workspace_root_edit = QLineEdit(root_row)
-        self.workspace_root_edit.setText(self.repo_scan_root)
-        self.workspace_root_edit.editingFinished.connect(self._on_workspace_root_edited)
-        root_row_layout.addWidget(self.workspace_root_edit, stretch=1)
-
-        self.workspace_root_pick_button = QPushButton("Pasta...", root_row)
-        self.workspace_root_pick_button.clicked.connect(self._pick_workspace_root)
-        root_row_layout.addWidget(self.workspace_root_pick_button)
-
-        self.workspace_rescan_button = QPushButton("Reescanear", root_row)
-        self.workspace_rescan_button.clicked.connect(self._scan_workspace_repos)
-        root_row_layout.addWidget(self.workspace_rescan_button)
-
-        layout.addWidget(root_row)
-
-        self.workspace_scan_status_label = QLabel("Aguardando scan do workspace...", self.repositories_tab)
-        layout.addWidget(self.workspace_scan_status_label)
-
-        self.workspace_tree = QTreeWidget(self.repositories_tab)
-        self.workspace_tree.setRootIsDecorated(False)
-        self.workspace_tree.setAlternatingRowColors(True)
-        self.workspace_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
-        self.workspace_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
-        self.workspace_tree.setColumnCount(6)
-        self.workspace_tree.setHeaderLabels(["Repositório", "Caminho", "Branch", "Ahead", "Behind", "Status"])
-        self.workspace_tree.itemSelectionChanged.connect(self._on_workspace_selection_changed)
-        self.workspace_tree.itemDoubleClicked.connect(self._on_workspace_item_double_clicked)
-        layout.addWidget(self.workspace_tree, stretch=1)
-
-        self._scan_workspace_repos()
+        build_repositories_tab(self)
 
     def _build_commit_tab(self) -> None:
-        layout = QVBoxLayout(self.commit_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        top_row = QWidget(self.commit_tab)
-        top_layout = QHBoxLayout(top_row)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(6)
-
-        self.commit_refresh_button = QPushButton("Atualizar status", top_row)
-        self.commit_refresh_button.clicked.connect(self._refresh_commit_files)
-        top_layout.addWidget(self.commit_refresh_button)
-
-        self.commit_select_all_button = QPushButton("Selecionar tudo", top_row)
-        self.commit_select_all_button.clicked.connect(self._select_all_commit_files)
-        top_layout.addWidget(self.commit_select_all_button)
-
-        self.commit_clear_selection_button = QPushButton("Limpar selecao", top_row)
-        self.commit_clear_selection_button.clicked.connect(self._clear_commit_file_selection)
-        top_layout.addWidget(self.commit_clear_selection_button)
-
-        top_layout.addStretch(1)
-        self.commit_selection_label = QLabel("Selecionados: 0/0", top_row)
-        top_layout.addWidget(self.commit_selection_label)
-
-        layout.addWidget(top_row)
-
-        self.commit_files_list = QListWidget(self.commit_tab)
-        self.commit_files_list.itemChanged.connect(self._on_commit_file_item_changed)
-        layout.addWidget(self.commit_files_list, stretch=1)
-
-        self.commit_title_input = QLineEdit(self.commit_tab)
-        self.commit_title_input.setPlaceholderText("Titulo do commit (obrigatorio)")
-        layout.addWidget(self.commit_title_input)
-
-        self.commit_description_input = QPlainTextEdit(self.commit_tab)
-        self.commit_description_input.setPlaceholderText("Descricao do commit (opcional)")
-        self.commit_description_input.setFixedHeight(120)
-        layout.addWidget(self.commit_description_input)
-
-        action_row = QWidget(self.commit_tab)
-        action_layout = QHBoxLayout(action_row)
-        action_layout.setContentsMargins(0, 0, 0, 0)
-        action_layout.setSpacing(6)
-
-        self.commit_run_button = QPushButton("Commit", action_row)
-        self.commit_run_button.setProperty("role", "primary")
-        self.commit_run_button.clicked.connect(self._create_commit_from_selection)
-        action_layout.addWidget(self.commit_run_button)
-
-        layout.addWidget(action_row)
-        self._refresh_commit_files()
+        build_commit_tab(self)
 
     def _build_history_tab(self) -> None:
-        self.history_summaries: list[CommitSummary] = []
-        self.history_summary_by_hash: dict[str, CommitSummary] = {}
-        self.history_current_commit_hash = ""
-        self.history_current_file_path = ""
-
-        layout = QVBoxLayout(self.history_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        top_row = QWidget(self.history_tab)
-        top_layout = QHBoxLayout(top_row)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(6)
-
-        self.history_refresh_button = QPushButton("Atualizar", top_row)
-        self.history_refresh_button.clicked.connect(self._reload_history_commits)
-        top_layout.addWidget(self.history_refresh_button)
-
-        top_layout.addWidget(QLabel("Buscar:", top_row))
-        self.history_search_input = QLineEdit(top_row)
-        self.history_search_input.setPlaceholderText("Filtrar por texto no commit")
-        self.history_search_input.returnPressed.connect(self._reload_history_commits)
-        top_layout.addWidget(self.history_search_input, stretch=1)
-
-        top_layout.addWidget(QLabel("Limite:", top_row))
-        self.history_limit_combo = QComboBox(top_row)
-        self.history_limit_combo.addItem("50", 50)
-        self.history_limit_combo.addItem("100", 100)
-        self.history_limit_combo.addItem("200", 200)
-        self.history_limit_combo.setCurrentIndex(1)
-        self.history_limit_combo.currentIndexChanged.connect(self._reload_history_commits)
-        top_layout.addWidget(self.history_limit_combo)
-
-        self.history_word_diff_check = QCheckBox("Diff por palavra", top_row)
-        self.history_word_diff_check.stateChanged.connect(self._refresh_history_patch_view)
-        top_layout.addWidget(self.history_word_diff_check)
-
-        layout.addWidget(top_row)
-
-        body_splitter = QSplitter(Qt.Orientation.Horizontal, self.history_tab)
-        body_splitter.setChildrenCollapsible(False)
-
-        self.history_commits_list = QListWidget(body_splitter)
-        self.history_commits_list.itemSelectionChanged.connect(self._on_history_commit_selected)
-
-        right_splitter = QSplitter(Qt.Orientation.Vertical, body_splitter)
-        right_splitter.setChildrenCollapsible(False)
-
-        self.history_commit_info = QPlainTextEdit(right_splitter)
-        self.history_commit_info.setReadOnly(True)
-
-        self.history_files_list = QListWidget(right_splitter)
-        self.history_files_list.itemSelectionChanged.connect(self._on_history_file_selected)
-
-        self.history_patch_view = QPlainTextEdit(right_splitter)
-        self.history_patch_view.setReadOnly(True)
-
-        body_splitter.setStretchFactor(0, 2)
-        body_splitter.setStretchFactor(1, 4)
-        right_splitter.setStretchFactor(0, 2)
-        right_splitter.setStretchFactor(1, 2)
-        right_splitter.setStretchFactor(2, 4)
-        layout.addWidget(body_splitter, stretch=1)
-
-        self._clear_history_view()
+        build_history_tab(self)
 
     def _clear_history_view(self) -> None:
-        self.history_summaries = []
-        self.history_summary_by_hash = {}
-        self.history_current_commit_hash = ""
-        self.history_current_file_path = ""
-        if hasattr(self, "history_commits_list"):
-            self.history_commits_list.clear()
-        if hasattr(self, "history_files_list"):
-            self.history_files_list.clear()
-        if hasattr(self, "history_commit_info"):
-            self.history_commit_info.setPlainText("")
-        if hasattr(self, "history_patch_view"):
-            self.history_patch_view.setPlainText("")
+        clear_history_view(self)
 
     def _get_history_limit_value(self) -> int:
-        data = self.history_limit_combo.currentData()
-        try:
-            value = int(data)
-        except (TypeError, ValueError):
-            value = 100
-        return max(1, value)
+        return get_history_limit_value(self)
 
     def _reload_history_commits(self) -> None:
-        self._begin_busy("Carregando historico...")
-        try:
-            if not self.repo_path:
-                self._clear_history_view()
-                return
-            text_filter = self.history_search_input.text().strip()
-            filters = CommitFilters(text=text_filter)
-            limit = self._get_history_limit_value()
-            try:
-                summaries = load_commit_summaries(self.repo_path, limit=limit, filters=filters)
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Historico", str(exc))
-                self._clear_history_view()
-                return
-
-            self.history_summaries = summaries
-            self.history_summary_by_hash = {item.commit_hash: item for item in summaries}
-            self.history_current_commit_hash = ""
-            self.history_current_file_path = ""
-
-            self.history_commits_list.blockSignals(True)
-            self.history_commits_list.clear()
-            for summary in summaries:
-                label = f"{summary.commit_hash[:7]} | {summary.subject}"
-                item = QListWidgetItem(label, self.history_commits_list)
-                item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
-            self.history_commits_list.blockSignals(False)
-
-            if summaries:
-                self.history_commits_list.setCurrentRow(0)
-            else:
-                self.history_files_list.clear()
-                self.history_commit_info.setPlainText("Nenhum commit encontrado.")
-                self.history_patch_view.setPlainText("")
-        finally:
-            self._end_busy()
+        reload_history_commits(self)
 
     def _on_history_commit_selected(self) -> None:
-        selected_items = self.history_commits_list.selectedItems()
-        if not selected_items:
-            self.history_current_commit_hash = ""
-            self.history_current_file_path = ""
-            self.history_files_list.clear()
-            self.history_commit_info.setPlainText("")
-            self.history_patch_view.setPlainText("")
-            return
-        item = selected_items[0]
-        value = item.data(Qt.ItemDataRole.UserRole)
-        commit_hash = str(value).strip() if value is not None else ""
-        if not commit_hash:
-            return
-        self.history_current_commit_hash = commit_hash
-        self.history_current_file_path = ""
-        self._load_history_commit_content(commit_hash)
+        on_history_commit_selected(self)
 
     def _load_history_commit_content(self, commit_hash: str) -> None:
-        self._begin_busy(f"Carregando commit {commit_hash[:7]}...")
-        try:
-            try:
-                details = load_commit_details(self.repo_path, commit_hash)
-                files = core_list_commit_files(self.repo_path, commit_hash)
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Historico", str(exc))
-                self.history_files_list.clear()
-                self.history_patch_view.setPlainText("")
-                return
-
-            info_lines = [
-                f"Hash: {details.commit_hash}",
-                f"Autor: {details.author}",
-                f"Data: {details.date}",
-                f"Titulo: {details.subject}",
-                f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
-            ]
-            if details.body:
-                info_lines.extend(["", details.body.strip()])
-            self.history_commit_info.setPlainText("\n".join(info_lines))
-
-            self.history_files_list.blockSignals(True)
-            self.history_files_list.clear()
-            all_files_item = QListWidgetItem("(todos os arquivos)", self.history_files_list)
-            all_files_item.setData(Qt.ItemDataRole.UserRole, "")
-            for path in files:
-                file_item = QListWidgetItem(path, self.history_files_list)
-                file_item.setData(Qt.ItemDataRole.UserRole, path)
-            self.history_files_list.blockSignals(False)
-            self.history_files_list.setCurrentRow(0)
-        finally:
-            self._end_busy()
+        load_history_commit_content(self, commit_hash)
 
     def _on_history_file_selected(self) -> None:
-        selected_items = self.history_files_list.selectedItems()
-        if not selected_items:
-            self.history_current_file_path = ""
-            self._refresh_history_patch_view()
-            return
-        item = selected_items[0]
-        value = item.data(Qt.ItemDataRole.UserRole)
-        self.history_current_file_path = str(value).strip() if value is not None else ""
-        self._refresh_history_patch_view()
+        on_history_file_selected(self)
 
     def _refresh_history_patch_view(self) -> None:
-        commit_hash = self.history_current_commit_hash.strip()
-        if not commit_hash:
-            self.history_patch_view.setPlainText("")
-            return
-        word_diff = self.history_word_diff_check.isChecked()
-        path = self.history_current_file_path.strip() or None
-        try:
-            patch = core_get_commit_patch(
-                self.repo_path,
-                commit_hash,
-                path=path,
-                word_diff=word_diff,
-            )
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Historico", str(exc))
-            self.history_patch_view.setPlainText("")
-            return
-        self.history_patch_view.setPlainText(patch)
+        refresh_history_patch_view(self)
 
     def _build_import_tab(self) -> None:
-        self.import_source_repo_path = ""
-        self.import_source_repo_lookup: dict[str, str] = {}
-        self.import_commit_summaries: list[CommitSummary] = []
-
-        layout = QVBoxLayout(self.import_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        source_row = QWidget(self.import_tab)
-        source_layout = QHBoxLayout(source_row)
-        source_layout.setContentsMargins(0, 0, 0, 0)
-        source_layout.setSpacing(6)
-
-        source_layout.addWidget(QLabel("Origem:", source_row))
-        self.import_source_repo_combo = QComboBox(source_row)
-        self.import_source_repo_combo.currentIndexChanged.connect(self._on_import_source_repo_changed)
-        source_layout.addWidget(self.import_source_repo_combo, stretch=1)
-
-        self.import_source_repo_refresh_button = QPushButton("Atualizar repos", source_row)
-        self.import_source_repo_refresh_button.clicked.connect(self._refresh_import_source_repos)
-        source_layout.addWidget(self.import_source_repo_refresh_button)
-
-        self.import_source_repo_current_button = QPushButton("Usar atual", source_row)
-        self.import_source_repo_current_button.clicked.connect(self._use_current_repo_as_import_source)
-        source_layout.addWidget(self.import_source_repo_current_button)
-
-        source_layout.addWidget(QLabel("Branch origem:", source_row))
-        self.import_source_branch_combo = QComboBox(source_row)
-        self.import_source_branch_combo.currentIndexChanged.connect(self._on_import_source_branch_changed)
-        source_layout.addWidget(self.import_source_branch_combo)
-
-        self.import_source_branch_refresh_button = QPushButton("Atualizar lista", source_row)
-        self.import_source_branch_refresh_button.clicked.connect(self._load_import_source_commits)
-        source_layout.addWidget(self.import_source_branch_refresh_button)
-
-        layout.addWidget(source_row)
-
-        self.import_target_label = QLabel("Destino: (nenhum repositório selecionado)", self.import_tab)
-        layout.addWidget(self.import_target_label)
-
-        self.import_commits_list = QListWidget(self.import_tab)
-        self.import_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.import_commits_list.itemSelectionChanged.connect(self._update_import_controls_state)
-        layout.addWidget(self.import_commits_list, stretch=1)
-
-        actions_row = QWidget(self.import_tab)
-        actions_layout = QHBoxLayout(actions_row)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(6)
-
-        self.import_copy_hashes_button = QPushButton("Copiar hashes", actions_row)
-        self.import_copy_hashes_button.clicked.connect(self._copy_selected_import_hashes)
-        actions_layout.addWidget(self.import_copy_hashes_button)
-
-        self.import_run_button = QPushButton("Importar selecionados", actions_row)
-        self.import_run_button.setProperty("role", "primary")
-        self.import_run_button.clicked.connect(self._import_selected_commits)
-        actions_layout.addWidget(self.import_run_button)
-
-        actions_layout.addStretch(1)
-        layout.addWidget(actions_row)
-
-        self.import_status_label = QLabel("Selecione o repositório de origem para carregar commits.", self.import_tab)
-        layout.addWidget(self.import_status_label)
-
-        self._refresh_import_source_repos()
-        self._sync_import_target_label()
-        self._update_import_controls_state()
+        build_import_tab(self)
 
     def _sync_import_target_label(self) -> None:
         if not hasattr(self, "import_target_label"):
@@ -1065,61 +678,7 @@ class QtShellWindow(QMainWindow):
         self.import_source_repo_refresh_button.setEnabled(True)
 
     def _build_compare_tab(self) -> None:
-        self.compare_file_entries: list[dict[str, object]] = []
-        self.compare_current_file_path = ""
-        self._setting_compare_branches_programmatically = False
-
-        layout = QVBoxLayout(self.compare_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        top_row = QWidget(self.compare_tab)
-        top_layout = QHBoxLayout(top_row)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(6)
-
-        top_layout.addWidget(QLabel("Origem:", top_row))
-        self.compare_origin_combo = QComboBox(top_row)
-        self.compare_origin_combo.currentIndexChanged.connect(self._on_compare_branches_changed)
-        top_layout.addWidget(self.compare_origin_combo)
-
-        self.compare_swap_button = QPushButton("Trocar", top_row)
-        self.compare_swap_button.clicked.connect(self._swap_compare_branches)
-        top_layout.addWidget(self.compare_swap_button)
-
-        top_layout.addWidget(QLabel("Destino:", top_row))
-        self.compare_dest_combo = QComboBox(top_row)
-        self.compare_dest_combo.currentIndexChanged.connect(self._on_compare_branches_changed)
-        top_layout.addWidget(self.compare_dest_combo)
-
-        self.compare_refresh_button = QPushButton("Atualizar", top_row)
-        self.compare_refresh_button.clicked.connect(self._refresh_compare_view)
-        top_layout.addWidget(self.compare_refresh_button)
-
-        self.compare_word_diff_check = QCheckBox("Diff por palavra", top_row)
-        self.compare_word_diff_check.stateChanged.connect(self._refresh_compare_patch)
-        top_layout.addWidget(self.compare_word_diff_check)
-
-        top_layout.addStretch(1)
-        layout.addWidget(top_row)
-
-        self.compare_status_label = QLabel("Selecione origem e destino para comparar.", self.compare_tab)
-        layout.addWidget(self.compare_status_label)
-
-        body_splitter = QSplitter(Qt.Orientation.Horizontal, self.compare_tab)
-        body_splitter.setChildrenCollapsible(False)
-
-        self.compare_commits_list = QListWidget(body_splitter)
-        self.compare_files_list = QListWidget(body_splitter)
-        self.compare_files_list.itemSelectionChanged.connect(self._on_compare_file_selected)
-        self.compare_patch_view = QPlainTextEdit(body_splitter)
-        self.compare_patch_view.setReadOnly(True)
-
-        body_splitter.setStretchFactor(0, 2)
-        body_splitter.setStretchFactor(1, 2)
-        body_splitter.setStretchFactor(2, 4)
-        layout.addWidget(body_splitter, stretch=1)
-        self._clear_compare_view()
+        build_compare_tab(self)
 
     def _clear_compare_view(self) -> None:
         self.compare_file_entries = []
@@ -1318,62 +877,7 @@ class QtShellWindow(QMainWindow):
         self.compare_patch_view.setPlainText(patch or "(sem diff para este arquivo)")
 
     def _build_settings_tab(self) -> None:
-        layout = QVBoxLayout(self.settings_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        theme_row = QWidget(self.settings_tab)
-        theme_layout = QHBoxLayout(theme_row)
-        theme_layout.setContentsMargins(0, 0, 0, 0)
-        theme_layout.setSpacing(6)
-        theme_layout.addWidget(QLabel("Tema:", theme_row))
-        self.settings_theme_combo = QComboBox(theme_row)
-        self.settings_theme_combo.addItem("Claro", "light")
-        self.settings_theme_combo.addItem("Escuro", "dark")
-        theme_layout.addWidget(self.settings_theme_combo)
-        theme_layout.addStretch(1)
-        layout.addWidget(theme_row)
-
-        limit_row = QWidget(self.settings_tab)
-        limit_layout = QHBoxLayout(limit_row)
-        limit_layout.setContentsMargins(0, 0, 0, 0)
-        limit_layout.setSpacing(6)
-        limit_layout.addWidget(QLabel("Limite padrão de commits:", limit_row))
-        self.settings_commit_limit_combo = QComboBox(limit_row)
-        for value in (50, 100, 200, 500, 1000):
-            self.settings_commit_limit_combo.addItem(str(value), value)
-        limit_layout.addWidget(self.settings_commit_limit_combo)
-        limit_layout.addStretch(1)
-        layout.addWidget(limit_row)
-
-        workspace_row = QWidget(self.settings_tab)
-        workspace_layout = QHBoxLayout(workspace_row)
-        workspace_layout.setContentsMargins(0, 0, 0, 0)
-        workspace_layout.setSpacing(6)
-        workspace_layout.addWidget(QLabel("Raiz do workspace:", workspace_row))
-        self.settings_workspace_root_edit = QLineEdit(workspace_row)
-        workspace_layout.addWidget(self.settings_workspace_root_edit, stretch=1)
-        self.settings_workspace_root_pick_button = QPushButton("Pasta...", workspace_row)
-        self.settings_workspace_root_pick_button.clicked.connect(self._pick_settings_workspace_root)
-        workspace_layout.addWidget(self.settings_workspace_root_pick_button)
-        layout.addWidget(workspace_row)
-
-        actions_row = QWidget(self.settings_tab)
-        actions_layout = QHBoxLayout(actions_row)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(6)
-        self.settings_save_button = QPushButton("Salvar configurações", actions_row)
-        self.settings_save_button.setProperty("role", "primary")
-        self.settings_save_button.clicked.connect(self._save_settings_from_tab)
-        actions_layout.addWidget(self.settings_save_button)
-        actions_layout.addStretch(1)
-        layout.addWidget(actions_row)
-
-        self.settings_status_label = QLabel("Ajuste e salve as configurações.", self.settings_tab)
-        layout.addWidget(self.settings_status_label)
-        layout.addStretch(1)
-
-        self._load_settings_into_tab()
+        build_settings_tab(self)
 
     def _load_settings_into_tab(self) -> None:
         if not hasattr(self, "settings_theme_combo"):
