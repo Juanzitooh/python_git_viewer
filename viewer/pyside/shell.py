@@ -6,13 +6,6 @@ import os
 import sys
 from pathlib import Path
 
-from ..core.branch_compare import (
-    get_ahead_behind_between as core_get_ahead_behind_between,
-    has_potential_conflict as core_has_potential_conflict,
-    load_compare_commits as core_load_compare_commits,
-    load_compare_file_patch as core_load_compare_file_patch,
-    load_compare_file_stats as core_load_compare_file_stats,
-)
 from ..core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
 from ..core.cherry_pick_ops import (
     cherry_pick_commit as core_cherry_pick_commit,
@@ -42,6 +35,14 @@ from ..core.repo_state import (
 from ..core.repo_workspace import default_repo_scan_root, discover_git_repositories
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
 from .controllers import (
+    clear_compare_view,
+    get_compare_branches,
+    on_compare_branches_changed,
+    on_compare_file_selected,
+    refresh_compare_branch_options,
+    refresh_compare_patch,
+    refresh_compare_view,
+    swap_compare_branches,
     clear_history_view,
     get_history_limit_value,
     load_history_commit_content,
@@ -681,200 +682,28 @@ class QtShellWindow(QMainWindow):
         build_compare_tab(self)
 
     def _clear_compare_view(self) -> None:
-        self.compare_file_entries = []
-        self.compare_current_file_path = ""
-        if hasattr(self, "compare_commits_list"):
-            self.compare_commits_list.clear()
-        if hasattr(self, "compare_files_list"):
-            self.compare_files_list.clear()
-        if hasattr(self, "compare_patch_view"):
-            self.compare_patch_view.setPlainText("")
-        if hasattr(self, "compare_status_label"):
-            self.compare_status_label.setText("Selecione origem e destino para comparar.")
+        clear_compare_view(self)
 
     def _refresh_compare_branch_options(self) -> None:
-        if not hasattr(self, "compare_origin_combo"):
-            return
-        if not self.repo_path:
-            self._setting_compare_branches_programmatically = True
-            try:
-                self.compare_origin_combo.clear()
-                self.compare_dest_combo.clear()
-            finally:
-                self._setting_compare_branches_programmatically = False
-            self._clear_compare_view()
-            return
-        try:
-            branches = core_list_branches(self.repo_path)
-            current = core_get_current_branch(self.repo_path).strip()
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Comparar", str(exc))
-            self._clear_compare_view()
-            return
-
-        origin_value = self.compare_origin_combo.currentData()
-        dest_value = self.compare_dest_combo.currentData()
-        origin_selected = str(origin_value).strip() if origin_value is not None else ""
-        dest_selected = str(dest_value).strip() if dest_value is not None else ""
-
-        if origin_selected not in branches:
-            origin_selected = current or (branches[0] if branches else "")
-        if dest_selected not in branches or dest_selected == origin_selected:
-            dest_selected = ""
-            for branch in branches:
-                if branch != origin_selected:
-                    dest_selected = branch
-                    break
-            if not dest_selected and branches:
-                dest_selected = branches[0]
-
-        self._setting_compare_branches_programmatically = True
-        try:
-            self.compare_origin_combo.clear()
-            self.compare_dest_combo.clear()
-            for branch in branches:
-                self.compare_origin_combo.addItem(branch, branch)
-                self.compare_dest_combo.addItem(branch, branch)
-            origin_index = self.compare_origin_combo.findData(origin_selected)
-            if origin_index >= 0:
-                self.compare_origin_combo.setCurrentIndex(origin_index)
-            dest_index = self.compare_dest_combo.findData(dest_selected)
-            if dest_index >= 0:
-                self.compare_dest_combo.setCurrentIndex(dest_index)
-        finally:
-            self._setting_compare_branches_programmatically = False
-        self._refresh_compare_view()
+        refresh_compare_branch_options(self)
 
     def _get_compare_branches(self) -> tuple[str, str]:
-        origin_value = self.compare_origin_combo.currentData()
-        dest_value = self.compare_dest_combo.currentData()
-        origin = str(origin_value).strip() if origin_value is not None else ""
-        dest = str(dest_value).strip() if dest_value is not None else ""
-        return origin, dest
+        return get_compare_branches(self)
 
     def _on_compare_branches_changed(self, _index: int) -> None:
-        if self._setting_compare_branches_programmatically:
-            return
-        self._refresh_compare_view()
+        on_compare_branches_changed(self, _index)
 
     def _swap_compare_branches(self) -> None:
-        origin, dest = self._get_compare_branches()
-        if not origin and not dest:
-            return
-        self._setting_compare_branches_programmatically = True
-        try:
-            origin_index = self.compare_origin_combo.findData(dest)
-            dest_index = self.compare_dest_combo.findData(origin)
-            if origin_index >= 0:
-                self.compare_origin_combo.setCurrentIndex(origin_index)
-            if dest_index >= 0:
-                self.compare_dest_combo.setCurrentIndex(dest_index)
-        finally:
-            self._setting_compare_branches_programmatically = False
-        self._refresh_compare_view()
+        swap_compare_branches(self)
 
     def _refresh_compare_view(self) -> None:
-        self._begin_busy("Atualizando comparacao...")
-        try:
-            if not self.repo_path:
-                self._clear_compare_view()
-                return
-            origin, dest = self._get_compare_branches()
-            if not origin or not dest:
-                self._clear_compare_view()
-                return
-            if origin == dest:
-                self._clear_compare_view()
-                self.compare_status_label.setText("Origem e destino devem ser diferentes.")
-                return
-
-            try:
-                commits = core_load_compare_commits(self.repo_path, origin, dest)
-                file_stats, totals = core_load_compare_file_stats(self.repo_path, origin, dest)
-                behind, ahead = core_get_ahead_behind_between(self.repo_path, origin, dest)
-                has_conflict = core_has_potential_conflict(self.repo_path, origin, dest)
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Comparar", str(exc))
-                self._clear_compare_view()
-                return
-
-            self.compare_file_entries = file_stats
-            self.compare_current_file_path = ""
-
-            self.compare_commits_list.clear()
-            for line in commits:
-                self.compare_commits_list.addItem(line)
-
-            self.compare_files_list.blockSignals(True)
-            self.compare_files_list.clear()
-            for entry in file_stats:
-                path = str(entry.get("path", "")).strip()
-                if not path:
-                    continue
-                added = int(entry.get("added", 0) or 0)
-                deleted = int(entry.get("deleted", 0) or 0)
-                binary = bool(entry.get("binary", False))
-                if binary:
-                    label = f"{path} [binario]"
-                else:
-                    label = f"{path} (+{added}/-{deleted})"
-                item = QListWidgetItem(label, self.compare_files_list)
-                item.setData(Qt.ItemDataRole.UserRole, path)
-            self.compare_files_list.blockSignals(False)
-
-            conflict_label = "possivel conflito" if has_conflict else "sem conflito aparente"
-            self.compare_status_label.setText(
-                (
-                    f"{origin} -> {dest} | commits: {len(commits)} | arquivos: {totals.get('files', 0)} "
-                    f"| +{totals.get('added', 0)} -{totals.get('deleted', 0)} | "
-                    f"ahead/behind: {ahead}/{behind} | {conflict_label}"
-                )
-            )
-
-            if self.compare_files_list.count() > 0:
-                self.compare_files_list.setCurrentRow(0)
-            else:
-                self.compare_patch_view.setPlainText("(nenhuma diferença)")
-        finally:
-            self._end_busy()
+        refresh_compare_view(self)
 
     def _on_compare_file_selected(self) -> None:
-        selected_items = self.compare_files_list.selectedItems()
-        if not selected_items:
-            self.compare_current_file_path = ""
-            self._refresh_compare_patch()
-            return
-        item = selected_items[0]
-        value = item.data(Qt.ItemDataRole.UserRole)
-        self.compare_current_file_path = str(value).strip() if value is not None else ""
-        self._refresh_compare_patch()
+        on_compare_file_selected(self)
 
     def _refresh_compare_patch(self) -> None:
-        if not self.repo_path:
-            self.compare_patch_view.setPlainText("")
-            return
-        origin, dest = self._get_compare_branches()
-        if not origin or not dest or origin == dest:
-            self.compare_patch_view.setPlainText("")
-            return
-        selected_path = self.compare_current_file_path.strip()
-        if not selected_path:
-            self.compare_patch_view.setPlainText("(selecione um arquivo)")
-            return
-        word_diff = self.compare_word_diff_check.isChecked()
-        try:
-            patch = core_load_compare_file_patch(
-                self.repo_path,
-                origin,
-                dest,
-                path=selected_path,
-                word_diff=word_diff,
-            )
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Comparar", str(exc))
-            self.compare_patch_view.setPlainText("")
-            return
-        self.compare_patch_view.setPlainText(patch or "(sem diff para este arquivo)")
+        refresh_compare_patch(self)
 
     def _build_settings_tab(self) -> None:
         build_settings_tab(self)
