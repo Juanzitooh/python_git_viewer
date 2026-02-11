@@ -85,6 +85,7 @@ from .controllers import (
     save_settings_from_tab,
     select_all_commit_files,
     stage_selected_commit_hunk,
+    stage_selected_commit_line,
     stage_selected_commit_file,
     sync_workspace_tree_selection,
     sync_import_target_label,
@@ -93,6 +94,7 @@ from .controllers import (
     update_import_controls_state,
     use_current_repo_as_import_source,
     unstage_selected_commit_hunk,
+    unstage_selected_commit_line,
     unstage_selected_commit_file,
     copy_selected_import_hashes,
     fetch_repo,
@@ -641,6 +643,12 @@ class QtShellWindow(QMainWindow):
 
     def _unstage_selected_commit_hunk(self) -> None:
         unstage_selected_commit_hunk(self)
+
+    def _stage_selected_commit_line(self) -> None:
+        stage_selected_commit_line(self)
+
+    def _unstage_selected_commit_line(self) -> None:
+        unstage_selected_commit_line(self)
 
     def _select_all_commit_files(self) -> None:
         select_all_commit_files(self)

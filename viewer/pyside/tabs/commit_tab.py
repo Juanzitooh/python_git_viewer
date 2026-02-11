@@ -62,6 +62,14 @@ def build_commit_tab(window: object) -> None:
     window.commit_unstage_hunk_button.clicked.connect(window._unstage_selected_commit_hunk)
     top_layout.addWidget(window.commit_unstage_hunk_button)
 
+    window.commit_stage_line_button = QPushButton("Stage linha", top_row)
+    window.commit_stage_line_button.clicked.connect(window._stage_selected_commit_line)
+    top_layout.addWidget(window.commit_stage_line_button)
+
+    window.commit_unstage_line_button = QPushButton("Unstage linha", top_row)
+    window.commit_unstage_line_button.clicked.connect(window._unstage_selected_commit_line)
+    top_layout.addWidget(window.commit_unstage_line_button)
+
     top_layout.addStretch(1)
     window.commit_selection_label = QLabel("Selecionados: 0/0", top_row)
     top_layout.addWidget(window.commit_selection_label)
