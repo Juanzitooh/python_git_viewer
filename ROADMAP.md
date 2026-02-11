@@ -270,6 +270,9 @@ Legenda
 - [x] R7.4.1.5 Acoes de Merge/Rebase/Squash na aba Comparar em PySide6 (2026-02-11)
   Escopo: adicionar na aba Comparar controles de acao de branch com validacoes de dirty state, confirmacao e execucao de merge/rebase/squash (com mensagem obrigatoria no squash).
   Aceite: usuario executa acao direto no PySide6 com feedback de erro/sucesso e atualizacao automatica de status/historico/commit/comparacao.
+- [x] R7.4.1.6 Menu de contexto de commits na aba Comparar em PySide6 (2026-02-11)
+  Escopo: aplicar na lista de commits da aba Comparar o mesmo padrao de menu de commit das outras abas (GitHub, hash, lista de arquivos e patch).
+  Aceite: clique direito em commit da comparacao abre menu funcional sem acao manual extra de copia/abertura.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
