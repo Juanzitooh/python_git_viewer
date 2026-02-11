@@ -13,12 +13,14 @@ from .commit_controller import (
 from .compare_controller import (
     clear_compare_view,
     get_compare_branches,
+    on_compare_action_changed,
     on_compare_branches_changed,
     on_compare_file_context_menu,
     on_compare_file_selected,
     refresh_compare_branch_options,
     refresh_compare_patch,
     refresh_compare_view,
+    run_compare_action,
     swap_compare_branches,
 )
 from .history_controller import (
@@ -96,6 +98,7 @@ __all__ = [
     "create_commit_from_selection",
     "clear_compare_view",
     "get_compare_branches",
+    "on_compare_action_changed",
     "refresh_compare_branch_options",
     "on_compare_branches_changed",
     "swap_compare_branches",
@@ -103,6 +106,7 @@ __all__ = [
     "on_compare_file_selected",
     "on_compare_file_context_menu",
     "refresh_compare_patch",
+    "run_compare_action",
     "clear_history_view",
     "get_history_limit_value",
     "reload_history_commits",

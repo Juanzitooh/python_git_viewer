@@ -47,6 +47,7 @@ from .controllers import (
     load_import_source_branches,
     load_import_source_commits,
     on_commit_file_item_changed,
+    on_compare_action_changed,
     on_compare_branches_changed,
     on_compare_file_selected,
     on_branch_changed,
@@ -66,6 +67,7 @@ from .controllers import (
     refresh_compare_branch_options,
     refresh_compare_patch,
     refresh_compare_view,
+    run_compare_action,
     refresh_repo_state_ui,
     refresh_workspace_tree,
     repo_is_favorite,
@@ -487,11 +489,25 @@ class QtShellWindow(QMainWindow):
     def _on_compare_branches_changed(self, _index: int) -> None:
         on_compare_branches_changed(self, _index)
 
+    def _on_compare_action_changed(self, _index: int) -> None:
+        on_compare_action_changed(self, _index)
+
     def _swap_compare_branches(self) -> None:
         swap_compare_branches(self)
 
     def _refresh_compare_view(self) -> None:
         refresh_compare_view(self)
+
+    def _run_compare_action(self) -> None:
+        run_compare_action(self)
+
+    def _open_commit_tab_from_compare(self) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == "Commit":
+                self.tabs.setCurrentIndex(index)
+                return
 
     def _on_compare_file_selected(self) -> None:
         on_compare_file_selected(self)

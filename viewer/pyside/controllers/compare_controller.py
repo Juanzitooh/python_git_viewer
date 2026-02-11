@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QListWidgetItem, QMenu, QMessageBox
 
+from ...core.branch_ops import checkout_branch as core_checkout_branch
 from ...core.branch_compare import (
     get_ahead_behind_between as core_get_ahead_behind_between,
     has_potential_conflict as core_has_potential_conflict,
@@ -10,6 +11,9 @@ from ...core.branch_compare import (
     load_compare_file_patch as core_load_compare_file_patch,
     load_compare_file_stats as core_load_compare_file_stats,
 )
+from ...core.cherry_pick_ops import has_unmerged_conflicts as core_has_unmerged_conflicts
+from ...core.commit_ops import list_modified_files as core_list_modified_files
+from ...core.git_client import run_git
 from ...core.repo_state import (
     get_current_branch as core_get_current_branch,
     list_branches as core_list_branches,
@@ -27,6 +31,9 @@ def clear_compare_view(window: object) -> None:
         window.compare_patch_view.setPlainText("")
     if hasattr(window, "compare_status_label"):
         window.compare_status_label.setText("Selecione origem e destino para comparar.")
+    if hasattr(window, "compare_action_status_label"):
+        window.compare_action_status_label.setText("Selecione origem e destino.")
+    _update_compare_action_state(window)
 
 
 def refresh_compare_branch_options(window: object) -> None:
@@ -176,6 +183,7 @@ def refresh_compare_view(window: object) -> None:
             window.compare_files_list.setCurrentRow(0)
         else:
             window.compare_patch_view.setPlainText("(nenhuma diferença)")
+        _update_compare_action_state(window)
     finally:
         window._end_busy()
 
@@ -218,6 +226,170 @@ def refresh_compare_patch(window: object) -> None:
         window.compare_patch_view.setPlainText("")
         return
     window.compare_patch_view.setPlainText(patch or "(sem diff para este arquivo)")
+
+
+def _set_compare_squash_visibility(window: object) -> None:
+    if not hasattr(window, "compare_action_combo"):
+        return
+    action_code = window.compare_action_combo.currentData()
+    action = str(action_code).strip() if action_code is not None else "merge"
+    show_message = action == "squash"
+    if hasattr(window, "compare_squash_message_label"):
+        window.compare_squash_message_label.setVisible(show_message)
+    if hasattr(window, "compare_squash_message_input"):
+        window.compare_squash_message_input.setVisible(show_message)
+
+
+def _is_compare_worktree_dirty(window: object) -> bool:
+    if not window.repo_path:
+        return False
+    try:
+        return bool(core_list_modified_files(window.repo_path))
+    except RuntimeError:
+        return False
+
+
+def _update_compare_action_state(window: object) -> None:
+    _set_compare_squash_visibility(window)
+    if not hasattr(window, "compare_run_button"):
+        return
+    can_run = False
+    can_open_commit = False
+    status_text = "Selecione origem e destino."
+
+    if not window.repo_path:
+        status_text = "Selecione um repositório."
+    else:
+        origin, dest = get_compare_branches(window)
+        if not origin or not dest:
+            status_text = "Selecione origem e destino."
+        elif origin == dest:
+            status_text = "Origem e destino devem ser diferentes."
+        elif _is_compare_worktree_dirty(window):
+            status_text = "Há mudanças locais no worktree. Finalize na aba Commit antes de executar a ação."
+            can_open_commit = True
+        else:
+            action_code = window.compare_action_combo.currentData()
+            action = str(action_code).strip() if action_code is not None else "merge"
+            if action == "squash":
+                message = window.compare_squash_message_input.text().strip()
+                if not message:
+                    status_text = "Informe a mensagem do commit squash."
+                else:
+                    can_run = True
+                    status_text = "Pronto para executar a ação de branch."
+            else:
+                can_run = True
+                status_text = "Pronto para executar a ação de branch."
+
+    window.compare_run_button.setEnabled(can_run)
+    if hasattr(window, "compare_open_commit_button"):
+        window.compare_open_commit_button.setEnabled(can_open_commit)
+    if hasattr(window, "compare_action_status_label"):
+        window.compare_action_status_label.setText(status_text)
+
+
+def on_compare_action_changed(window: object, _index: int) -> None:
+    _update_compare_action_state(window)
+
+
+def _refresh_after_compare_action(window: object) -> None:
+    window._refresh_repo_state_ui()
+    window._refresh_workspace_tree()
+    window._refresh_commit_files()
+    window._reload_history_commits()
+    window._refresh_compare_branch_options()
+    window._refresh_import_source_repos()
+
+
+def run_compare_action(window: object) -> None:
+    if not window.repo_path:
+        QMessageBox.information(window, "Comparar", "Selecione um repositório válido.")
+        return
+    origin, dest = get_compare_branches(window)
+    if not origin or not dest:
+        QMessageBox.warning(window, "Comparar", "Selecione origem e destino.")
+        return
+    if origin == dest:
+        QMessageBox.warning(window, "Comparar", "Origem e destino devem ser diferentes.")
+        return
+    if _is_compare_worktree_dirty(window):
+        QMessageBox.warning(window, "Comparar", "Há mudanças locais no worktree. Finalize na aba Commit.")
+        _update_compare_action_state(window)
+        return
+
+    action_code = window.compare_action_combo.currentData()
+    action = str(action_code).strip() if action_code is not None else "merge"
+    action_label = window.compare_action_combo.currentText().strip() or "Merge"
+    squash_message = ""
+    if action == "squash":
+        squash_message = window.compare_squash_message_input.text().strip()
+        if not squash_message:
+            QMessageBox.warning(window, "Comparar", "Mensagem obrigatória para squash merge.")
+            _update_compare_action_state(window)
+            return
+
+    try:
+        behind, ahead = core_get_ahead_behind_between(window.repo_path, origin, dest)
+        has_conflict = core_has_potential_conflict(window.repo_path, origin, dest)
+    except RuntimeError:
+        behind, ahead, has_conflict = 0, 0, False
+    conflict_label = "sim" if has_conflict else "não"
+    confirm = QMessageBox.question(
+        window,
+        "Confirmar ação",
+        (
+            f"Ação: {action_label}\n"
+            f"Origem: {origin}\n"
+            f"Destino: {dest}\n"
+            f"Ahead/Behind: {ahead}/{behind}\n"
+            f"Conflito potencial: {conflict_label}\n\n"
+            "Deseja continuar?"
+        ),
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    if confirm != QMessageBox.StandardButton.Yes:
+        return
+
+    window._begin_busy(f"Executando {action_label.lower()}...")
+    try:
+        current = core_get_current_branch(window.repo_path).strip()
+        if current != dest:
+            core_checkout_branch(window.repo_path, dest)
+        if action == "merge":
+            run_git(window.repo_path, ["merge", origin])
+        elif action == "rebase":
+            run_git(window.repo_path, ["rebase", origin])
+        else:
+            run_git(window.repo_path, ["merge", "--squash", origin])
+            run_git(window.repo_path, ["commit", "-m", squash_message])
+    except RuntimeError as exc:
+        has_conflicts = False
+        try:
+            has_conflicts = core_has_unmerged_conflicts(window.repo_path)
+        except RuntimeError:
+            has_conflicts = False
+        if has_conflicts:
+            QMessageBox.warning(
+                window,
+                "Comparar",
+                (
+                    f"{exc}\n\nForam detectados conflitos. Resolva os arquivos e finalize com Git "
+                    "(continue/abort) antes de seguir."
+                ),
+            )
+        else:
+            QMessageBox.critical(window, "Comparar", str(exc))
+        _refresh_after_compare_action(window)
+        _update_compare_action_state(window)
+        return
+    finally:
+        window._end_busy()
+
+    window._set_status(f"Ação concluída: {action_label}.")
+    _refresh_after_compare_action(window)
+    _update_compare_action_state(window)
 
 
 def _is_compare_file_binary(window: object, selected_path: str) -> bool:
