@@ -243,6 +243,9 @@ Legenda
 - [x] R7.4.3.4.2 Extrair controlador da aba Configuracoes em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/settings_controller.py` os fluxos de carregar configuracoes, selecionar pasta e salvar configuracoes.
   Aceite: aba Configuracoes permanece funcional via wrappers no `shell.py`, com persistencia e aplicacao imediata mantidas.
+- [x] R7.4.3.4.3 Extrair controlador de workspace/repositorio em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/repo_controller.py` os fluxos de scan do workspace, lista/selecao de repositorio, snapshot dos cards e sincronizacao do estado de repositorio ativo.
+  Aceite: fluxos de repositorio/workspace seguem funcionais via wrappers no `shell.py`, reduzindo significativamente o acoplamento da janela principal.
 - [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.

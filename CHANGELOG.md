@@ -39,6 +39,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na extracao de controladores com `viewer/pyside/controllers/import_controller.py`, isolando fluxo de origem/branch, carga de commits e importacao por cherry-pick da aba Importar.
 - M7 avancou na reducao do `shell.py` com `viewer/pyside/controllers/commit_controller.py`, isolando listagem/selecao de arquivos e criacao de commit da aba Commit.
 - M7 avancou na reducao do `shell.py` com `viewer/pyside/controllers/settings_controller.py`, isolando carga/salvamento de configuracoes e selecao da raiz de workspace.
+- M7 avancou na reducao do `shell.py` com `viewer/pyside/controllers/repo_controller.py`, isolando fluxos de scan do workspace, selecao de repositorio e sincronizacao do estado global.
 
 ## [0.2.0] - 2026-02-10
 
