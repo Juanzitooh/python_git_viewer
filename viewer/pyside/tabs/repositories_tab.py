@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -45,6 +46,8 @@ def build_repositories_tab(window: object) -> None:
     window.workspace_tree.setAlternatingRowColors(True)
     window.workspace_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
     window.workspace_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+    window.workspace_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.workspace_tree.customContextMenuRequested.connect(window._on_workspace_tree_context_menu)
     window.workspace_tree.setColumnCount(6)
     window.workspace_tree.setHeaderLabels(["Repositório", "Caminho", "Branch", "Ahead", "Behind", "Status"])
     window.workspace_tree.itemSelectionChanged.connect(window._on_workspace_selection_changed)

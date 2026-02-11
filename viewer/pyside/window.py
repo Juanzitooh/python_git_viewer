@@ -10,11 +10,17 @@ from pathlib import Path
 
 from ..core.git_client import is_git_repo
 from ..core.github_urls import (
+    build_repo_actions_url as core_build_repo_actions_url,
+    build_repo_branch_commits_url as core_build_repo_branch_commits_url,
+    build_repo_branch_url as core_build_repo_branch_url,
     build_commit_url as core_build_commit_url,
+    build_repo_issues_url as core_build_repo_issues_url,
+    build_repo_releases_url as core_build_repo_releases_url,
     get_repo_github_base_url as core_get_repo_github_base_url,
 )
 from ..core.models import CommitSummary
 from ..core.repo_workspace import default_repo_scan_root
+from ..core.repo_state import get_current_branch as core_get_current_branch
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
 from .controllers import (
     add_recent_repo,
@@ -42,8 +48,11 @@ from .controllers import (
     on_compare_file_selected,
     on_branch_changed,
     on_workspace_item_double_clicked,
+    on_workspace_tree_context_menu,
     on_workspace_root_edited,
     on_workspace_selection_changed,
+    on_repo_combo_context_menu,
+    on_repo_combo_dropdown_context_menu,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
     pick_workspace_root,
@@ -547,6 +556,9 @@ class QtShellWindow(QMainWindow):
     def _on_workspace_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         on_workspace_item_double_clicked(self, item, _column)
 
+    def _on_workspace_tree_context_menu(self, pos: QPoint) -> None:
+        on_workspace_tree_context_menu(self, pos)
+
     def _refresh_commit_files(self) -> None:
         refresh_commit_files(self)
 
@@ -672,11 +684,120 @@ class QtShellWindow(QMainWindow):
             return False
         return self._open_local_path_in_explorer(target)
 
+    def _open_repo_in_vscode(self, repo_path: str = "") -> bool:
+        resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
+        if not resolved_repo:
+            QMessageBox.warning(self, "VS Code", "Repositorio invalido para abrir no VS Code.")
+            return False
+        code_bin = shutil.which("code")
+        if not code_bin:
+            QMessageBox.warning(self, "VS Code", "Comando 'code' nao encontrado no PATH.")
+            return False
+        try:
+            subprocess.Popen([code_bin, resolved_repo])
+        except OSError as exc:
+            QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
+            return False
+        return True
+
+    def _open_repo_in_explorer(self, repo_path: str = "") -> bool:
+        resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
+        if not resolved_repo:
+            QMessageBox.warning(self, "Git Viewer", "Repositorio invalido para abrir na pasta.")
+            return False
+        return self._open_local_path_in_explorer(resolved_repo)
+
     def _get_repo_github_base_url(self, repo_path: str = "") -> str:
         resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
         if not resolved_repo:
             raise RuntimeError("Repositorio invalido para acao de GitHub.")
         return core_get_repo_github_base_url(resolved_repo)
+
+    def _get_repo_branch_name(self, repo_path: str = "") -> str:
+        resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
+        if not resolved_repo:
+            return ""
+        try:
+            return core_get_current_branch(resolved_repo).strip()
+        except RuntimeError:
+            return ""
+
+    def _open_repo_in_github(self, repo_path: str = "") -> bool:
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(repo_base_url)
+
+    def _open_repo_branch_in_github(self, repo_path: str = "") -> bool:
+        branch = self._get_repo_branch_name(repo_path)
+        if not branch:
+            QMessageBox.information(self, "GitHub", "Nao foi possivel identificar a branch atual.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(core_build_repo_branch_url(repo_base_url, branch))
+
+    def _open_repo_branch_commits_in_github(self, repo_path: str = "") -> bool:
+        branch = self._get_repo_branch_name(repo_path)
+        if not branch:
+            QMessageBox.information(self, "GitHub", "Nao foi possivel identificar a branch atual.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(core_build_repo_branch_commits_url(repo_base_url, branch))
+
+    def _open_repo_issues_in_github(self, repo_path: str = "") -> bool:
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(core_build_repo_issues_url(repo_base_url))
+
+    def _open_repo_actions_in_github(self, repo_path: str = "") -> bool:
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(core_build_repo_actions_url(repo_base_url))
+
+    def _open_repo_releases_in_github(self, repo_path: str = "") -> bool:
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._open_url_in_browser(core_build_repo_releases_url(repo_base_url))
+
+    def _copy_repo_github_url(self, repo_path: str = "") -> bool:
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        return self._copy_to_clipboard(repo_base_url, status="URL do repositorio copiada.")
+
+    def _copy_repo_branch_github_url(self, repo_path: str = "") -> bool:
+        branch = self._get_repo_branch_name(repo_path)
+        if not branch:
+            QMessageBox.information(self, "GitHub", "Nao foi possivel identificar a branch atual.")
+            return False
+        try:
+            repo_base_url = self._get_repo_github_base_url(repo_path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "GitHub", str(exc))
+            return False
+        branch_url = core_build_repo_branch_url(repo_base_url, branch)
+        return self._copy_to_clipboard(branch_url, status="URL da branch copiada.")
 
     def _open_commit_in_github(self, commit_hash: str, repo_path: str = "") -> bool:
         selected_hash = commit_hash.strip()
@@ -739,6 +860,12 @@ class QtShellWindow(QMainWindow):
         selected = self.repo_combo.currentData()
         selected_repo = str(selected).strip() if selected is not None else ""
         self._set_repo(selected_repo, save=True)
+
+    def _on_repo_combo_context_menu(self, pos: QPoint) -> None:
+        on_repo_combo_context_menu(self, pos)
+
+    def _on_repo_combo_dropdown_context_menu(self, pos: QPoint) -> None:
+        on_repo_combo_dropdown_context_menu(self, pos)
 
     def _on_branch_changed(self, _index: int) -> None:
         on_branch_changed(self, _index)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -23,6 +24,11 @@ def build_top_bar(window: object, root_layout: QVBoxLayout, parent: QWidget) -> 
     window.repo_combo = QComboBox(bar)
     window.repo_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     window.repo_combo.currentIndexChanged.connect(window._on_repo_changed)
+    window.repo_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.repo_combo.customContextMenuRequested.connect(window._on_repo_combo_context_menu)
+    repo_dropdown = window.repo_combo.view()
+    repo_dropdown.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    repo_dropdown.customContextMenuRequested.connect(window._on_repo_combo_dropdown_context_menu)
     bar_layout.addWidget(window.repo_combo, stretch=1)
 
     window.branch_combo = QComboBox(bar)
@@ -71,4 +77,3 @@ def build_status_bar(window: object, parent: QWidget) -> None:
     window.status_busy_progress.setVisible(False)
     window.status.addPermanentWidget(window.status_busy_label)
     window.status.addPermanentWidget(window.status_busy_progress)
-

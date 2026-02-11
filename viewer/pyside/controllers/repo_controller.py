@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QTreeWidgetItem
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QFileDialog, QMenu, QMessageBox, QTreeWidgetItem
 
 from ...core.git_client import is_git_repo
 from ...core.repo_state import (
@@ -240,6 +240,97 @@ def on_workspace_item_double_clicked(window: object, item: QTreeWidgetItem, _col
     if not target_repo:
         return
     set_repo(window, target_repo, save=True)
+
+
+def _show_repo_context_menu(window: object, global_pos: QPoint, repo_path: str) -> None:
+    normalized = normalize_repo_path(repo_path)
+    if not normalized or not os.path.isdir(normalized) or not is_git_repo(normalized):
+        return
+    menu = QMenu(window)
+    action_open_vscode = menu.addAction("Abrir repositório no VS Code")
+    action_open_folder = menu.addAction("Abrir na pasta")
+    action_copy_path = menu.addAction("Copiar caminho local")
+    menu.addSeparator()
+    github_menu = menu.addMenu("GitHub")
+    action_open_repo = github_menu.addAction("Abrir repositório")
+    action_open_branch = github_menu.addAction("Abrir branch atual")
+    action_open_commits = github_menu.addAction("Abrir commits da branch")
+    action_open_issues = github_menu.addAction("Abrir issues")
+    action_open_actions = github_menu.addAction("Abrir actions")
+    action_open_releases = github_menu.addAction("Abrir releases")
+    github_menu.addSeparator()
+    action_copy_repo_url = github_menu.addAction("Copiar URL do repositório")
+    action_copy_branch_url = github_menu.addAction("Copiar URL da branch")
+
+    selected_action = menu.exec(global_pos)
+    if selected_action is None:
+        return
+    if selected_action == action_open_vscode:
+        window._open_repo_in_vscode(normalized)
+        return
+    if selected_action == action_open_folder:
+        window._open_repo_in_explorer(normalized)
+        return
+    if selected_action == action_copy_path:
+        window._copy_to_clipboard(normalized, status="Caminho do repositório copiado.")
+        return
+    if selected_action == action_open_repo:
+        window._open_repo_in_github(normalized)
+        return
+    if selected_action == action_open_branch:
+        window._open_repo_branch_in_github(normalized)
+        return
+    if selected_action == action_open_commits:
+        window._open_repo_branch_commits_in_github(normalized)
+        return
+    if selected_action == action_open_issues:
+        window._open_repo_issues_in_github(normalized)
+        return
+    if selected_action == action_open_actions:
+        window._open_repo_actions_in_github(normalized)
+        return
+    if selected_action == action_open_releases:
+        window._open_repo_releases_in_github(normalized)
+        return
+    if selected_action == action_copy_repo_url:
+        window._copy_repo_github_url(normalized)
+        return
+    if selected_action == action_copy_branch_url:
+        window._copy_repo_branch_github_url(normalized)
+
+
+def on_repo_combo_context_menu(window: object, pos: QPoint) -> None:
+    selected = window.repo_combo.currentData()
+    repo_path = str(selected).strip() if selected is not None else ""
+    if not repo_path:
+        return
+    _show_repo_context_menu(window, window.repo_combo.mapToGlobal(pos), repo_path)
+
+
+def on_repo_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
+    dropdown = window.repo_combo.view()
+    index = dropdown.indexAt(pos)
+    repo_path = ""
+    if index.isValid():
+        value = index.data(Qt.ItemDataRole.UserRole)
+        repo_path = str(value).strip() if value is not None else ""
+    if not repo_path:
+        selected = window.repo_combo.currentData()
+        repo_path = str(selected).strip() if selected is not None else ""
+    if not repo_path:
+        return
+    _show_repo_context_menu(window, dropdown.viewport().mapToGlobal(pos), repo_path)
+
+
+def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
+    item = window.workspace_tree.itemAt(pos)
+    if item is None:
+        return
+    value = item.data(0, Qt.ItemDataRole.UserRole)
+    repo_path = str(value).strip() if value is not None else ""
+    if not repo_path:
+        return
+    _show_repo_context_menu(window, window.workspace_tree.viewport().mapToGlobal(pos), repo_path)
 
 
 def set_repo(window: object, repo_path: str, *, save: bool) -> None:
