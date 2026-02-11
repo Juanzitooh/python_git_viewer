@@ -46,6 +46,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na paridade de menus no PySide6 com contexto na aba Importar (commits) e na aba Comparar (arquivos), incluindo acoes de GitHub, copia e abertura local.
 - M7 avancou na paridade de repositorio no PySide6 com menu de contexto no seletor global e na lista da aba Repositorios, incluindo abrir no VS Code/pasta, copiar caminho e submenu GitHub completo.
 - M7 avancou na paridade da aba Commit em PySide6 com botao "Abrir PR" (habilitado com worktree limpo), abrindo URL de compare do GitHub a partir da branch atual.
+- M7 avancou na paridade da aba Comparar em PySide6 com execucao de Merge/Rebase/Squash, validacoes de worktree e mensagem obrigatoria para squash, incluindo CTA para ir rapido a aba Commit quando houver alteracoes locais.
 
 ## [0.2.0] - 2026-02-10
 

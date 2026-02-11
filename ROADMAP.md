@@ -267,6 +267,9 @@ Legenda
 - [x] R7.4.1.4 Fluxo de abrir PR na aba Commit em PySide6 (2026-02-11)
   Escopo: adicionar botao "Abrir PR" na aba Commit, habilitado quando o worktree estiver limpo, abrindo compare URL do GitHub para branch atual vs branch base padrao.
   Aceite: com worktree limpo, usuario abre a pagina de criacao de PR no navegador sem montar URL manualmente.
+- [x] R7.4.1.5 Acoes de Merge/Rebase/Squash na aba Comparar em PySide6 (2026-02-11)
+  Escopo: adicionar na aba Comparar controles de acao de branch com validacoes de dirty state, confirmacao e execucao de merge/rebase/squash (com mensagem obrigatoria no squash).
+  Aceite: usuario executa acao direto no PySide6 com feedback de erro/sucesso e atualizacao automatica de status/historico/commit/comparacao.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
