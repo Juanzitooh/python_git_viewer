@@ -288,6 +288,9 @@ Legenda
 - [x] R7.4.1.11 Stage/unstage por linha na aba Commit em PySide6 (2026-02-11)
   Escopo: adicionar acoes de stage/unstage por linha alterada no diff selecionado da aba Commit, com aplicacao de patch unidiff-zero por linha.
   Aceite: com uma linha de diff selecionada, usuario consegue aplicar ou reverter apenas aquela linha no stage direto pelo PySide6.
+- [x] R7.4.1.12 Stash e Undo commit na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar na aba Commit as acoes de stash (com mensagem) e undo do ultimo commit por modo (`soft`, `mixed`, `hard`) com confirmacao para o modo destrutivo.
+  Aceite: usuario consegue criar stash e desfazer o ultimo commit pelo PySide6 com feedback de status e atualizacao das abas dependentes.
 - [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
