@@ -36,6 +36,7 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 - M7 avancou na modularizacao com extracao da barra global e status bar para `viewer/pyside/layout/chrome.py`, mantendo `shell.py` focado em orquestracao.
 - M7 iniciou a extracao de controladores por fluxo com `viewer/pyside/controllers/history_controller.py`, movendo logica da aba Historico para um modulo dedicado.
 - M7 avancou na extracao de controladores com `viewer/pyside/controllers/compare_controller.py`, isolando fluxo de origem/destino, refresh e patch da aba Comparar.
+- M7 avancou na extracao de controladores com `viewer/pyside/controllers/import_controller.py`, isolando fluxo de origem/branch, carga de commits e importacao por cherry-pick da aba Importar.
 
 ## [0.2.0] - 2026-02-10
 

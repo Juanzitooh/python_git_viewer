@@ -231,6 +231,9 @@ Legenda
 - [x] R7.4.3.3.2 Extrair controlador da aba Comparar em PySide6 (2026-02-10)
   Escopo: mover para `viewer/pyside/controllers/compare_controller.py` o fluxo de origem/destino, refresh de comparacao, selecao de arquivo e leitura de patch.
   Aceite: callbacks da aba Comparar seguem funcionais via wrappers no `shell.py`, com logica de dominio UI isolada em controlador.
+- [x] R7.4.3.3.3 Extrair controlador da aba Importar em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/import_controller.py` o fluxo de origem/branch, carga de commits, copia de hashes e importacao por cherry-pick.
+  Aceite: callbacks da aba Importar seguem funcionais via wrappers no `shell.py`, mantendo o fluxo completo com atualizacao das abas relacionadas.
 - [ ] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao
   Escopo: consolidar a janela principal como ponto de inicializacao, roteamento de eventos e persistencia, removendo logica de montagem/fluxo espalhada.
   Aceite: arquivo principal do PySide6 fica significativamente menor e com manutencao simplificada.
