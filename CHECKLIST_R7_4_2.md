@@ -20,124 +20,125 @@ Como usar:
 
 ## 2. Pre-check rapido
 
-- [ ] App abre sem traceback no terminal.
-- [ ] Janela abre maximizada.
-- [ ] Tabs aparecem na ordem correta: Repositorios, Commit, Historico, Importar, Comparar, Configuracoes.
-- [ ] Status bar mostra estado sem travar UI.
+- [X] App abre sem traceback no terminal.
+- [BUG] Janela abre maximizada.
+- [X] Tabs aparecem na ordem correta: Repositorios, Commit, Historico, Importar, Comparar, Configuracoes.
+- [X] Status bar mostra estado sem travar UI.
 
 ## 3. Barra global (topo)
 
-- [ ] Combobox de repositorio carrega repos validos.
-- [ ] Trocar repo atualiza branch/status sem erro.
-- [ ] Combobox de branch faz checkout sem erro.
-- [ ] Botao Nova branch cria branch e troca para ela.
-- [ ] Fetch executa e atualiza ahead/behind.
-- [ ] Pull habilita/desabilita corretamente conforme behind.
-- [ ] Push habilita/desabilita corretamente conforme ahead.
-- [ ] Menus de contexto de repositorio funcionam:
-  - [ ] Abrir no VS Code
-  - [ ] Abrir na pasta
-  - [ ] Copiar caminho
-  - [ ] GitHub: abrir repo/branch/commits/issues/actions/releases
-  - [ ] GitHub: copiar URL repo/branch
+- [X] Combobox de repositorio carrega repos validos.
+- [X] Trocar repo atualiza branch/status sem erro.
+- [X] Combobox de branch faz checkout sem erro.
+- [X] Botao Nova branch cria branch e troca para ela.
+- [X] Fetch executa e atualiza ahead/behind.
+- [BUG] Pull habilita/desabilita corretamente conforme behind.- atualiza informação, mas gostaria que se não tiver, ou seja for zero, não apareça.
+- [BUG] Push habilita/desabilita corretamente conforme ahead.- atualiza informação, mas gostaria que se não tiver, ou seja for zero, não apareça.
+- [X] Menus de contexto de repositorio funcionam:
+  - [x] Abrir no VS Code
+  - [x] Abrir na pasta
+  - [x] Copiar caminho
+  - [x] GitHub: abrir repo/branch/commits/issues/actions/releases
+  - [x] GitHub: copiar URL repo/branch
 
 ## 4. Aba Repositorios
 
-- [ ] Campo raiz workspace aceita edicao e persiste.
-- [ ] Botao Pasta seleciona raiz corretamente.
-- [ ] Reescanear atualiza lista sem travar.
-- [ ] Lista mostra colunas (repo, caminho, branch, ahead, behind, status).
-- [ ] Clique simples seleciona repo ativo.
-- [ ] Duplo clique seleciona repo sem erro.
-- [ ] Menu de contexto na lista funciona (mesmas acoes da barra global).
-- [ ] Adicionar repositorio abre dialogo de clone.
-- [ ] Clone URL/SSH com pasta opcional funciona.
-- [ ] Progresso de clone aparece.
-- [ ] Ao concluir clone: re-scan acontece e repo novo aparece selecionavel.
+- [X] Campo raiz workspace aceita edicao e persiste.
+- [X] Botao Pasta seleciona raiz corretamente.
+- [X] Reescanear atualiza lista sem travar.
+- [BUG] Lista mostra colunas (repo, caminho, branch, ahead, behind, status). - deveriam ser cards com essas informações, algo mais moderno não listas sabe
+- [X] Clique simples seleciona repo ativo.
+- [BUG] Duplo clique seleciona repo sem erro. - isso é um erro, deveria abrir no vscode
+- [X] Menu de contexto na lista funciona (mesmas acoes da barra global).
+- [X] Adicionar repositorio abre dialogo de clone.
+- [BUG] Clone URL/SSH com pasta opcional funciona. - ele salva numa pasta com o exato nome que coloquei lá.. por exemplo era pra ser pasta/repo não salvar em pasta
+- [X] Progresso de clone aparece.
+- [X] Ao concluir clone: re-scan acontece e repo novo aparece selecionavel.
 
 ## 5. Aba Commit
 
-- [ ] Lista de arquivos modificados carrega.
-- [ ] Marcadores de status aparecem (`[x]`, `[~]`, `[ ]`).
-- [ ] Selecao por checkbox funciona.
-- [ ] Selecionar tudo funciona.
-- [ ] Limpar selecao funciona.
-- [ ] Diff do arquivo selecionado carrega.
-- [ ] Diff por palavra alterna visualizacao.
-- [ ] Stage selecionado (arquivo) funciona.
-- [ ] Unstage selecionado (arquivo) funciona.
-- [ ] Stage bloco funciona.
-- [ ] Unstage bloco funciona.
-- [ ] Stage linha funciona.
-- [ ] Unstage linha funciona.
-- [ ] Commit exige titulo (obrigatorio).
-- [ ] Commit com titulo e descricao opcional funciona.
+- [BUG] Lista de arquivos modificados carrega. - carrega mas com er - carrega, mas incompleta cade a linha todos ou a linha com o nome de cada pasta pra selecionar várias de uma vez? como no tkinter?
+- [BUG] Marcadores de status aparecem (`[x]`, `[~]`, `[ ]`). - aparece sim, mas tem um checkbox marcador, qunado marco ele não muda nada ai, tem coisa errada nessa legenda
+- [BUG] Selecao por checkbox funciona. - escesso de botão checar aba no tkinter e comparar
+- [BUG] Selecionar tudo funciona.- escesso de botão checar aba no tkinter e comparar
+- [ ] Limpar selecao funciona. - escesso de botão checar aba no tkinter e comparar
+- [bug] Diff do arquivo selecionado carrega.
+- [bug] Diff por palavra alterna visualizacao. olha lá no tkinter como era a diff de arquivos era bem mais visual com inha, cor vermelha pra deletado e verde para adicionado, tá muito ruim vizualizar
+- [x] Stage selecionado (arquivo) funciona. - escesso de botão checar aba no tkinter e comparar
+- [x] Unstage selecionado (arquivo) funciona. - escesso de botão checar aba no tkinter e comparar
+- [x] Stage bloco funciona. - escesso de botão checar aba no tkinter e comparar
+- [x] Unstage bloco funciona. - escesso de botão checar aba no tkinter e comparar
+- [x] Stage linha funciona. - escesso de botão checar aba no tkinter e comparar
+- [x] Unstage linha funciona. - escesso de botão checar aba no tkinter e comparar
+- [x] Commit exige titulo (obrigatorio).
+- [x] Commit com titulo e descricao opcional funciona.
 - [ ] Stash funciona e atualiza tela.
-- [ ] Undo commit (soft/mixed/hard) funciona.
+- [bug] Undo commit (soft/mixed/hard) funciona. deixa só o soft e mixed por favor
 - [ ] Botao Abrir PR so habilita com worktree limpo.
-- [ ] Abrir PR abre dialogo base/head e abre URL correta no navegador.
+- [bug] Abrir PR abre dialogo base/head e abre URL correta no navegador. não ta abrindo o dialogo para selecionar quais serão as branchs
 
 ## 6. Aba Historico
 
-- [ ] Lista de commits carrega.
-- [ ] Busca por texto filtra resultados.
-- [ ] Limite de commits funciona (50/100/200).
-- [ ] Diff por palavra atualiza patch.
-- [ ] Selecionar commit atualiza metadados.
-- [ ] Selecionar arquivo atualiza patch do arquivo.
-- [ ] Marcadores `[L]` e `[L+O]` aparecem conforme estado.
-- [ ] Tooltip/infos do commit estao coerentes.
-- [ ] Menu de contexto de commit funciona:
+- [X] Lista de commits carrega.
+- [bug] Busca por texto filtra resultados. - não ta filtrando nada, gostaria que de escrever algo ali já filtrasse dizendo nada encontrado caso não tenha
+- [bug] Limite de commits funciona (50/100/200). - deveria ser scroll infinito
+- [bug] Diff por palavra atualiza patch. revê como era exibido o path pelo tkinter os path utils que deixavam facil de ler as coiss com filtros em verde e vermelho para linahs adicionadas e tal, tá tudo confuso
+- [x] Selecionar commit atualiza metadados.
+- [x] Selecionar arquivo atualiza patch do arquivo.
+- [x] Marcadores `[L]` e `[L+O]` aparecem conforme estado.
+- [bug] Tooltip/infos do commit estao coerentes. - nãoi vi uma tooltip na pagina
+- [bug] Menu de contexto de commit funciona: - ap abrir menu tá selecionadndo commit, atrapalha o fluxo
   - [ ] Copiar hash
   - [ ] Copiar patch completo
   - [ ] Copiar lista de arquivos
   - [ ] Abrir commit no GitHub
   - [ ] Copiar URL do commit
-- [ ] Menu de contexto de arquivo funciona:
+- [bug] Menu de contexto de arquivo funciona:
+tudo bugado no menu, ele aparece mas somente a ultima opção é possivel clicar nela
   - [ ] Abrir no VS Code
   - [ ] Abrir na pasta
   - [ ] Copiar caminho relativo
   - [ ] Copiar patch do arquivo
   - [ ] Copiar patch completo
-- [ ] Botao Exportar funciona (copiar hashes + confirmar exportacao).
+- [bug] Botao Exportar funciona (copiar hashes + confirmar exportacao). ao apertar ctrl e apertar em outro commit não é possivel adicionar mais um a seleção e isso faz o exportar só funcionar unitariamente
 - [ ] Exportar trata conflito abrindo dialogo de conflitos.
 - [ ] Botao Reordenar locais aparece so quando ha >=2 commits locais com upstream.
 - [ ] Reordenar locais funciona com backup e atualiza historico.
 
 ## 7. Aba Importar
 
-- [ ] Combobox de repo origem carrega lista do scan.
-- [ ] Usar atual funciona.
-- [ ] Combobox de branch origem carrega.
-- [ ] Lista de commits da origem carrega.
-- [ ] Botao Copiar hashes funciona.
+- [x] Combobox de repo origem carrega lista do scan.
+- [bug] Usar atual funciona. qual sentido de usar atual se e importar de outro repositório o intuito da pagina?
+- [x] Combobox de branch origem carrega.
+- [x] Lista de commits da origem carrega.
+- [x] Botao Copiar hashes funciona.
 - [ ] Importar selecionados funciona.
 - [ ] Em conflito, dialogo de conflitos abre corretamente.
-- [ ] Menu de contexto de commit funciona (GitHub/hash/lista/patch).
+- [X] Menu de contexto de commit funciona (GitHub/hash/lista/patch).
 
 ## 8. Aba Comparar
 
-- [ ] Origem/destino carregam branches validas.
-- [ ] Botao Trocar inverte origem/destino.
-- [ ] Atualizar recarrega comparacao.
-- [ ] Diff por palavra funciona no patch.
-- [ ] Lista de commits carrega.
-- [ ] Lista de arquivos carrega.
-- [ ] Selecionar arquivo mostra patch.
-- [ ] Menu de contexto de commit funciona.
-- [ ] Menu de contexto de arquivo funciona.
+- [X] Origem/destino carregam branches validas.
+- [X] Botao Trocar inverte origem/destino.
+- [X] Atualizar recarrega comparacao.
+- [bug] Diff por palavra funciona no patch. - todo bugado a forma de ver o patch consulta uo tkinter, antiga ui pra entende como era lá
+- [x] Lista de commits carrega.
+- [x] Lista de arquivos carrega.
+- [x] Selecionar arquivo mostra patch.
+- [x] Menu de contexto de commit funciona.
+- [x] Menu de contexto de arquivo funciona.
 - [ ] Acao Merge funciona.
 - [ ] Acao Rebase funciona.
-- [ ] Acao Squash exige mensagem.
+- [X] Acao Squash exige mensagem.
 - [ ] Em conflito, dialogo de conflitos abre corretamente.
-- [ ] Botao Ir para Commit funciona quando worktree esta sujo.
+- [x] Botao Ir para Commit funciona quando worktree esta sujo.
 
 ## 9. Aba Configuracoes
 
-- [ ] Troca de tema Claro/Escuro funciona.
-- [ ] Limite padrao de commits salva e aplica.
-- [ ] Raiz do workspace salva e aplica.
-- [ ] Reiniciar app preserva configuracoes salvas.
+- [X] Troca de tema Claro/Escuro funciona.
+- [bug] Limite padrao de commits salva e aplica. - não deveria ter limite de commits aqui, deveria ser scrool infinito caso tenha o que carregar
+- [x] Raiz do workspace salva e aplica.
+- [x] Reiniciar app preserva configuracoes salvas.
 
 ## 10. Dialogo de conflitos (geral)
 
@@ -149,9 +150,9 @@ Como usar:
 
 ## 11. Persistencia entre reinicios
 
-- [ ] Ultimo repositorio ativo e restaurado.
-- [ ] Ultima aba ativa e restaurada.
-- [ ] Preferencias mantidas em `settings.json`.
+- [X] Ultimo repositorio ativo e restaurado.
+- [bug] Ultima aba ativa e restaurada.
+- [?] Preferencias mantidas em `settings.json`.
 
 ## 12. Resultado final da rodada
 
