@@ -6,17 +6,8 @@ import os
 import sys
 from pathlib import Path
 
-from ..core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
 from ..core.git_client import is_git_repo
 from ..core.models import CommitSummary
-from ..core.remote_ops import (
-    fetch_all_prune as core_fetch_all_prune,
-    pull_ff_only as core_pull_ff_only,
-    push_current_branch as core_push_current_branch,
-)
-from ..core.repo_state import (
-    get_current_branch as core_get_current_branch,
-)
 from ..core.repo_workspace import default_repo_scan_root
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
 from .controllers import (
@@ -43,12 +34,15 @@ from .controllers import (
     on_commit_file_item_changed,
     on_compare_branches_changed,
     on_compare_file_selected,
+    on_branch_changed,
     on_workspace_item_double_clicked,
     on_workspace_root_edited,
     on_workspace_selection_changed,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
     pick_workspace_root,
+    pull_repo,
+    push_repo,
     refresh_commit_files,
     refresh_import_source_repos,
     refresh_compare_branch_options,
@@ -60,6 +54,7 @@ from .controllers import (
     scan_workspace_repos,
     select_repo_combo_item,
     set_repo,
+    create_new_branch,
     load_settings_into_tab,
     pick_settings_workspace_root,
     save_settings_from_tab,
@@ -71,6 +66,7 @@ from .controllers import (
     update_import_controls_state,
     use_current_repo_as_import_source,
     copy_selected_import_hashes,
+    fetch_repo,
     clear_history_view,
     get_history_limit_value,
     load_history_commit_content,
@@ -94,12 +90,9 @@ try:
     from PySide6.QtGui import QCloseEvent, QFont
     from PySide6.QtWidgets import (
         QApplication,
-        QInputDialog,
-        QListWidget,
         QListWidgetItem,
         QLabel,
         QMainWindow,
-        QMessageBox,
         QTabWidget,
         QTreeWidgetItem,
         QVBoxLayout,
@@ -612,113 +605,19 @@ class QtShellWindow(QMainWindow):
         self._set_repo(selected_repo, save=True)
 
     def _on_branch_changed(self, _index: int) -> None:
-        if self._setting_branch_programmatically:
-            return
-        if not self.repo_path:
-            return
-        selected = self.branch_combo.currentData()
-        target = str(selected).strip() if selected is not None else ""
-        if not target:
-            return
-        try:
-            current = core_get_current_branch(self.repo_path).strip()
-        except RuntimeError:
-            return
-        if current == target:
-            return
-        try:
-            core_checkout_branch(self.repo_path, target)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Checkout", str(exc))
-            self._refresh_repo_state_ui()
-            return
-        self._set_status(f"Checkout concluido: {target}")
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
-        self._reload_history_commits()
-        self._refresh_compare_branch_options()
-        self._sync_import_target_label()
-        self._persist_state()
+        on_branch_changed(self, _index)
 
     def _create_new_branch(self) -> None:
-        if not self.repo_path:
-            return
-        branch_name, ok = QInputDialog.getText(self, "Nova branch", "Nome da branch:")
-        if not ok:
-            return
-        normalized = branch_name.strip()
-        if not normalized:
-            return
-        try:
-            current = core_get_current_branch(self.repo_path).strip()
-            core_create_branch(self.repo_path, normalized, current)
-            core_checkout_branch(self.repo_path, normalized)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Nova branch", str(exc))
-            return
-        self._set_status(f"Branch criada: {normalized}")
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
-        self._reload_history_commits()
-        self._refresh_compare_branch_options()
-        self._persist_state()
+        create_new_branch(self)
 
     def _fetch_repo(self) -> None:
-        if not self.repo_path:
-            return
-        self._begin_busy("Executando fetch...")
-        try:
-            try:
-                core_fetch_all_prune(self.repo_path)
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Fetch", str(exc))
-                return
-        finally:
-            self._end_busy()
-        self._set_status("Fetch concluido.")
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
-        self._reload_history_commits()
-        self._refresh_compare_view()
-        self._persist_state()
+        fetch_repo(self)
 
     def _pull_repo(self) -> None:
-        if not self.repo_path:
-            return
-        self._begin_busy("Executando pull...")
-        try:
-            try:
-                core_pull_ff_only(self.repo_path)
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Pull", str(exc))
-                return
-        finally:
-            self._end_busy()
-        self._set_status("Pull concluido.")
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
-        self._reload_history_commits()
-        self._refresh_compare_branch_options()
-        self._persist_state()
+        pull_repo(self)
 
     def _push_repo(self) -> None:
-        if not self.repo_path:
-            return
-        self._begin_busy("Executando push...")
-        try:
-            try:
-                core_push_current_branch(self.repo_path)
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Push", str(exc))
-                return
-        finally:
-            self._end_busy()
-        self._set_status("Push concluido.")
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
-        self._reload_history_commits()
-        self._refresh_compare_view()
-        self._persist_state()
+        push_repo(self)
 
     def _on_tab_changed(self, _index: int) -> None:
         self._persist_state()

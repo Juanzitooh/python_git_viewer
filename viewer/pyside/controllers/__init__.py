@@ -70,6 +70,13 @@ from .repo_controller import (
     set_repo,
     sync_workspace_tree_selection,
 )
+from .sync_controller import (
+    create_new_branch,
+    fetch_repo,
+    on_branch_changed,
+    pull_repo,
+    push_repo,
+)
 
 __all__ = [
     "refresh_commit_files",
@@ -130,4 +137,9 @@ __all__ = [
     "select_repo_combo_item",
     "refresh_repo_state_ui",
     "add_recent_repo",
+    "on_branch_changed",
+    "create_new_branch",
+    "fetch_repo",
+    "pull_repo",
+    "push_repo",
 ]
