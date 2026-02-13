@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+import shutil
+from typing import Callable
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -14,11 +18,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QTreeWidgetItem,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from ...core.branch_ops import checkout_branch as core_checkout_branch
 from ...core.git_client import is_git_repo
 from ...core.repo_state import (
     get_ahead_behind as core_get_ahead_behind,
@@ -29,6 +34,31 @@ from ...core.repo_state import (
 )
 from ...core.repo_workspace import clone_repository, default_repo_scan_root, discover_git_repositories
 from ...core.settings_store import normalize_repo_path
+from ..widgets import NoScrollComboBox
+
+
+class WorkspaceCardFrame(QFrame):
+    clicked = Signal()
+    double_clicked = Signal()
+    context_requested = Signal(QPoint)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            self.context_requested.emit(event.globalPosition().toPoint())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.double_clicked.emit()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
 
 def collect_repo_paths_from_settings(window: object, key: str) -> list[str]:
@@ -184,56 +214,236 @@ def build_repo_snapshot(window: object, repo_path: str) -> tuple[str, int, int, 
     return branch, ahead, behind, status
 
 
-def refresh_workspace_tree(window: object) -> None:
-    window.workspace_tree.clear()
-    repos = collect_known_repos(window)
-    if not repos:
-        placeholder = QTreeWidgetItem(["(sem repositorios)", "", "", "", "", ""])
-        placeholder.setData(0, Qt.ItemDataRole.UserRole, "")
-        window.workspace_tree.addTopLevelItem(placeholder)
-        window.workspace_tree.resizeColumnToContents(0)
-        window.workspace_tree.resizeColumnToContents(2)
-        window.workspace_tree.resizeColumnToContents(3)
-        window.workspace_tree.resizeColumnToContents(4)
+def _is_current_repo(window: object, repo_path: str) -> bool:
+    if not window.repo_path:
+        return False
+    return normalize_repo_path(window.repo_path) == normalize_repo_path(repo_path)
+
+
+def _format_workspace_card_title(window: object, repo_path: str) -> str:
+    title = format_repo_display_label(window, repo_path)
+    if _is_current_repo(window, repo_path):
+        return f"▶ {title}"
+    return title
+
+
+def _clear_workspace_cards(window: object) -> QGridLayout:
+    grid = window.workspace_cards_grid
+    while grid.count() > 0:
+        item = grid.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.deleteLater()
+    window.workspace_card_widgets = {}
+    window.workspace_card_title_labels = {}
+    return grid
+
+
+def _workspace_card_columns(window: object) -> int:
+    if not hasattr(window, "workspace_cards_scroll"):
+        return 3
+    viewport_width = window.workspace_cards_scroll.viewport().width()
+    if viewport_width <= 0:
+        return 3
+    if viewport_width < 760:
+        return 1
+    if viewport_width < 1120:
+        return 2
+    if viewport_width < 1480:
+        return 3
+    return 4
+
+
+def _on_workspace_card_branch_activated(window: object, repo_path: str, branch_combo: NoScrollComboBox) -> None:
+    target_value = branch_combo.currentData()
+    target_branch = str(target_value).strip() if target_value is not None else ""
+    if not target_branch:
         return
-    for repo in repos:
-        branch, ahead, behind, status = build_repo_snapshot(window, repo)
-        item = QTreeWidgetItem(
-            [
-                format_repo_display_label(window, repo),
-                format_workspace_relative_path(window, repo),
-                branch,
-                str(ahead),
-                str(behind),
-                status,
-            ]
+    normalized_repo = normalize_repo_path(repo_path)
+    try:
+        current_branch = core_get_current_branch(normalized_repo).strip()
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Branch", str(exc))
+        refresh_workspace_tree(window)
+        return
+    if current_branch == target_branch:
+        return
+    try:
+        core_checkout_branch(normalized_repo, target_branch)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Branch", str(exc))
+        refresh_workspace_tree(window)
+        return
+
+    if _is_current_repo(window, normalized_repo):
+        refresh_repo_state_ui(window)
+        window._refresh_commit_files()
+        window._reload_history_commits()
+        window._refresh_compare_branch_options()
+        window._refresh_import_source_repos()
+    refresh_workspace_tree(window)
+    window._set_status(f"Branch alterada em {os.path.basename(normalized_repo)}: {target_branch}")
+
+
+def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
+    branch, ahead, behind, status = build_repo_snapshot(window, repo_path)
+
+    card = WorkspaceCardFrame(window.workspace_cards_container)
+    card.setObjectName("WorkspaceCard")
+    card.setProperty("selected", _is_current_repo(window, repo_path))
+    card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    card.setMinimumHeight(164)
+
+    card_layout = QVBoxLayout(card)
+    card_layout.setContentsMargins(10, 10, 10, 10)
+    card_layout.setSpacing(6)
+
+    title_label = QLabel(_format_workspace_card_title(window, repo_path), card)
+    title_label.setObjectName("WorkspaceCardTitle")
+    title_label.setWordWrap(True)
+    title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    card_layout.addWidget(title_label)
+
+    path_label = QLabel(format_workspace_relative_path(window, repo_path), card)
+    path_label.setObjectName("WorkspaceCardPath")
+    path_label.setWordWrap(True)
+    path_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    card_layout.addWidget(path_label)
+
+    branch_row = QWidget(card)
+    branch_layout = QHBoxLayout(branch_row)
+    branch_layout.setContentsMargins(0, 0, 0, 0)
+    branch_layout.setSpacing(6)
+    branch_layout.addWidget(QLabel("Branch:", branch_row))
+    branch_combo = NoScrollComboBox(branch_row)
+    branch_combo.setSizeAdjustPolicy(NoScrollComboBox.SizeAdjustPolicy.AdjustToContents)
+    branch_combo.setToolTip("Trocar branch deste repositorio")
+    try:
+        branches = core_list_branches(repo_path)
+    except RuntimeError:
+        branches = [branch]
+    if not branches:
+        branches = [branch]
+    for branch_name in branches:
+        branch_combo.addItem(branch_name, branch_name)
+    current_index = branch_combo.findData(branch)
+    if current_index >= 0:
+        branch_combo.setCurrentIndex(current_index)
+    branch_combo.activated.connect(
+        lambda _idx, path=repo_path, combo=branch_combo: _on_workspace_card_branch_activated(window, path, combo)
+    )
+    branch_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    branch_combo.customContextMenuRequested.connect(
+        lambda pos, path=repo_path, combo=branch_combo: _show_repo_context_menu(window, combo.mapToGlobal(pos), path)
+    )
+    branch_layout.addWidget(branch_combo, stretch=1)
+    card_layout.addWidget(branch_row)
+
+    sync_label = QLabel(f"Ahead {ahead} | Behind {behind}", card)
+    sync_label.setObjectName("WorkspaceCardMeta")
+    sync_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    card_layout.addWidget(sync_label)
+
+    status_label = QLabel(f"Status: {status}", card)
+    status_label.setObjectName("WorkspaceCardMeta")
+    status_label.setWordWrap(True)
+    status_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    card_layout.addWidget(status_label, stretch=1)
+
+    card.clicked.connect(lambda path=repo_path: set_repo(window, path, save=True))
+    card.double_clicked.connect(
+        lambda path=repo_path: (
+            set_repo(window, path, save=True),
+            window._open_repo_in_vscode(path),
         )
-        item.setData(0, Qt.ItemDataRole.UserRole, repo)
-        window.workspace_tree.addTopLevelItem(item)
-    window.workspace_tree.resizeColumnToContents(0)
-    window.workspace_tree.resizeColumnToContents(2)
-    window.workspace_tree.resizeColumnToContents(3)
-    window.workspace_tree.resizeColumnToContents(4)
+    )
+    card.context_requested.connect(lambda global_pos, path=repo_path: _show_repo_context_menu(window, global_pos, path))
+    card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    card.customContextMenuRequested.connect(
+        lambda pos, path=repo_path, widget=card: _show_repo_context_menu(window, widget.mapToGlobal(pos), path)
+    )
+
+    normalized_repo = normalize_repo_path(repo_path)
+    window.workspace_card_widgets[normalized_repo] = card
+    window.workspace_card_title_labels[normalized_repo] = title_label
+    return card
+
+
+def _render_workspace_add_card(window: object) -> QWidget:
+    add_card = QFrame(window.workspace_cards_container)
+    add_card.setObjectName("WorkspaceCardAdd")
+    add_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    add_card.setMinimumHeight(164)
+
+    layout = QVBoxLayout(add_card)
+    layout.setContentsMargins(10, 10, 10, 10)
+    layout.setSpacing(6)
+
+    title = QLabel("+ Adicionar repositorio", add_card)
+    title.setObjectName("WorkspaceCardTitle")
+    title.setWordWrap(True)
+    layout.addWidget(title)
+
+    description = QLabel("Abrir janela de clonagem (URL HTTPS/SSH).", add_card)
+    description.setObjectName("WorkspaceCardMeta")
+    description.setWordWrap(True)
+    layout.addWidget(description, stretch=1)
+
+    add_button = QPushButton("Adicionar", add_card)
+    add_button.clicked.connect(window._open_clone_dialog)
+    layout.addWidget(add_button)
+    return add_card
+
+
+def refresh_workspace_tree(window: object) -> None:
+    if not hasattr(window, "workspace_cards_grid"):
+        return
+    grid = _clear_workspace_cards(window)
+    repos = collect_known_repos(window)
+    columns = _workspace_card_columns(window)
+    row = 0
+    column = 0
+
+    if not repos:
+        empty_label = QLabel("Nenhum repositorio encontrado no workspace.", window.workspace_cards_container)
+        empty_label.setObjectName("WorkspaceCardMeta")
+        grid.addWidget(empty_label, 0, 0, 1, max(columns, 1))
+        row = 1
+        column = 0
+    else:
+        for repo in repos:
+            card = _build_workspace_repo_card(window, repo)
+            grid.addWidget(card, row, column)
+            column += 1
+            if column >= columns:
+                column = 0
+                row += 1
+
+    add_card = _render_workspace_add_card(window)
+    grid.addWidget(add_card, row, column)
+    for col in range(columns):
+        grid.setColumnStretch(col, 1)
     sync_workspace_tree_selection(window)
 
 
 def sync_workspace_tree_selection(window: object) -> None:
-    window._setting_workspace_selection = True
-    try:
-        for index in range(window.workspace_tree.topLevelItemCount()):
-            item = window.workspace_tree.topLevelItem(index)
-            path_value = item.data(0, Qt.ItemDataRole.UserRole)
-            repo = str(path_value).strip() if path_value is not None else ""
-            should_select = bool(window.repo_path and repo == window.repo_path)
-            item.setSelected(should_select)
-            if should_select:
-                window.workspace_tree.scrollToItem(item)
-    finally:
-        window._setting_workspace_selection = False
+    if not hasattr(window, "workspace_card_widgets"):
+        return
+    for repo_path, card in window.workspace_card_widgets.items():
+        selected = _is_current_repo(window, repo_path)
+        card.setProperty("selected", selected)
+        card.style().unpolish(card)
+        card.style().polish(card)
+        title_label = window.workspace_card_title_labels.get(repo_path)
+        if title_label is not None:
+            title_label.setText(_format_workspace_card_title(window, repo_path))
+        if selected and hasattr(window, "workspace_cards_scroll"):
+            window.workspace_cards_scroll.ensureWidgetVisible(card, 12, 12)
 
 
 def on_workspace_selection_changed(window: object) -> None:
-    if window._setting_workspace_selection:
+    # Compatibilidade com wrappers legados do shell.
+    if not hasattr(window, "workspace_tree"):
         return
     selected_items = window.workspace_tree.selectedItems()
     if not selected_items:
@@ -241,19 +451,19 @@ def on_workspace_selection_changed(window: object) -> None:
     item = selected_items[0]
     path_value = item.data(0, Qt.ItemDataRole.UserRole)
     target_repo = str(path_value).strip() if path_value is not None else ""
-    if not target_repo:
-        return
-    if window.repo_path and normalize_repo_path(window.repo_path) == normalize_repo_path(target_repo):
-        return
-    set_repo(window, target_repo, save=True)
+    if target_repo:
+        set_repo(window, target_repo, save=True)
 
 
-def on_workspace_item_double_clicked(window: object, item: QTreeWidgetItem, _column: int) -> None:
+def on_workspace_item_double_clicked(window: object, item: object, _column: int) -> None:
+    # Compatibilidade com wrappers legados do shell.
+    if not hasattr(item, "data"):
+        return
     path_value = item.data(0, Qt.ItemDataRole.UserRole)
     target_repo = str(path_value).strip() if path_value is not None else ""
-    if not target_repo:
-        return
-    set_repo(window, target_repo, save=True)
+    if target_repo:
+        set_repo(window, target_repo, save=True)
+        window._open_repo_in_vscode(target_repo)
 
 
 def _show_repo_context_menu(window: object, global_pos: QPoint, repo_path: str) -> None:
@@ -275,6 +485,8 @@ def _show_repo_context_menu(window: object, global_pos: QPoint, repo_path: str) 
     github_menu.addSeparator()
     action_copy_repo_url = github_menu.addAction("Copiar URL do repositório")
     action_copy_branch_url = github_menu.addAction("Copiar URL da branch")
+    menu.addSeparator()
+    action_delete_repo = menu.addAction("Excluir repositório local...")
 
     selected_action = menu.exec(global_pos)
     if selected_action is None:
@@ -311,6 +523,64 @@ def _show_repo_context_menu(window: object, global_pos: QPoint, repo_path: str) 
         return
     if selected_action == action_copy_branch_url:
         window._copy_repo_branch_github_url(normalized)
+        return
+    if selected_action == action_delete_repo:
+        _delete_local_repo(window, normalized)
+
+
+def _remove_repo_from_settings(window: object, repo_path: str) -> None:
+    normalized = normalize_repo_path(repo_path)
+    for key in ("recent_repos", "favorite_repos"):
+        current = window.settings_data.get(key, [])
+        if not isinstance(current, list):
+            window.settings_data[key] = []
+            continue
+        filtered: list[str] = []
+        for raw in current:
+            if not isinstance(raw, str):
+                continue
+            candidate = normalize_repo_path(raw)
+            if candidate == normalized:
+                continue
+            filtered.append(candidate)
+        window.settings_data[key] = filtered
+    window.scanned_repos = [path for path in window.scanned_repos if normalize_repo_path(path) != normalized]
+
+
+def _delete_local_repo(window: object, repo_path: str) -> None:
+    normalized = normalize_repo_path(repo_path)
+    base_name = os.path.basename(normalized.rstrip(os.sep)) or normalized
+    answer = QMessageBox.question(
+        window,
+        "Excluir repositório",
+        (
+            f"Excluir permanentemente a pasta local?\n\n"
+            f"{normalized}\n\n"
+            "Esta ação não pode ser desfeita."
+        ),
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    if answer != QMessageBox.StandardButton.Yes:
+        return
+    try:
+        shutil.rmtree(normalized)
+    except OSError as exc:
+        QMessageBox.critical(window, "Excluir repositório", f"Falha ao excluir {base_name}:\n{exc}")
+        return
+
+    was_current = _is_current_repo(window, normalized)
+    _remove_repo_from_settings(window, normalized)
+    load_repo_selector_items(window)
+    refresh_workspace_tree(window)
+    if was_current:
+        fallback_repo = ""
+        if window.repo_combo.count() > 0:
+            value = window.repo_combo.itemData(0)
+            fallback_repo = str(value).strip() if value is not None else ""
+        set_repo(window, fallback_repo, save=False)
+    window._persist_state()
+    window._set_status(f"Repositório removido: {base_name}")
 
 
 def on_repo_combo_context_menu(window: object, pos: QPoint) -> None:
@@ -337,6 +607,8 @@ def on_repo_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
 
 
 def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
+    if not hasattr(window, "workspace_tree"):
+        return
     item = window.workspace_tree.itemAt(pos)
     if item is None:
         return
@@ -347,7 +619,12 @@ def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
     _show_repo_context_menu(window, window.workspace_tree.viewport().mapToGlobal(pos), repo_path)
 
 
-def open_clone_dialog(window: object) -> None:
+def open_clone_dialog(
+    window: object,
+    *,
+    activate_repo: bool = True,
+    on_success: Callable[[str], None] | None = None,
+) -> None:
     default_root = normalize_repo_path(window.repo_scan_root) if window.repo_scan_root else normalize_repo_path(default_repo_scan_root())
 
     dialog = QDialog(window)
@@ -479,7 +756,10 @@ def open_clone_dialog(window: object) -> None:
         window.repo_scan_root = destination_root
         window.workspace_root_edit.setText(destination_root)
         scan_workspace_repos(window)
-        set_repo(window, cloned_repo, save=True)
+        if activate_repo:
+            set_repo(window, cloned_repo, save=True)
+        if callable(on_success):
+            on_success(cloned_repo)
         window._persist_state()
         QMessageBox.information(dialog, "Clone", f"Repositório clonado com sucesso:\n{cloned_repo}")
         dialog.accept()
@@ -496,6 +776,7 @@ def set_repo(window: object, repo_path: str, *, save: bool) -> None:
         window.repo_path = ""
         refresh_repo_state_ui(window)
         window._refresh_commit_files()
+        window._refresh_stash_tab_visibility()
         window._clear_history_view()
         window._refresh_compare_branch_options()
         window._sync_import_target_label()
@@ -508,6 +789,7 @@ def set_repo(window: object, repo_path: str, *, save: bool) -> None:
     select_repo_combo_item(window, normalized)
     refresh_repo_state_ui(window)
     window._refresh_commit_files()
+    window._refresh_stash_tab_visibility()
     window._reload_history_commits()
     window._refresh_compare_branch_options()
     window._refresh_import_source_repos()
@@ -541,9 +823,13 @@ def refresh_repo_state_ui(window: object) -> None:
     if hasattr(window, "commit_undo_button"):
         window.commit_undo_button.setEnabled(has_repo)
     if not has_repo:
-        window.pull_button.setEnabled(False)
-        window.push_button.setEnabled(False)
-        window.sync_label.setText("Ahead: 0 | Behind: 0")
+        window.behind_button.setEnabled(False)
+        window.ahead_button.setEnabled(False)
+        window.behind_button.setVisible(False)
+        window.ahead_button.setVisible(False)
+        window.behind_button.setText("Behind: 0")
+        window.ahead_button.setText("Ahead: 0")
+        window.fetch_button.setText("Fetch")
         window.branch_combo.clear()
         window._sync_import_target_label()
         return
@@ -570,20 +856,34 @@ def refresh_repo_state_ui(window: object) -> None:
 
     upstream = core_get_upstream(window.repo_path)
     if not upstream:
-        window.pull_button.setEnabled(False)
-        window.push_button.setEnabled(False)
-        window.sync_label.setText("Ahead: 0 | Behind: 0 (sem upstream)")
+        window.behind_button.setEnabled(False)
+        window.ahead_button.setEnabled(False)
+        window.behind_button.setVisible(False)
+        window.ahead_button.setVisible(False)
+        window.behind_button.setText("Behind: 0")
+        window.ahead_button.setText("Ahead: 0")
+        window.behind_button.setToolTip("Pull indisponivel: branch sem upstream configurado.")
+        window.ahead_button.setToolTip("Push indisponivel: branch sem upstream configurado.")
         window.fetch_button.setText("Fetch")
         window._sync_import_target_label()
         return
 
     behind, ahead = core_get_ahead_behind(window.repo_path, upstream)
-    window.sync_label.setText(f"Ahead: {ahead} | Behind: {behind}")
-    window.pull_button.setEnabled(behind > 0)
-    window.push_button.setEnabled(ahead > 0)
+    window.behind_button.setText(f"Behind: {behind}")
+    window.ahead_button.setText(f"Ahead: {ahead}")
+    window.behind_button.setEnabled(behind > 0)
+    window.ahead_button.setEnabled(ahead > 0)
+    window.behind_button.setVisible(behind > 0)
+    window.ahead_button.setVisible(ahead > 0)
+    if behind > 0:
+        window.behind_button.setToolTip(f"Pull ({behind} commit(s) remotos).")
+    else:
+        window.behind_button.setToolTip("Sem commits remotos pendentes para pull.")
+    if ahead > 0:
+        window.ahead_button.setToolTip(f"Push ({ahead} commit(s) locais).")
+    else:
+        window.ahead_button.setToolTip("Sem commits locais pendentes para push.")
     window.fetch_button.setText(f"Fetch ({behind})" if behind > 0 else "Fetch")
-    window.pull_button.setText(f"Pull ({behind})" if behind > 0 else "Pull")
-    window.push_button.setText(f"Push ({ahead})" if ahead > 0 else "Push")
     window._sync_import_target_label()
 
 

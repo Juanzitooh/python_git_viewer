@@ -36,12 +36,90 @@ def parse_hunk_header_full(header: str) -> tuple[int, int, int, int]:
     return old_start, old_count, new_start, new_count
 
 
-def parse_diff_data(diff_text: str) -> DiffData:
+def _unwrap_word_diff_plain_line(line: str) -> str:
+    # `git diff --word-diff=plain` pode encapsular linhas inteiras.
+    # Exemplos: `{+linha nova+}`, `[-linha antiga-]`, `{-linha antiga-}`
+    if line.startswith("{+") and line.endswith("+}"):
+        return line[2:-2]
+    if line.startswith("[-") and line.endswith("-]"):
+        return line[2:-2]
+    if line.startswith("{-") and line.endswith("-}"):
+        return line[2:-2]
+    return line
+
+
+def _contains_word_diff_markers(line: str) -> bool:
+    return "{+" in line or "[-" in line or "{-" in line
+
+
+def _split_word_diff_plain_line(line: str) -> tuple[str, str, bool]:
+    old_parts: list[str] = []
+    new_parts: list[str] = []
+    index = 0
+    changed = False
+    length = len(line)
+    while index < length:
+        if line.startswith("{+", index):
+            end = line.find("+}", index + 2)
+            if end < 0:
+                text = line[index:]
+                old_parts.append(text)
+                new_parts.append(text)
+                break
+            new_parts.append(line[index + 2 : end])
+            index = end + 2
+            changed = True
+            continue
+        if line.startswith("[-", index):
+            end = line.find("-]", index + 2)
+            if end < 0:
+                text = line[index:]
+                old_parts.append(text)
+                new_parts.append(text)
+                break
+            old_parts.append(line[index + 2 : end])
+            index = end + 2
+            changed = True
+            continue
+        if line.startswith("{-", index):
+            end = line.find("-}", index + 2)
+            if end < 0:
+                text = line[index:]
+                old_parts.append(text)
+                new_parts.append(text)
+                break
+            old_parts.append(line[index + 2 : end])
+            index = end + 2
+            changed = True
+            continue
+        char = line[index]
+        old_parts.append(char)
+        new_parts.append(char)
+        index += 1
+    return "".join(old_parts), "".join(new_parts), changed
+
+
+def strip_word_diff_markers(text: str) -> str:
+    """Remove marcadores de --word-diff=plain preservando apenas o conteudo."""
+    if not text:
+        return ""
+    cleaned = text
+    cleaned = cleaned.replace("{+", "")
+    cleaned = cleaned.replace("+}", "")
+    cleaned = cleaned.replace("[-", "")
+    cleaned = cleaned.replace("-]", "")
+    cleaned = cleaned.replace("{-", "")
+    cleaned = cleaned.replace("-}", "")
+    return cleaned
+
+
+def parse_diff_data(diff_text: str, *, word_diff_plain: bool = False) -> DiffData:
     header_lines: list[str] = []
     hunks: list[DiffHunk] = []
     current: DiffHunk | None = None
     old_line = 0
     new_line = 0
+    word_diff_plain_mode = bool(word_diff_plain)
 
     for line in diff_text.splitlines():
         if line.startswith("diff --git") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
@@ -65,6 +143,112 @@ def parse_diff_data(diff_text: str) -> DiffData:
         if not current:
             continue
         if line.startswith("\\ No newline at end of file"):
+            continue
+        if word_diff_plain_mode:
+            prefix = ""
+            payload = line
+            if payload and payload[0] in {"+", "-", " "}:
+                prefix = payload[0]
+                payload = payload[1:]
+            if payload.startswith("{+") and payload.endswith("+}"):
+                content = payload[2:-2]
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                new_line += 1
+                continue
+            if (payload.startswith("[-") and payload.endswith("-]")) or (
+                payload.startswith("{-") and payload.endswith("-}")
+            ):
+                content = payload[2:-2]
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                old_line += 1
+                continue
+            old_content, new_content, changed = _split_word_diff_plain_line(payload)
+            if changed and old_content != new_content:
+                if prefix in {"+", "-"} and payload.startswith(" "):
+                    old_content = f"{prefix}{old_content}"
+                    new_content = f"{prefix}{new_content}"
+                base_old_line = old_line
+                base_new_line = new_line
+                removed = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=base_old_line,
+                    new_line=base_new_line,
+                    content=old_content,
+                    raw=f"-{old_content}",
+                )
+                current.lines.append(removed)
+                current.raw_lines.append(f"-{old_content}")
+                added = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=base_old_line,
+                    new_line=base_new_line,
+                    content=new_content,
+                    raw=f"+{new_content}",
+                )
+                current.lines.append(added)
+                current.raw_lines.append(f"+{new_content}")
+                old_line += 1
+                new_line += 1
+                continue
+            normalized_content = strip_word_diff_markers(payload)
+            if prefix == "+":
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=normalized_content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                new_line += 1
+                continue
+            if prefix == "-":
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=normalized_content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                old_line += 1
+                continue
+            info = DiffLineInfo(
+                hunk_index=len(hunks) - 1,
+                line_type="context",
+                old_line=old_line,
+                new_line=new_line,
+                content=normalized_content,
+                raw=line,
+            )
+            current.lines.append(info)
+            current.raw_lines.append(line)
+            old_line += 1
+            new_line += 1
             continue
         if line.startswith("-"):
             info = DiffLineInfo(
@@ -97,6 +281,33 @@ def parse_diff_data(diff_text: str) -> DiffData:
             )
             old_line += 1
             new_line += 1
+        elif line.startswith("{+") or line.startswith("{-"):
+            # `git diff --word-diff=plain` pode gerar linhas sem prefixo `+/-`,
+            # por exemplo `{+texto+}` para adicao de linha inteira.
+            content = _unwrap_word_diff_plain_line(line)
+            info = DiffLineInfo(
+                hunk_index=len(hunks) - 1,
+                line_type="added" if line.startswith("{+") else "removed",
+                old_line=old_line,
+                new_line=new_line,
+                content=content,
+                raw=line,
+            )
+            if line.startswith("{+"):
+                new_line += 1
+            else:
+                old_line += 1
+        elif line.startswith("[-"):
+            content = _unwrap_word_diff_plain_line(line)
+            info = DiffLineInfo(
+                hunk_index=len(hunks) - 1,
+                line_type="removed",
+                old_line=old_line,
+                new_line=new_line,
+                content=content,
+                raw=line,
+            )
+            old_line += 1
         else:
             continue
         current.lines.append(info)

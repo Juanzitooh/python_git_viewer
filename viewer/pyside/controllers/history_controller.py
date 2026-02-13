@@ -37,6 +37,7 @@ from ...core.repo_state import (
     get_upstream as core_get_upstream,
     list_branches as core_list_branches,
 )
+from ..diff_columns import render_diff_into_columns
 
 
 def clear_history_view(window: object) -> None:
@@ -46,24 +47,38 @@ def clear_history_view(window: object) -> None:
     window.history_current_file_path = ""
     window.history_local_only_hashes = set()
     window.history_has_upstream = False
+    window.history_current_skip = 0
+    window.history_has_more = False
+    window.history_loading_more = False
+    window.history_active_filter_text = ""
     if hasattr(window, "history_commits_list"):
         window.history_commits_list.clear()
     if hasattr(window, "history_files_list"):
         window.history_files_list.clear()
     if hasattr(window, "history_commit_info"):
         window.history_commit_info.setPlainText("")
-    if hasattr(window, "history_patch_view"):
-        window.history_patch_view.setPlainText("")
+    if hasattr(window, "history_patch_table"):
+        render_diff_into_columns(window.history_patch_table, "", show_header_lines=False)
+    if hasattr(window, "history_patch_text"):
+        window.history_patch_text.setPlainText("")
+    if hasattr(window, "history_patch_stack"):
+        window.history_patch_stack.setCurrentIndex(0)
     _update_history_reorder_button_visibility(window)
 
 
 def get_history_limit_value(window: object) -> int:
-    data = window.history_limit_combo.currentData()
+    data = getattr(window, "history_page_size", 200)
     try:
         value = int(data)
     except (TypeError, ValueError):
-        value = 100
+        value = 200
     return max(1, value)
+
+
+def on_history_search_text_changed(window: object, _text: str) -> None:
+    if not window.repo_path:
+        return
+    reload_history_commits(window)
 
 
 def _history_commit_presence(window: object, commit_hash: str) -> str:
@@ -139,40 +154,114 @@ def reload_history_commits(window: object) -> None:
         _refresh_history_local_state(window)
         text_filter = window.history_search_input.text().strip()
         filters = CommitFilters(text=text_filter)
-        limit = get_history_limit_value(window)
+        page_size = get_history_limit_value(window)
+        window.history_active_filter_text = text_filter
+        window.history_current_skip = 0
+        window.history_has_more = False
+        window.history_loading_more = False
         try:
-            summaries = load_commit_summaries(window.repo_path, limit=limit, filters=filters)
+            summaries = load_commit_summaries(window.repo_path, limit=page_size, skip=0, filters=filters)
         except RuntimeError as exc:
             QMessageBox.critical(window, "Historico", str(exc))
             clear_history_view(window)
             return
 
-        window.history_summaries = summaries
-        window.history_summary_by_hash = {item.commit_hash: item for item in summaries}
+        window.history_summaries = []
+        window.history_summary_by_hash = {}
         window.history_current_commit_hash = ""
         window.history_current_file_path = ""
-
         window.history_commits_list.blockSignals(True)
         window.history_commits_list.clear()
-        for summary in summaries:
-            label = _format_history_commit_label(window, summary.commit_hash, summary.subject)
-            item = QListWidgetItem(label, window.history_commits_list)
-            item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
-            marker = _history_commit_presence(window, summary.commit_hash)
-            marker_text = "Local (ainda nao enviado)" if marker == "L" else "Local + online"
-            tooltip = f"{summary.commit_hash}\n{summary.date}\n{marker_text}"
-            item.setToolTip(tooltip.strip())
         window.history_commits_list.blockSignals(False)
+        _append_history_page(window, summaries)
+        window.history_current_skip = len(window.history_summaries)
+        window.history_has_more = len(summaries) == page_size
         _update_history_reorder_button_visibility(window)
 
-        if summaries:
+        if window.history_summaries:
             window.history_commits_list.setCurrentRow(0)
         else:
             window.history_files_list.clear()
             window.history_commit_info.setPlainText("Nenhum commit encontrado.")
-            window.history_patch_view.setPlainText("")
+            if hasattr(window, "history_patch_table"):
+                render_diff_into_columns(window.history_patch_table, "", show_header_lines=False)
+            if hasattr(window, "history_patch_text"):
+                window.history_patch_text.setPlainText("")
     finally:
         window._end_busy()
+
+
+def _append_history_page(window: object, summaries: list[object]) -> None:
+    if not summaries:
+        return
+    existing_hashes = set(window.history_summary_by_hash.keys())
+    window.history_commits_list.blockSignals(True)
+    try:
+        for summary in summaries:
+            commit_hash = str(summary.commit_hash).strip()
+            if not commit_hash or commit_hash in existing_hashes:
+                continue
+            existing_hashes.add(commit_hash)
+            window.history_summaries.append(summary)
+            window.history_summary_by_hash[commit_hash] = summary
+            label = _format_history_commit_label(window, commit_hash, summary.subject)
+            item = QListWidgetItem(label, window.history_commits_list)
+            item.setData(Qt.ItemDataRole.UserRole, commit_hash)
+            marker = _history_commit_presence(window, commit_hash)
+            marker_text = "Local (ainda nao enviado)" if marker == "L" else "Local + online"
+            tooltip = f"{commit_hash}\n{summary.date}\n{marker_text}"
+            item.setToolTip(tooltip.strip())
+    finally:
+        window.history_commits_list.blockSignals(False)
+
+
+def load_more_history_commits(window: object) -> None:
+    if not window.repo_path:
+        return
+    if not getattr(window, "history_has_more", False):
+        return
+    if getattr(window, "history_loading_more", False):
+        return
+    active_filter = str(getattr(window, "history_active_filter_text", "")).strip()
+    current_filter = window.history_search_input.text().strip()
+    if active_filter != current_filter:
+        reload_history_commits(window)
+        return
+    page_size = get_history_limit_value(window)
+    skip = int(getattr(window, "history_current_skip", 0) or 0)
+    if skip < 0:
+        skip = 0
+    filters = CommitFilters(text=current_filter)
+    window.history_loading_more = True
+    selected_hash = window.history_current_commit_hash.strip()
+    try:
+        try:
+            summaries = load_commit_summaries(window.repo_path, limit=page_size, skip=skip, filters=filters)
+        except RuntimeError:
+            window.history_has_more = False
+            return
+        _append_history_page(window, summaries)
+        window.history_current_skip = len(window.history_summaries)
+        window.history_has_more = len(summaries) == page_size
+    finally:
+        window.history_loading_more = False
+    if selected_hash:
+        for row in range(window.history_commits_list.count()):
+            item = window.history_commits_list.item(row)
+            if item is None:
+                continue
+            value = item.data(Qt.ItemDataRole.UserRole)
+            item_hash = str(value).strip() if value is not None else ""
+            if item_hash == selected_hash:
+                window.history_commits_list.setCurrentRow(row)
+                break
+
+
+def on_history_scroll_value_changed(window: object, value: int) -> None:
+    scrollbar = window.history_commits_list.verticalScrollBar()
+    remaining = int(scrollbar.maximum() - value)
+    if remaining <= 2:
+        load_more_history_commits(window)
 
 
 def on_history_commit_selected(window: object) -> None:
@@ -182,7 +271,10 @@ def on_history_commit_selected(window: object) -> None:
         window.history_current_file_path = ""
         window.history_files_list.clear()
         window.history_commit_info.setPlainText("")
-        window.history_patch_view.setPlainText("")
+        if hasattr(window, "history_patch_table"):
+            render_diff_into_columns(window.history_patch_table, "", show_header_lines=False)
+        if hasattr(window, "history_patch_text"):
+            window.history_patch_text.setPlainText("")
         return
     item = selected_items[0]
     value = item.data(Qt.ItemDataRole.UserRole)
@@ -203,7 +295,10 @@ def load_history_commit_content(window: object, commit_hash: str) -> None:
         except RuntimeError as exc:
             QMessageBox.critical(window, "Historico", str(exc))
             window.history_files_list.clear()
-            window.history_patch_view.setPlainText("")
+            if hasattr(window, "history_patch_table"):
+                render_diff_into_columns(window.history_patch_table, "", show_header_lines=False)
+            if hasattr(window, "history_patch_text"):
+                window.history_patch_text.setPlainText("")
             return
 
         info_lines = [
@@ -213,19 +308,32 @@ def load_history_commit_content(window: object, commit_hash: str) -> None:
             f"Titulo: {details.subject}",
             f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
         ]
-        if details.body:
-            info_lines.extend(["", details.body.strip()])
+        body_text = details.body.strip()
+        if body_text:
+            info_lines.extend(["", "Descricao:", body_text])
+        else:
+            info_lines.append("Descricao: (sem descricao)")
         window.history_commit_info.setPlainText("\n".join(info_lines))
 
+        stats_by_path = {item.path: item for item in details.file_stats}
         window.history_files_list.blockSignals(True)
         window.history_files_list.clear()
-        all_files_item = QListWidgetItem("(todos os arquivos)", window.history_files_list)
-        all_files_item.setData(Qt.ItemDataRole.UserRole, "")
         for path in files:
-            file_item = QListWidgetItem(path, window.history_files_list)
+            stat = stats_by_path.get(path)
+            if stat is None:
+                label = path
+            elif stat.is_binary:
+                label = f"{path} [binario]"
+            else:
+                label = f"{path} (+{stat.added}/-{stat.deleted})"
+            file_item = QListWidgetItem(label, window.history_files_list)
             file_item.setData(Qt.ItemDataRole.UserRole, path)
         window.history_files_list.blockSignals(False)
-        window.history_files_list.setCurrentRow(0)
+        if window.history_files_list.count() > 0:
+            window.history_files_list.setCurrentRow(0)
+        else:
+            window.history_current_file_path = ""
+            refresh_history_patch_view(window)
     finally:
         window._end_busy()
 
@@ -245,10 +353,22 @@ def on_history_file_selected(window: object) -> None:
 def refresh_history_patch_view(window: object) -> None:
     commit_hash = window.history_current_commit_hash.strip()
     if not commit_hash:
-        window.history_patch_view.setPlainText("")
+        if hasattr(window, "history_patch_table"):
+            render_diff_into_columns(window.history_patch_table, "", show_header_lines=False)
+        if hasattr(window, "history_patch_text"):
+            window.history_patch_text.setPlainText("")
         return
     word_diff = window.history_word_diff_check.isChecked()
-    path = window.history_current_file_path.strip() or None
+    selected_path = window.history_current_file_path.strip()
+    if not selected_path:
+        if hasattr(window, "history_patch_table"):
+            render_diff_into_columns(window.history_patch_table, "(selecione um arquivo)", show_header_lines=False)
+        if hasattr(window, "history_patch_text"):
+            window.history_patch_text.setPlainText("(selecione um arquivo)")
+        if hasattr(window, "history_patch_stack"):
+            window.history_patch_stack.setCurrentIndex(0)
+        return
+    path = selected_path
     try:
         patch = core_get_commit_patch(
             window.repo_path,
@@ -258,9 +378,19 @@ def refresh_history_patch_view(window: object) -> None:
         )
     except RuntimeError as exc:
         QMessageBox.critical(window, "Historico", str(exc))
-        window.history_patch_view.setPlainText("")
+        if hasattr(window, "history_patch_table"):
+            render_diff_into_columns(window.history_patch_table, "", show_header_lines=False)
+        if hasattr(window, "history_patch_text"):
+            window.history_patch_text.setPlainText("")
         return
-    window.history_patch_view.setPlainText(patch)
+    if hasattr(window, "history_patch_stack"):
+        window.history_patch_stack.setCurrentIndex(0)
+    render_diff_into_columns(
+        window.history_patch_table,
+        patch,
+        show_header_lines=False,
+        word_diff_plain=word_diff,
+    )
 
 
 def _get_context_commit_hash(window: object, pos: QPoint) -> str:
@@ -314,6 +444,7 @@ def _copy_file_patch(window: object, commit_hash: str, file_path: str) -> None:
 
 
 def on_history_commit_context_menu(window: object, pos: QPoint) -> None:
+    previous_rows = sorted(int(index.row()) for index in window.history_commits_list.selectedIndexes())
     commit_hash = _get_context_commit_hash(window, pos)
     if not commit_hash:
         return
@@ -326,7 +457,8 @@ def on_history_commit_context_menu(window: object, pos: QPoint) -> None:
     action_open_github = menu.addAction("Abrir commit no GitHub")
     action_copy_github = menu.addAction("Copiar URL do commit")
 
-    selected_action = menu.exec(window.history_commits_list.mapToGlobal(pos))
+    selected_action = menu.exec(window.history_commits_list.viewport().mapToGlobal(pos))
+    _restore_history_commit_selection(window, previous_rows)
     if selected_action is None:
         return
     if selected_action == action_copy_hash:
@@ -354,7 +486,12 @@ def on_history_file_context_menu(window: object, pos: QPoint) -> None:
         value = item.data(Qt.ItemDataRole.UserRole)
         file_path = str(value).strip() if value is not None else ""
     else:
-        file_path = window.history_current_file_path.strip()
+        selected_items = window.history_files_list.selectedItems()
+        if selected_items:
+            value = selected_items[-1].data(Qt.ItemDataRole.UserRole)
+            file_path = str(value).strip() if value is not None else ""
+        else:
+            file_path = window.history_current_file_path.strip()
 
     menu = QMenu(window.history_files_list)
     action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
@@ -370,7 +507,7 @@ def on_history_file_context_menu(window: object, pos: QPoint) -> None:
     action_copy_relative.setEnabled(has_file)
     action_copy_file_patch.setEnabled(has_file)
 
-    selected_action = menu.exec(window.history_files_list.mapToGlobal(pos))
+    selected_action = menu.exec(window.history_files_list.viewport().mapToGlobal(pos))
     if selected_action is None:
         return
     if selected_action == action_open_vscode:
@@ -387,6 +524,21 @@ def on_history_file_context_menu(window: object, pos: QPoint) -> None:
         return
     if selected_action == action_copy_commit_patch:
         _copy_commit_patch(window, commit_hash)
+
+
+def _restore_history_commit_selection(window: object, rows: list[int]) -> None:
+    if not rows:
+        return
+    window.history_commits_list.blockSignals(True)
+    try:
+        window.history_commits_list.clearSelection()
+        for row in rows:
+            item = window.history_commits_list.item(row)
+            if item is not None:
+                item.setSelected(True)
+        window.history_commits_list.setCurrentRow(rows[0])
+    finally:
+        window.history_commits_list.blockSignals(False)
 
 
 def _refresh_after_history_export(window: object) -> None:

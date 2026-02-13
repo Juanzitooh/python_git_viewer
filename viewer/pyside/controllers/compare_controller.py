@@ -17,27 +17,88 @@ from ...core.commit_content import (
     list_commit_files as core_list_commit_files,
 )
 from ...core.commit_ops import list_modified_files as core_list_modified_files
-from ...core.git_client import run_git
+from ...core.git_client import load_commit_details, run_git
 from ...core.repo_state import (
     get_current_branch as core_get_current_branch,
     list_branches as core_list_branches,
 )
+from ..diff_columns import render_diff_into_columns
 
 
 def clear_compare_view(window: object) -> None:
     window.compare_file_entries = []
     window.compare_current_file_path = ""
+    window.compare_current_commit_hash = ""
     if hasattr(window, "compare_commits_list"):
         window.compare_commits_list.clear()
     if hasattr(window, "compare_files_list"):
         window.compare_files_list.clear()
-    if hasattr(window, "compare_patch_view"):
-        window.compare_patch_view.setPlainText("")
+    if hasattr(window, "compare_patch_table"):
+        render_diff_into_columns(window.compare_patch_table, "", show_header_lines=False)
+    if hasattr(window, "compare_patch_text"):
+        window.compare_patch_text.setPlainText("")
+    if hasattr(window, "compare_patch_stack"):
+        window.compare_patch_stack.setCurrentIndex(0)
+    if hasattr(window, "compare_commit_info"):
+        window.compare_commit_info.setPlainText("")
     if hasattr(window, "compare_status_label"):
         window.compare_status_label.setText("Selecione origem e destino para comparar.")
     if hasattr(window, "compare_action_status_label"):
         window.compare_action_status_label.setText("Selecione origem e destino.")
     _update_compare_action_state(window)
+
+
+def _set_compare_files_items(window: object, entries: list[tuple[str, int, int, bool]]) -> None:
+    window.compare_files_list.blockSignals(True)
+    window.compare_files_list.clear()
+    for path, added, deleted, is_binary in entries:
+        normalized_path = str(path).strip()
+        if not normalized_path:
+            continue
+        if is_binary:
+            label = f"{normalized_path} [binario]"
+        else:
+            label = f"{normalized_path} (+{added}/-{deleted})"
+        item = QListWidgetItem(label, window.compare_files_list)
+        item.setData(Qt.ItemDataRole.UserRole, normalized_path)
+    window.compare_files_list.blockSignals(False)
+
+
+def _set_compare_files_from_aggregate(window: object) -> None:
+    entries: list[tuple[str, int, int, bool]] = []
+    for entry in window.compare_file_entries:
+        path = str(entry.get("path", "")).strip()
+        if not path:
+            continue
+        entries.append(
+            (
+                path,
+                int(entry.get("added", 0) or 0),
+                int(entry.get("deleted", 0) or 0),
+                bool(entry.get("binary", False)),
+            )
+        )
+    _set_compare_files_items(window, entries)
+
+
+def _set_compare_files_for_commit(window: object, commit_hash: str) -> bool:
+    if not window.repo_path or not commit_hash:
+        return False
+    try:
+        details = load_commit_details(window.repo_path, commit_hash)
+        files = core_list_commit_files(window.repo_path, commit_hash)
+    except RuntimeError:
+        return False
+    stats_by_path = {item.path: item for item in details.file_stats}
+    entries: list[tuple[str, int, int, bool]] = []
+    for file_path in files:
+        stat = stats_by_path.get(file_path)
+        if stat is None:
+            entries.append((file_path, 0, 0, False))
+            continue
+        entries.append((file_path, int(stat.added), int(stat.deleted), bool(stat.is_binary)))
+    _set_compare_files_items(window, entries)
+    return True
 
 
 def refresh_compare_branch_options(window: object) -> None:
@@ -152,29 +213,17 @@ def refresh_compare_view(window: object) -> None:
 
         window.compare_file_entries = file_stats
         window.compare_current_file_path = ""
+        window.compare_current_commit_hash = ""
 
+        window.compare_commits_list.blockSignals(True)
         window.compare_commits_list.clear()
         for line in commits:
             item = QListWidgetItem(line, window.compare_commits_list)
             commit_hash = line.split(" ", 1)[0].strip() if line else ""
             item.setData(Qt.ItemDataRole.UserRole, commit_hash)
+        window.compare_commits_list.blockSignals(False)
 
-        window.compare_files_list.blockSignals(True)
-        window.compare_files_list.clear()
-        for entry in file_stats:
-            path = str(entry.get("path", "")).strip()
-            if not path:
-                continue
-            added = int(entry.get("added", 0) or 0)
-            deleted = int(entry.get("deleted", 0) or 0)
-            binary = bool(entry.get("binary", False))
-            if binary:
-                label = f"{path} [binario]"
-            else:
-                label = f"{path} (+{added}/-{deleted})"
-            item = QListWidgetItem(label, window.compare_files_list)
-            item.setData(Qt.ItemDataRole.UserRole, path)
-        window.compare_files_list.blockSignals(False)
+        _set_compare_files_from_aggregate(window)
 
         conflict_label = "possivel conflito" if has_conflict else "sem conflito aparente"
         window.compare_status_label.setText(
@@ -185,13 +234,82 @@ def refresh_compare_view(window: object) -> None:
             )
         )
 
-        if window.compare_files_list.count() > 0:
-            window.compare_files_list.setCurrentRow(0)
-        else:
-            window.compare_patch_view.setPlainText("(nenhuma diferença)")
+        if window.compare_commits_list.count() > 0:
+            window.compare_commits_list.setCurrentRow(0)
+            on_compare_commit_selected(window)
+        elif hasattr(window, "compare_commit_info"):
+            window.compare_commit_info.setPlainText("Nenhum commit encontrado para o intervalo selecionado.")
+            if window.compare_files_list.count() > 0:
+                window.compare_files_list.setCurrentRow(0)
+                on_compare_file_selected(window)
+            else:
+                render_diff_into_columns(window.compare_patch_table, "(nenhuma diferença)", show_header_lines=False)
+                if hasattr(window, "compare_patch_text"):
+                    window.compare_patch_text.setPlainText("(nenhuma diferença)")
         _update_compare_action_state(window)
     finally:
         window._end_busy()
+
+
+def _set_compare_commit_info(window: object, details: object | None, *, fallback: str = "") -> None:
+    if not hasattr(window, "compare_commit_info"):
+        return
+    if details is None:
+        window.compare_commit_info.setPlainText(fallback)
+        return
+    info_lines = [
+        f"Hash: {details.commit_hash}",
+        f"Autor: {details.author}",
+        f"Data: {details.date}",
+        f"Titulo: {details.subject}",
+        f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
+    ]
+    body_text = details.body.strip()
+    if body_text:
+        info_lines.extend(["", "Descricao:", body_text])
+    else:
+        info_lines.append("Descricao: (sem descricao)")
+    window.compare_commit_info.setPlainText("\n".join(info_lines))
+
+
+def on_compare_commit_selected(window: object) -> None:
+    selected_items = window.compare_commits_list.selectedItems()
+    if not selected_items:
+        window.compare_current_commit_hash = ""
+        _set_compare_commit_info(window, None)
+        _set_compare_files_from_aggregate(window)
+        if window.compare_files_list.count() > 0:
+            window.compare_files_list.setCurrentRow(0)
+        on_compare_file_selected(window)
+        return
+    item = selected_items[0]
+    value = item.data(Qt.ItemDataRole.UserRole)
+    commit_hash = str(value).strip() if value is not None else ""
+    window.compare_current_commit_hash = commit_hash
+    if not commit_hash or not window.repo_path:
+        _set_compare_commit_info(window, None)
+        _set_compare_files_from_aggregate(window)
+        on_compare_file_selected(window)
+        return
+    try:
+        details = load_commit_details(window.repo_path, commit_hash)
+    except RuntimeError:
+        _set_compare_commit_info(
+            window,
+            None,
+            fallback=f"Sem detalhes para o commit {commit_hash[:7]} no repositorio atual.",
+        )
+        _set_compare_files_from_aggregate(window)
+        if window.compare_files_list.count() > 0:
+            window.compare_files_list.setCurrentRow(0)
+        on_compare_file_selected(window)
+        return
+    _set_compare_commit_info(window, details)
+    if not _set_compare_files_for_commit(window, commit_hash):
+        _set_compare_files_from_aggregate(window)
+    if window.compare_files_list.count() > 0:
+        window.compare_files_list.setCurrentRow(0)
+    on_compare_file_selected(window)
 
 
 def on_compare_file_selected(window: object) -> None:
@@ -208,30 +326,58 @@ def on_compare_file_selected(window: object) -> None:
 
 def refresh_compare_patch(window: object) -> None:
     if not window.repo_path:
-        window.compare_patch_view.setPlainText("")
-        return
-    origin, dest = get_compare_branches(window)
-    if not origin or not dest or origin == dest:
-        window.compare_patch_view.setPlainText("")
+        if hasattr(window, "compare_patch_table"):
+            render_diff_into_columns(window.compare_patch_table, "", show_header_lines=False)
+        if hasattr(window, "compare_patch_text"):
+            window.compare_patch_text.setPlainText("")
         return
     selected_path = window.compare_current_file_path.strip()
     if not selected_path:
-        window.compare_patch_view.setPlainText("(selecione um arquivo)")
+        if hasattr(window, "compare_patch_table"):
+            render_diff_into_columns(window.compare_patch_table, "(selecione um arquivo)", show_header_lines=False)
+        if hasattr(window, "compare_patch_text"):
+            window.compare_patch_text.setPlainText("(selecione um arquivo)")
         return
+    selected_commit_hash = str(getattr(window, "compare_current_commit_hash", "")).strip()
     word_diff = window.compare_word_diff_check.isChecked()
     try:
-        patch = core_load_compare_file_patch(
-            window.repo_path,
-            origin,
-            dest,
-            path=selected_path,
-            word_diff=word_diff,
-        )
+        if selected_commit_hash:
+            patch = core_get_commit_patch(
+                window.repo_path,
+                selected_commit_hash,
+                path=selected_path,
+                word_diff=word_diff,
+            )
+        else:
+            origin, dest = get_compare_branches(window)
+            if not origin or not dest or origin == dest:
+                if hasattr(window, "compare_patch_table"):
+                    render_diff_into_columns(window.compare_patch_table, "", show_header_lines=False)
+                if hasattr(window, "compare_patch_text"):
+                    window.compare_patch_text.setPlainText("")
+                return
+            patch = core_load_compare_file_patch(
+                window.repo_path,
+                origin,
+                dest,
+                path=selected_path,
+                word_diff=word_diff,
+            )
     except RuntimeError as exc:
         QMessageBox.critical(window, "Comparar", str(exc))
-        window.compare_patch_view.setPlainText("")
+        if hasattr(window, "compare_patch_table"):
+            render_diff_into_columns(window.compare_patch_table, "", show_header_lines=False)
+        if hasattr(window, "compare_patch_text"):
+            window.compare_patch_text.setPlainText("")
         return
-    window.compare_patch_view.setPlainText(patch or "(sem diff para este arquivo)")
+    if hasattr(window, "compare_patch_stack"):
+        window.compare_patch_stack.setCurrentIndex(0)
+    render_diff_into_columns(
+        window.compare_patch_table,
+        patch or "",
+        show_header_lines=False,
+        word_diff_plain=word_diff,
+    )
 
 
 def _set_compare_squash_visibility(window: object) -> None:
@@ -450,7 +596,7 @@ def on_compare_file_context_menu(window: object, pos: QPoint) -> None:
     action_copy_patch = menu.addAction("Copiar patch do arquivo")
     action_copy_patch.setEnabled(not is_binary)
 
-    selected_action = menu.exec(window.compare_files_list.mapToGlobal(pos))
+    selected_action = menu.exec(window.compare_files_list.viewport().mapToGlobal(pos))
     if selected_action is None:
         return
     if selected_action == action_open_vscode:
@@ -467,6 +613,7 @@ def on_compare_file_context_menu(window: object, pos: QPoint) -> None:
 
 
 def on_compare_commit_context_menu(window: object, pos: QPoint) -> None:
+    previous_rows = sorted(int(index.row()) for index in window.compare_commits_list.selectedIndexes())
     item = window.compare_commits_list.itemAt(pos)
     if item is None:
         selected_items = window.compare_commits_list.selectedItems()
@@ -486,7 +633,8 @@ def on_compare_commit_context_menu(window: object, pos: QPoint) -> None:
     action_copy_files = menu.addAction("Copiar lista de arquivos")
     action_copy_patch = menu.addAction("Copiar patch completo")
 
-    selected_action = menu.exec(window.compare_commits_list.mapToGlobal(pos))
+    selected_action = menu.exec(window.compare_commits_list.viewport().mapToGlobal(pos))
+    _restore_compare_commit_selection(window, previous_rows)
     if selected_action is None:
         return
     if selected_action == action_open_github:
@@ -518,3 +666,18 @@ def on_compare_commit_context_menu(window: object, pos: QPoint) -> None:
         if window._copy_to_clipboard(patch, status="Patch completo do commit copiado."):
             return
         QMessageBox.information(window, "Comparar", "Sem patch para copiar neste commit.")
+
+
+def _restore_compare_commit_selection(window: object, rows: list[int]) -> None:
+    if not rows:
+        return
+    window.compare_commits_list.blockSignals(True)
+    try:
+        window.compare_commits_list.clearSelection()
+        for row in rows:
+            item = window.compare_commits_list.item(row)
+            if item is not None:
+                item.setSelected(True)
+        window.compare_commits_list.setCurrentRow(rows[-1])
+    finally:
+        window.compare_commits_list.blockSignals(False)

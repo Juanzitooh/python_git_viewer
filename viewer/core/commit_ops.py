@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 
 from .git_client import run_git
 
@@ -74,14 +75,101 @@ def create_commit(repo_path: str, title: str, description: str = "") -> None:
     run_git(repo_path, ["commit", "-m", subject])
 
 
-def create_stash(repo_path: str, message: str = "git_viewer", include_untracked: bool = True) -> None:
+def create_stash(
+    repo_path: str,
+    message: str = "git_viewer",
+    include_untracked: bool = True,
+    paths: list[str] | None = None,
+) -> None:
     args = ["stash", "push"]
     if include_untracked:
         args.append("-u")
     text = message.strip()
     if text:
         args.extend(["-m", text])
+    cleaned_paths = [item.strip() for item in (paths or []) if item.strip()]
+    if cleaned_paths:
+        args.extend(["--", *cleaned_paths])
     run_git(repo_path, args)
+
+
+@dataclass(frozen=True)
+class StashEntry:
+    ref: str
+    description: str
+
+
+def list_stashes(repo_path: str) -> list[StashEntry]:
+    output = run_git(repo_path, ["stash", "list"])
+    entries: list[StashEntry] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        ref, separator, description = line.partition(":")
+        if not separator:
+            continue
+        normalized_ref = ref.strip()
+        if not normalized_ref:
+            continue
+        entries.append(StashEntry(ref=normalized_ref, description=description.strip()))
+    return entries
+
+
+def get_stash_patch(
+    repo_path: str,
+    ref: str,
+    *,
+    word_diff: bool = False,
+    path_for_git: str = "",
+) -> str:
+    selected_ref = ref.strip()
+    if not selected_ref:
+        return ""
+    selected_path = path_for_git.strip()
+    if selected_path:
+        args = ["show", "--pretty=format:", "-p", selected_ref]
+        if word_diff:
+            args.append("--word-diff=plain")
+        args.extend(["--", selected_path])
+        return run_git(repo_path, args)
+    args = ["stash", "show", "-p", selected_ref]
+    if word_diff:
+        args.append("--word-diff=plain")
+    return run_git(repo_path, args)
+
+
+def list_stash_files_from_patch(patch: str) -> list[str]:
+    files: list[str] = []
+    for line in patch.splitlines():
+        if not line.startswith("diff --git "):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        old_path = parts[2].strip()
+        new_path = parts[3].strip()
+        candidate = new_path if new_path.startswith("b/") else old_path
+        normalized = candidate[2:] if candidate.startswith(("a/", "b/")) else candidate
+        normalized = normalized.strip()
+        if normalized and normalized not in files:
+            files.append(normalized)
+    return files
+
+
+def apply_stash(repo_path: str, ref: str, *, pop: bool = False) -> None:
+    selected_ref = ref.strip()
+    if not selected_ref:
+        raise RuntimeError("Stash inválido.")
+    action = "pop" if pop else "apply"
+    run_git(repo_path, ["stash", action, selected_ref])
+
+
+def drop_stash(repo_path: str, ref: str) -> None:
+    selected_ref = ref.strip()
+    if not selected_ref:
+        raise RuntimeError("Stash inválido.")
+    run_git(repo_path, ["stash", "drop", selected_ref])
 
 
 def undo_last_commit(repo_path: str, mode: str = "mixed") -> None:
@@ -179,4 +267,24 @@ def apply_patch_to_index(repo_path: str, patch: str, *, reverse: bool = False) -
     if result.returncode == 0:
         return
     stderr = result.stderr.strip() or "falha ao aplicar patch"
+    raise RuntimeError(stderr)
+
+
+def apply_patch_to_worktree(repo_path: str, patch: str, *, reverse: bool = False) -> None:
+    payload = patch.strip()
+    if not payload:
+        return
+    cmd = ["git", "-C", repo_path, "apply", "--recount", "--unidiff-zero"]
+    if reverse:
+        cmd.append("-R")
+    result = subprocess.run(
+        cmd,
+        input=payload + "\n",
+        text=True,
+        capture_output=True,
+        errors="replace",
+    )
+    if result.returncode == 0:
+        return
+    stderr = result.stderr.strip() or "falha ao aplicar patch no arquivo"
     raise RuntimeError(stderr)

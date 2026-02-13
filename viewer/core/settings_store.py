@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from .repo_workspace import default_repo_scan_root
@@ -17,12 +18,47 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "favorite_repos": [],
     "repo_scan_root": default_repo_scan_root(),
     "theme": "light",
+    "theme_overrides": {},
     "ui_font_family": "",
     "ui_font_size": 0,
     "mono_font_family": "",
     "mono_font_size": 0,
     "github_ssh_cache": {},
 }
+
+THEME_OVERRIDE_KEYS = (
+    "bg",
+    "fg",
+    "muted",
+    "panel",
+    "field",
+    "border",
+    "border_soft",
+    "accent",
+    "accent_hover",
+    "accent_fg",
+    "selection_bg",
+    "selection_fg",
+    "button_bg",
+    "button_hover",
+    "chip_bg",
+    "diff_bg",
+    "diff_added",
+    "diff_removed",
+    "diff_modified",
+    "diff_context",
+    "diff_hunk",
+    "diff_meta",
+    "diff_word_added_fg",
+    "diff_word_added_bg",
+    "diff_word_removed_fg",
+    "diff_word_removed_bg",
+    "status_renamed",
+    "status_deleted",
+    "status_added",
+    "status_modified",
+)
+THEME_OVERRIDE_PATTERN = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
 
 
 def get_settings_path() -> Path:
@@ -125,6 +161,37 @@ def _sanitize_github_ssh_cache(value: object) -> dict[str, object]:
     }
 
 
+def _normalize_hex_color(value: str) -> str | None:
+    candidate = value.strip()
+    if not THEME_OVERRIDE_PATTERN.match(candidate):
+        return None
+    if len(candidate) == 4:
+        candidate = "#" + "".join([char * 2 for char in candidate[1:]])
+    return candidate.upper()
+
+
+def _sanitize_theme_overrides(value: object) -> dict[str, dict[str, str]]:
+    if not isinstance(value, dict):
+        return {}
+    sanitized: dict[str, dict[str, str]] = {}
+    for theme_name in ("light", "dark"):
+        raw_theme = value.get(theme_name)
+        if not isinstance(raw_theme, dict):
+            continue
+        theme_colors: dict[str, str] = {}
+        for color_key in THEME_OVERRIDE_KEYS:
+            raw_color = raw_theme.get(color_key)
+            if not isinstance(raw_color, str):
+                continue
+            normalized = _normalize_hex_color(raw_color)
+            if normalized is None:
+                continue
+            theme_colors[color_key] = normalized
+        if theme_colors:
+            sanitized[theme_name] = theme_colors
+    return sanitized
+
+
 def load_settings(path: Path) -> dict[str, object]:
     data = dict(DEFAULT_SETTINGS)
     if not path.exists():
@@ -160,6 +227,7 @@ def load_settings(path: Path) -> dict[str, object]:
         data["repo_scan_root"] = _sanitize_repo_root(raw.get("repo_scan_root"))
         theme = _coerce_str(raw.get("theme"), str(DEFAULT_SETTINGS["theme"]))
         data["theme"] = theme if theme in ("light", "dark") else str(DEFAULT_SETTINGS["theme"])
+        data["theme_overrides"] = _sanitize_theme_overrides(raw.get("theme_overrides"))
         data["ui_font_family"] = _coerce_str(raw.get("ui_font_family"), "")
         data["ui_font_size"] = _coerce_int(raw.get("ui_font_size"), 0, minimum=0)
         data["mono_font_family"] = _coerce_str(raw.get("mono_font_family"), "")
@@ -175,6 +243,7 @@ def save_settings(path: Path, settings: dict[str, object]) -> None:
     data["recent_repos"] = _sanitize_repo_list(data.get("recent_repos"))
     data["favorite_repos"] = _sanitize_repo_list(data.get("favorite_repos"))
     data["repo_scan_root"] = _sanitize_repo_root(data.get("repo_scan_root"))
+    data["theme_overrides"] = _sanitize_theme_overrides(data.get("theme_overrides"))
     data["github_ssh_cache"] = _sanitize_github_ssh_cache(data.get("github_ssh_cache"))
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, ensure_ascii=False, indent=2)

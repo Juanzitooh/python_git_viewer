@@ -85,28 +85,21 @@ def _parse_clone_target_path(
     if any(part in ("", ".", "..") for part in relative_target.parts):
         raise RuntimeError("Pasta de destino inválida.")
 
-    target_path = (root / relative_target).resolve()
+    # Interpreta o campo "Pasta" como namespace por padrao:
+    # - "grupo" -> root/grupo/<repo>
+    # - "grupo/repo" -> root/grupo/repo
+    # - "repo" (igual ao nome do repo) -> root/repo
+    if relative_target.name == repo_name:
+        target_path = (root / relative_target).resolve()
+    else:
+        target_path = (root / relative_target / repo_name).resolve()
     try:
         target_path.relative_to(root)
     except ValueError as exc:
         raise RuntimeError("Pasta de destino fora da raiz do workspace.") from exc
 
     if ends_with_separator:
-        target_path = (target_path / repo_name).resolve()
-        try:
-            target_path.relative_to(root)
-        except ValueError as exc:
-            raise RuntimeError("Pasta de destino fora da raiz do workspace.") from exc
         return target_path
-
-    # Se o usuário informar uma pasta existente (ex.: "grupo"), clonamos dentro dela.
-    if target_path.exists() and target_path.is_dir():
-        nested_target = (target_path / repo_name).resolve()
-        try:
-            nested_target.relative_to(root)
-        except ValueError as exc:
-            raise RuntimeError("Pasta de destino fora da raiz do workspace.") from exc
-        return nested_target
     return target_path
 
 

@@ -23,10 +23,21 @@ from ..core.github_urls import (
 )
 from ..core.models import CommitSummary
 from ..core.repo_workspace import default_repo_scan_root
-from ..core.repo_state import get_current_branch as core_get_current_branch
+from ..core.repo_state import (
+    get_current_branch as core_get_current_branch,
+    get_upstream as core_get_upstream,
+    list_branches as core_list_branches,
+)
+from ..core.remote_ops import fetch_all_prune as core_fetch_all_prune
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
+from .theme import (
+    build_theme_stylesheet as build_ui_theme_stylesheet,
+    normalize_theme_name,
+    sanitize_theme_overrides,
+)
 from .controllers import (
     add_recent_repo,
+    apply_selected_stash,
     apply_import_source_repo_from_combo,
     clear_import_selection,
     create_stash_from_commit_tab,
@@ -52,6 +63,7 @@ from .controllers import (
     on_commit_file_selected,
     on_compare_action_changed,
     on_compare_branches_changed,
+    on_compare_commit_selected,
     on_compare_commit_context_menu,
     on_compare_file_selected,
     on_branch_changed,
@@ -64,12 +76,16 @@ from .controllers import (
     open_clone_dialog,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
+    on_import_commit_selected,
+    on_import_file_context_menu,
+    on_import_file_selected,
     pick_workspace_root,
     pull_repo,
     push_repo,
     refresh_commit_files,
     refresh_commit_diff,
     refresh_import_source_repos,
+    refresh_import_patch_view,
     refresh_compare_branch_options,
     refresh_compare_patch,
     refresh_compare_view,
@@ -82,7 +98,11 @@ from .controllers import (
     set_repo,
     create_new_branch,
     load_settings_into_tab,
+    on_settings_theme_changed,
+    on_settings_theme_color_edited,
     pick_settings_workspace_root,
+    pick_settings_theme_color,
+    reset_settings_theme_colors,
     save_settings_from_tab,
     select_all_commit_files,
     stage_selected_commit_hunk,
@@ -103,17 +123,33 @@ from .controllers import (
     clear_history_view,
     get_history_limit_value,
     load_history_commit_content,
+    load_more_history_commits,
     on_compare_file_context_menu,
     on_history_commit_context_menu,
     on_history_commit_selected,
+    on_history_search_text_changed,
+    on_history_scroll_value_changed,
     on_history_file_context_menu,
     on_import_commit_context_menu,
+    open_import_clone_dialog,
+    on_stash_entry_selected,
+    on_stash_entry_context_menu,
+    on_stash_file_selected,
+    on_commit_diff_context_menu,
+    open_commit_diff_window,
     on_history_file_selected,
+    on_commit_diff_item_changed,
+    on_commit_diff_marker_clicked,
+    on_commit_diff_item_clicked,
     open_history_export_dialog,
     open_history_reorder_dialog,
     refresh_history_patch_view,
+    refresh_stash_patch_view,
+    refresh_stash_tab_visibility,
     reload_history_commits,
     show_conflicts_dialog,
+    pop_selected_stash,
+    drop_selected_stash,
 )
 from .layout import build_status_bar, build_top_bar
 from .tabs import (
@@ -123,10 +159,11 @@ from .tabs import (
     build_import_tab,
     build_repositories_tab,
     build_settings_tab,
+    build_stash_tab,
 )
 
 try:
-    from PySide6.QtCore import QPoint, Qt, QUrl
+    from PySide6.QtCore import QPoint, Qt, QTimer, QUrl
     from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont
     from PySide6.QtWidgets import (
         QApplication,
@@ -214,9 +251,22 @@ class QtShellWindow(QMainWindow):
             initial_repo = self.repo_combo.currentData() or ""
         self._set_repo(initial_repo, save=True)
 
-        last_tab_index = int(self.settings_data.get("last_tab_index", 0) or 0)
-        if 0 <= last_tab_index < self.tabs.count():
-            self.tabs.setCurrentIndex(last_tab_index)
+        last_tab_name = str(self.settings_data.get("last_tab_name", "")).strip()
+        if last_tab_name:
+            for index in range(self.tabs.count()):
+                if self.tabs.tabText(index) == last_tab_name:
+                    self.tabs.setCurrentIndex(index)
+                    break
+            else:
+                last_tab_index = int(self.settings_data.get("last_tab_index", 0) or 0)
+                if 0 <= last_tab_index < self.tabs.count():
+                    self.tabs.setCurrentIndex(last_tab_index)
+        else:
+            last_tab_index = int(self.settings_data.get("last_tab_index", 0) or 0)
+            if 0 <= last_tab_index < self.tabs.count():
+                self.tabs.setCurrentIndex(last_tab_index)
+
+        self._setup_background_timers()
 
     def _load_workspace_root_from_settings(self) -> str:
         raw = self.settings_data.get("repo_scan_root", "")
@@ -237,6 +287,7 @@ class QtShellWindow(QMainWindow):
         self.tabs.setUsesScrollButtons(True)
         self.repositories_tab = QWidget(self.tabs)
         self.commit_tab = QWidget(self.tabs)
+        self.stash_tab = QWidget()
         self.history_tab = QWidget(self.tabs)
         self.import_tab = QWidget(self.tabs)
         self.compare_tab = QWidget(self.tabs)
@@ -251,6 +302,8 @@ class QtShellWindow(QMainWindow):
 
         self._build_repositories_tab()
         self._build_commit_tab()
+        self._build_stash_tab()
+        self.stash_tab.hide()
         self._build_history_tab()
         self._build_import_tab()
         self._build_compare_tab()
@@ -262,12 +315,15 @@ class QtShellWindow(QMainWindow):
         self._set_status("PySide6 shell iniciado.")
         self._set_busy_message("Pronto")
 
-    def _apply_theme_from_settings(self) -> None:
+    def _apply_theme(self, theme: str, theme_overrides: object | None = None) -> None:
         app = QApplication.instance()
         if app is None:
             return
-        theme = str(self.settings_data.get("theme", "light"))
-        app.setStyleSheet(self._build_theme_stylesheet(theme))
+        resolved_theme = normalize_theme_name(theme)
+        resolved_overrides = sanitize_theme_overrides(theme_overrides)
+        app.setProperty("gv_theme_name", resolved_theme)
+        app.setProperty("gv_theme_overrides", resolved_overrides)
+        app.setStyleSheet(self._build_theme_stylesheet(resolved_theme, resolved_overrides))
 
         family = str(self.settings_data.get("ui_font_family", "")).strip()
         size_raw = self.settings_data.get("ui_font_size", 0)
@@ -285,6 +341,8 @@ class QtShellWindow(QMainWindow):
             "history_patch_view",
             "compare_patch_view",
             "history_commit_info",
+            "import_commit_info",
+            "compare_commit_info",
             "commit_description_input",
             "commit_diff_view",
         ):
@@ -292,115 +350,52 @@ class QtShellWindow(QMainWindow):
             if widget is not None:
                 widget.setFont(mono_font)
 
+    def _apply_theme_from_settings(self) -> None:
+        theme = str(self.settings_data.get("theme", "light"))
+        theme_overrides = self.settings_data.get("theme_overrides", {})
+        self._apply_theme(theme, theme_overrides)
+
+    def _setup_background_timers(self) -> None:
+        self._auto_status_timer = QTimer(self)
+        self._auto_status_timer.setInterval(15_000)
+        self._auto_status_timer.timeout.connect(self._on_auto_status_timer)
+        self._auto_status_timer.start()
+
+        self._auto_fetch_timer = QTimer(self)
+        self._auto_fetch_timer.setInterval(180_000)
+        self._auto_fetch_timer.timeout.connect(self._on_auto_fetch_timer)
+        self._auto_fetch_timer.start()
+
+    def _on_auto_status_timer(self) -> None:
+        if not self.repo_path or self._busy_depth > 0:
+            return
+        self._refresh_repo_state_ui()
+        self._refresh_workspace_tree()
+
+    def _on_auto_fetch_timer(self) -> None:
+        if not self.repo_path or self._busy_depth > 0:
+            return
+        upstream = core_get_upstream(self.repo_path)
+        if not upstream:
+            return
+        self._begin_busy("Auto fetch...")
+        try:
+            try:
+                core_fetch_all_prune(self.repo_path)
+            except RuntimeError as exc:
+                self._set_status(f"Auto fetch falhou: {exc}")
+                return
+        finally:
+            self._end_busy()
+        self._set_status("Auto fetch concluido.")
+        self._refresh_repo_state_ui()
+        self._refresh_workspace_tree()
+        if self.tabs.currentWidget() is self.history_tab:
+            self._reload_history_commits()
+
     @staticmethod
-    def _build_theme_stylesheet(theme: str) -> str:
-        if theme == "dark":
-            palette = {
-                "bg": "#161b22",
-                "fg": "#e6edf3",
-                "panel": "#1f2630",
-                "field": "#0d1117",
-                "border": "#30363d",
-                "accent": "#2f81f7",
-                "accent_fg": "#ffffff",
-                "accent_soft": "#1d3d67",
-                "button_bg": "#222c38",
-                "button_hover": "#2b3846",
-                "chip_bg": "#1f3147",
-            }
-        else:
-            palette = {
-                "bg": "#eef1f5",
-                "fg": "#1f2328",
-                "panel": "#ffffff",
-                "field": "#ffffff",
-                "border": "#d0d7de",
-                "accent": "#0969da",
-                "accent_fg": "#ffffff",
-                "accent_soft": "#dbeafe",
-                "button_bg": "#f3f4f6",
-                "button_hover": "#e5e9ef",
-                "chip_bg": "#e7eef9",
-            }
-        return f"""
-        QMainWindow {{
-          background-color: {palette["bg"]};
-        }}
-        QWidget {{
-          color: {palette["fg"]};
-        }}
-        QWidget#TopBar {{
-          background-color: {palette["panel"]};
-          border: 1px solid {palette["border"]};
-          border-radius: 10px;
-        }}
-        QTabWidget::pane {{
-          border: 1px solid {palette["border"]};
-          border-radius: 10px;
-          background-color: {palette["panel"]};
-          margin-top: 6px;
-          padding: 6px;
-        }}
-        QTabBar::tab {{
-          background-color: {palette["button_bg"]};
-          border: 1px solid {palette["border"]};
-          border-bottom: none;
-          border-top-left-radius: 8px;
-          border-top-right-radius: 8px;
-          padding: 7px 12px;
-          margin-right: 4px;
-        }}
-        QTabBar::tab:selected {{
-          background-color: {palette["panel"]};
-          color: {palette["fg"]};
-          border-color: {palette["accent"]};
-        }}
-        QLineEdit, QComboBox, QPlainTextEdit, QListWidget, QTreeWidget {{
-          background-color: {palette["field"]};
-          border: 1px solid {palette["border"]};
-          border-radius: 8px;
-          padding: 6px;
-          selection-background-color: {palette["accent_soft"]};
-        }}
-        QTreeWidget::item {{
-          height: 22px;
-        }}
-        QPushButton {{
-          background-color: {palette["button_bg"]};
-          border: 1px solid {palette["border"]};
-          border-radius: 8px;
-          padding: 6px 10px;
-        }}
-        QPushButton:hover {{
-          background-color: {palette["button_hover"]};
-          border-color: {palette["accent"]};
-        }}
-        QPushButton[role="primary"] {{
-          background-color: {palette["accent"]};
-          color: {palette["accent_fg"]};
-          border-color: {palette["accent"]};
-          font-weight: 600;
-        }}
-        QPushButton[role="primary"]:hover {{
-          background-color: {palette["accent"]};
-          border-color: {palette["accent"]};
-        }}
-        QLabel#SyncChip, QLabel#BusyBadge {{
-          background-color: {palette["chip_bg"]};
-          border: 1px solid {palette["border"]};
-          border-radius: 10px;
-          padding: 3px 8px;
-        }}
-        QProgressBar#BusyBar {{
-          background-color: {palette["field"]};
-          border: 1px solid {palette["border"]};
-          border-radius: 8px;
-        }}
-        QProgressBar#BusyBar::chunk {{
-          background-color: {palette["accent"]};
-          border-radius: 8px;
-        }}
-        """
+    def _build_theme_stylesheet(theme: str, theme_overrides: object | None = None) -> str:
+        return build_ui_theme_stylesheet(theme, theme_overrides)
 
     def _build_placeholder_tab(self, tab: QWidget, name: str) -> None:
         layout = QVBoxLayout(tab)
@@ -420,6 +415,9 @@ class QtShellWindow(QMainWindow):
     def _build_commit_tab(self) -> None:
         build_commit_tab(self)
 
+    def _build_stash_tab(self) -> None:
+        build_stash_tab(self)
+
     def _build_history_tab(self) -> None:
         build_history_tab(self)
 
@@ -432,6 +430,9 @@ class QtShellWindow(QMainWindow):
     def _reload_history_commits(self) -> None:
         reload_history_commits(self)
 
+    def _load_more_history_commits(self) -> None:
+        load_more_history_commits(self)
+
     def _open_history_export_dialog(self) -> None:
         open_history_export_dialog(self)
 
@@ -440,6 +441,12 @@ class QtShellWindow(QMainWindow):
 
     def _on_history_commit_selected(self) -> None:
         on_history_commit_selected(self)
+
+    def _on_history_search_text_changed(self, text: str) -> None:
+        on_history_search_text_changed(self, text)
+
+    def _on_history_scroll_value_changed(self, value: int) -> None:
+        on_history_scroll_value_changed(self, value)
 
     def _on_history_commit_context_menu(self, pos: QPoint) -> None:
         on_history_commit_context_menu(self, pos)
@@ -468,6 +475,9 @@ class QtShellWindow(QMainWindow):
     def _refresh_import_source_repos(self) -> None:
         refresh_import_source_repos(self)
 
+    def _open_import_clone_dialog(self) -> None:
+        open_import_clone_dialog(self)
+
     def _on_import_source_repo_changed(self, _index: int) -> None:
         on_import_source_repo_changed(self, _index)
 
@@ -486,8 +496,20 @@ class QtShellWindow(QMainWindow):
     def _load_import_source_commits(self) -> None:
         load_import_source_commits(self)
 
+    def _on_import_commit_selected(self) -> None:
+        on_import_commit_selected(self)
+
+    def _on_import_file_selected(self) -> None:
+        on_import_file_selected(self)
+
+    def _refresh_import_patch_view(self) -> None:
+        refresh_import_patch_view(self)
+
     def _on_import_commit_context_menu(self, pos: QPoint) -> None:
         on_import_commit_context_menu(self, pos)
+
+    def _on_import_file_context_menu(self, pos: QPoint) -> None:
+        on_import_file_context_menu(self, pos)
 
     def _get_selected_import_summaries(self) -> list[CommitSummary]:
         return get_selected_import_summaries(self)
@@ -553,6 +575,9 @@ class QtShellWindow(QMainWindow):
     def _on_compare_file_selected(self) -> None:
         on_compare_file_selected(self)
 
+    def _on_compare_commit_selected(self) -> None:
+        on_compare_commit_selected(self)
+
     def _on_compare_commit_context_menu(self, pos: QPoint) -> None:
         on_compare_commit_context_menu(self, pos)
 
@@ -570,6 +595,18 @@ class QtShellWindow(QMainWindow):
 
     def _pick_settings_workspace_root(self) -> None:
         pick_settings_workspace_root(self)
+
+    def _on_settings_theme_changed(self) -> None:
+        on_settings_theme_changed(self)
+
+    def _on_settings_theme_color_edited(self, color_key: str) -> None:
+        on_settings_theme_color_edited(self, color_key)
+
+    def _pick_settings_theme_color(self, color_key: str) -> None:
+        pick_settings_theme_color(self, color_key)
+
+    def _reset_settings_theme_colors(self) -> None:
+        reset_settings_theme_colors(self)
 
     def _save_settings_from_tab(self) -> None:
         save_settings_from_tab(self)
@@ -601,8 +638,8 @@ class QtShellWindow(QMainWindow):
     def _scan_workspace_repos(self) -> None:
         scan_workspace_repos(self)
 
-    def _open_clone_dialog(self) -> None:
-        open_clone_dialog(self)
+    def _open_clone_dialog(self, *, activate_repo: bool = True, on_success=None) -> None:
+        open_clone_dialog(self, activate_repo=activate_repo, on_success=on_success)
 
     def _build_repo_status_summary(self, repo_path: str) -> str:
         return build_repo_status_summary(self, repo_path)
@@ -640,6 +677,21 @@ class QtShellWindow(QMainWindow):
     def _on_commit_diff_cursor_changed(self) -> None:
         on_commit_diff_cursor_changed(self)
 
+    def _on_commit_diff_context_menu(self, pos: QPoint) -> None:
+        on_commit_diff_context_menu(self, pos)
+
+    def _on_commit_diff_marker_clicked(self, line_no: int) -> None:
+        on_commit_diff_marker_clicked(self, line_no)
+
+    def _on_commit_diff_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
+        on_commit_diff_item_clicked(self, item, column)
+
+    def _on_commit_diff_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
+        on_commit_diff_item_changed(self, item, column)
+
+    def _open_commit_diff_window(self) -> None:
+        open_commit_diff_window(self)
+
     def _on_commit_file_selected(self) -> None:
         on_commit_file_selected(self)
 
@@ -666,6 +718,30 @@ class QtShellWindow(QMainWindow):
 
     def _create_stash_from_commit_tab(self) -> None:
         create_stash_from_commit_tab(self)
+
+    def _refresh_stash_tab_visibility(self) -> None:
+        refresh_stash_tab_visibility(self)
+
+    def _on_stash_entry_selected(self) -> None:
+        on_stash_entry_selected(self)
+
+    def _on_stash_entry_context_menu(self, pos: QPoint) -> None:
+        on_stash_entry_context_menu(self, pos)
+
+    def _on_stash_file_selected(self) -> None:
+        on_stash_file_selected(self)
+
+    def _refresh_stash_patch_view(self) -> None:
+        refresh_stash_patch_view(self)
+
+    def _apply_selected_stash(self) -> None:
+        apply_selected_stash(self)
+
+    def _pop_selected_stash(self) -> None:
+        pop_selected_stash(self)
+
+    def _drop_selected_stash(self) -> None:
+        drop_selected_stash(self)
 
     def _undo_last_commit_from_commit_tab(self) -> None:
         undo_last_commit_from_commit_tab(self)
@@ -696,7 +772,12 @@ class QtShellWindow(QMainWindow):
 
     def _persist_state(self) -> None:
         self.settings_data["last_repo_path"] = self.repo_path
-        self.settings_data["last_tab_index"] = self.tabs.currentIndex()
+        current_tab_index = self.tabs.currentIndex()
+        self.settings_data["last_tab_index"] = current_tab_index
+        current_tab_name = ""
+        if 0 <= current_tab_index < self.tabs.count():
+            current_tab_name = self.tabs.tabText(current_tab_index)
+        self.settings_data["last_tab_name"] = current_tab_name
         self.settings_data["repo_scan_root"] = self.repo_scan_root
         save_settings(self.settings_path, self.settings_data)
 
@@ -1052,7 +1133,8 @@ class QtShellWindow(QMainWindow):
         return self._copy_to_clipboard(url, status="URL do commit copiada.")
 
     def _set_status(self, text: str) -> None:
-        self.status.showMessage(text, 5000)
+        if hasattr(self, "status"):
+            self.status.showMessage(text, 5000)
 
     def _set_busy_message(self, text: str) -> None:
         if hasattr(self, "status_busy_label"):

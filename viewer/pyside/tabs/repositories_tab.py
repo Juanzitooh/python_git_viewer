@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QTreeWidget,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -45,17 +46,22 @@ def build_repositories_tab(window: object) -> None:
     window.workspace_scan_status_label = QLabel("Aguardando scan do workspace...", window.repositories_tab)
     layout.addWidget(window.workspace_scan_status_label)
 
-    window.workspace_tree = QTreeWidget(window.repositories_tab)
-    window.workspace_tree.setRootIsDecorated(False)
-    window.workspace_tree.setAlternatingRowColors(True)
-    window.workspace_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
-    window.workspace_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
-    window.workspace_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-    window.workspace_tree.customContextMenuRequested.connect(window._on_workspace_tree_context_menu)
-    window.workspace_tree.setColumnCount(6)
-    window.workspace_tree.setHeaderLabels(["Repositório", "Caminho", "Branch", "Ahead", "Behind", "Status"])
-    window.workspace_tree.itemSelectionChanged.connect(window._on_workspace_selection_changed)
-    window.workspace_tree.itemDoubleClicked.connect(window._on_workspace_item_double_clicked)
-    layout.addWidget(window.workspace_tree, stretch=1)
+    cards_header = QLabel("Visao Geral do Workspace", window.repositories_tab)
+    layout.addWidget(cards_header)
+
+    window.workspace_cards_scroll = QScrollArea(window.repositories_tab)
+    window.workspace_cards_scroll.setObjectName("WorkspaceCardsScroll")
+    window.workspace_cards_scroll.setWidgetResizable(True)
+    window.workspace_cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
+    window.workspace_cards_scroll.viewport().setObjectName("WorkspaceCardsViewport")
+
+    window.workspace_cards_container = QWidget(window.workspace_cards_scroll)
+    window.workspace_cards_container.setObjectName("WorkspaceCardsContainer")
+    window.workspace_cards_grid = QGridLayout(window.workspace_cards_container)
+    window.workspace_cards_grid.setContentsMargins(0, 0, 0, 0)
+    window.workspace_cards_grid.setHorizontalSpacing(8)
+    window.workspace_cards_grid.setVerticalSpacing(8)
+    window.workspace_cards_scroll.setWidget(window.workspace_cards_container)
+    layout.addWidget(window.workspace_cards_scroll, stretch=1)
 
     window._scan_workspace_repos()

@@ -3,22 +3,25 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+from ..diff_columns import DiffColumnsView
+from ..widgets import NoScrollComboBox, UnifiedListWidget
+
 
 def build_compare_tab(window: object) -> None:
     window.compare_file_entries: list[dict[str, object]] = []
     window.compare_current_file_path = ""
+    window.compare_current_commit_hash = ""
     window._setting_compare_branches_programmatically = False
 
     layout = QVBoxLayout(window.compare_tab)
@@ -31,7 +34,7 @@ def build_compare_tab(window: object) -> None:
     top_layout.setSpacing(6)
 
     top_layout.addWidget(QLabel("Origem:", top_row))
-    window.compare_origin_combo = QComboBox(top_row)
+    window.compare_origin_combo = NoScrollComboBox(top_row)
     window.compare_origin_combo.currentIndexChanged.connect(window._on_compare_branches_changed)
     top_layout.addWidget(window.compare_origin_combo)
 
@@ -40,7 +43,7 @@ def build_compare_tab(window: object) -> None:
     top_layout.addWidget(window.compare_swap_button)
 
     top_layout.addWidget(QLabel("Destino:", top_row))
-    window.compare_dest_combo = QComboBox(top_row)
+    window.compare_dest_combo = NoScrollComboBox(top_row)
     window.compare_dest_combo.currentIndexChanged.connect(window._on_compare_branches_changed)
     top_layout.addWidget(window.compare_dest_combo)
 
@@ -50,6 +53,7 @@ def build_compare_tab(window: object) -> None:
 
     window.compare_word_diff_check = QCheckBox("Diff por palavra", top_row)
     window.compare_word_diff_check.stateChanged.connect(window._refresh_compare_patch)
+    window.compare_word_diff_check.setChecked(False)
     top_layout.addWidget(window.compare_word_diff_check)
 
     top_layout.addStretch(1)
@@ -64,7 +68,7 @@ def build_compare_tab(window: object) -> None:
     action_layout.setSpacing(6)
 
     action_layout.addWidget(QLabel("Ação:", action_row))
-    window.compare_action_combo = QComboBox(action_row)
+    window.compare_action_combo = NoScrollComboBox(action_row)
     window.compare_action_combo.addItem("Merge", "merge")
     window.compare_action_combo.addItem("Rebase", "rebase")
     window.compare_action_combo.addItem("Squash merge", "squash")
@@ -96,19 +100,39 @@ def build_compare_tab(window: object) -> None:
     body_splitter = QSplitter(Qt.Orientation.Horizontal, window.compare_tab)
     body_splitter.setChildrenCollapsible(False)
 
-    window.compare_commits_list = QListWidget(body_splitter)
+    window.compare_commits_list = UnifiedListWidget(body_splitter)
+    window.compare_commits_list.itemSelectionChanged.connect(window._on_compare_commit_selected)
     window.compare_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.compare_commits_list.customContextMenuRequested.connect(window._on_compare_commit_context_menu)
-    window.compare_files_list = QListWidget(body_splitter)
+
+    right_splitter = QSplitter(Qt.Orientation.Vertical, body_splitter)
+    right_splitter.setChildrenCollapsible(False)
+
+    window.compare_commit_info = QPlainTextEdit(right_splitter)
+    window.compare_commit_info.setReadOnly(True)
+
+    window.compare_files_list = UnifiedListWidget(right_splitter)
     window.compare_files_list.itemSelectionChanged.connect(window._on_compare_file_selected)
     window.compare_files_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.compare_files_list.customContextMenuRequested.connect(window._on_compare_file_context_menu)
-    window.compare_patch_view = QPlainTextEdit(body_splitter)
-    window.compare_patch_view.setReadOnly(True)
+
+    window.compare_patch_stack = QStackedWidget(right_splitter)
+    window.compare_patch_table = DiffColumnsView(include_marker_column=False, parent=window.compare_patch_stack)
+    window.compare_patch_table.setHeaderHidden(True)
+    window.compare_patch_text = QPlainTextEdit(window.compare_patch_stack)
+    window.compare_patch_text.setReadOnly(True)
+    window.compare_patch_text.setProperty("role", "diff")
+    window.compare_patch_stack.addWidget(window.compare_patch_table)
+    window.compare_patch_stack.addWidget(window.compare_patch_text)
+    window.compare_patch_stack.setCurrentIndex(0)
+    # Compatibilidade com fluxo legado de render em texto.
+    window.compare_patch_view = window.compare_patch_text
 
     body_splitter.setStretchFactor(0, 2)
-    body_splitter.setStretchFactor(1, 2)
-    body_splitter.setStretchFactor(2, 4)
+    body_splitter.setStretchFactor(1, 4)
+    right_splitter.setStretchFactor(0, 2)
+    right_splitter.setStretchFactor(1, 2)
+    right_splitter.setStretchFactor(2, 4)
     layout.addWidget(body_splitter, stretch=1)
     window._clear_compare_view()
     window._on_compare_action_changed(-1)

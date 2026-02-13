@@ -13,13 +13,14 @@ from ...core.commit_content import (
     get_commit_patch as core_get_commit_patch,
     list_commit_files as core_list_commit_files,
 )
-from ...core.git_client import is_git_repo, load_commit_summaries
+from ...core.git_client import is_git_repo, load_commit_details, load_commit_summaries
 from ...core.models import CommitFilters, CommitSummary
 from ...core.repo_state import (
     get_current_branch as core_get_current_branch,
     list_branches as core_list_branches,
 )
 from ...core.settings_store import normalize_repo_path
+from ..diff_columns import render_diff_into_columns
 
 
 def sync_import_target_label(window: object) -> None:
@@ -38,21 +39,58 @@ def sync_import_target_label(window: object) -> None:
 
 def clear_import_selection(window: object, status_message: str) -> None:
     window.import_commit_summaries = []
+    window.import_current_commit_hash = ""
+    window.import_current_file_path = ""
     if hasattr(window, "import_commits_list"):
         window.import_commits_list.clear()
+    if hasattr(window, "import_files_list"):
+        window.import_files_list.clear()
+    if hasattr(window, "import_patch_table"):
+        render_diff_into_columns(window.import_patch_table, "", show_header_lines=False)
+    if hasattr(window, "import_patch_text"):
+        window.import_patch_text.setPlainText("")
+    if hasattr(window, "import_patch_stack"):
+        window.import_patch_stack.setCurrentIndex(0)
+    if hasattr(window, "import_commit_info"):
+        window.import_commit_info.setPlainText("")
     window.import_status_label.setText(status_message)
     update_import_controls_state(window)
+
+
+def _set_import_commit_info(window: object, details: object | None) -> None:
+    if not hasattr(window, "import_commit_info"):
+        return
+    if details is None:
+        window.import_commit_info.setPlainText("")
+        return
+    info_lines = [
+        f"Hash: {details.commit_hash}",
+        f"Autor: {details.author}",
+        f"Data: {details.date}",
+        f"Titulo: {details.subject}",
+        f"Arquivos: {len(details.file_stats)} | +{details.total_added} -{details.total_deleted}",
+    ]
+    body_text = details.body.strip()
+    if body_text:
+        info_lines.extend(["", "Descricao:", body_text])
+    else:
+        info_lines.append("Descricao: (sem descricao)")
+    window.import_commit_info.setPlainText("\n".join(info_lines))
 
 
 def refresh_import_source_repos(window: object) -> None:
     if not hasattr(window, "import_source_repo_combo"):
         return
     repos = window._collect_known_repos()
+    target_repo = normalize_repo_path(window.repo_path) if window.repo_path else ""
     source_path = normalize_repo_path(window.import_source_repo_path) if window.import_source_repo_path else ""
 
     labels: list[str] = []
     lookup: dict[str, str] = {}
     for repo in repos:
+        normalized_repo = normalize_repo_path(repo)
+        if target_repo and normalized_repo == target_repo:
+            continue
         label_base = window._format_repo_display_label(repo)
         label = label_base
         suffix = 2
@@ -60,7 +98,7 @@ def refresh_import_source_repos(window: object) -> None:
             label = f"{label_base} [{suffix}]"
             suffix += 1
         labels.append(label)
-        lookup[label] = repo
+        lookup[label] = normalized_repo
     window.import_source_repo_lookup = lookup
 
     window.import_source_repo_combo.blockSignals(True)
@@ -98,6 +136,12 @@ def apply_import_source_repo_from_combo(window: object) -> None:
         clear_import_selection(window, "Selecione o repositório de origem para carregar commits.")
         return
     normalized = normalize_repo_path(repo)
+    target_repo = normalize_repo_path(window.repo_path) if window.repo_path else ""
+    if target_repo and normalized == target_repo:
+        window.import_source_repo_path = ""
+        window.import_source_branch_combo.clear()
+        clear_import_selection(window, "Origem e destino devem ser repositórios diferentes.")
+        return
     if not os.path.isdir(normalized) or not is_git_repo(normalized):
         window.import_source_repo_path = ""
         window.import_source_branch_combo.clear()
@@ -118,6 +162,22 @@ def use_current_repo_as_import_source(window: object) -> None:
     if index >= 0:
         window.import_source_repo_combo.setCurrentIndex(index)
         apply_import_source_repo_from_combo(window)
+
+
+def open_import_clone_dialog(window: object) -> None:
+    def _on_clone_success(cloned_repo: str) -> None:
+        normalized_repo = normalize_repo_path(cloned_repo)
+        refresh_import_source_repos(window)
+        index = window.import_source_repo_combo.findData(normalized_repo)
+        if index < 0:
+            window.import_status_label.setText("Clone concluído, mas o repositório não pode ser usado como origem.")
+            return
+        window.import_source_repo_combo.setCurrentIndex(index)
+        apply_import_source_repo_from_combo(window)
+        window.import_status_label.setText(f"Origem selecionada automaticamente: {normalized_repo}")
+        window._set_status("Clone concluído e origem de importação atualizada.")
+
+    window._open_clone_dialog(activate_repo=False, on_success=_on_clone_success)
 
 
 def load_import_source_branches(window: object) -> None:
@@ -165,12 +225,7 @@ def load_import_source_commits(window: object) -> None:
             return
         window.import_status_label.setText(f"Carregando commits de {branch}...")
         filters = CommitFilters(ref=branch)
-        limit_raw = window.settings_data.get("commit_limit", 100)
-        try:
-            limit = int(limit_raw)
-        except (TypeError, ValueError):
-            limit = 100
-        limit = max(1, limit)
+        limit = 200
         try:
             summaries = load_commit_summaries(source_repo, limit=limit, filters=filters)
         except RuntimeError as exc:
@@ -178,6 +233,11 @@ def load_import_source_commits(window: object) -> None:
             clear_import_selection(window, "Falha ao carregar commits da origem.")
             return
         window.import_commit_summaries = summaries
+        window.import_current_commit_hash = ""
+        window.import_current_file_path = ""
+        if hasattr(window, "import_files_list"):
+            window.import_files_list.clear()
+        _set_import_commit_info(window, None)
         window.import_commits_list.clear()
         for summary in summaries:
             label = f"{summary.commit_hash[:7]} | {summary.subject}"
@@ -185,11 +245,134 @@ def load_import_source_commits(window: object) -> None:
             item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
         if summaries:
             window.import_status_label.setText(f"{len(summaries)} commits carregados da branch {branch}.")
+            window.import_commits_list.setCurrentRow(0)
+            on_import_commit_selected(window)
         else:
             window.import_status_label.setText(f"Nenhum commit encontrado na branch {branch}.")
+            _set_import_commit_info(window, None)
+            if hasattr(window, "import_patch_table"):
+                render_diff_into_columns(window.import_patch_table, "(nenhum commit selecionado)", show_header_lines=False)
+            if hasattr(window, "import_patch_text"):
+                window.import_patch_text.setPlainText("")
         update_import_controls_state(window)
     finally:
         window._end_busy()
+
+
+def _selected_primary_import_commit_hash(window: object) -> str:
+    current_item = window.import_commits_list.currentItem()
+    if current_item is not None:
+        value = current_item.data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+        if commit_hash:
+            return commit_hash
+    selected_items = window.import_commits_list.selectedItems()
+    if not selected_items:
+        return ""
+    value = selected_items[-1].data(Qt.ItemDataRole.UserRole)
+    return str(value).strip() if value is not None else ""
+
+
+def on_import_commit_selected(window: object) -> None:
+    commit_hash = _selected_primary_import_commit_hash(window)
+    window.import_current_commit_hash = commit_hash
+    window.import_current_file_path = ""
+    if not commit_hash:
+        if hasattr(window, "import_files_list"):
+            window.import_files_list.clear()
+        _set_import_commit_info(window, None)
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "(nenhum commit selecionado)", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("")
+        if hasattr(window, "import_patch_stack"):
+            window.import_patch_stack.setCurrentIndex(0)
+        return
+    source_repo = window.import_source_repo_path.strip()
+    if not source_repo:
+        return
+    try:
+        details = load_commit_details(source_repo, commit_hash)
+        files = core_list_commit_files(source_repo, commit_hash)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Importar", str(exc))
+        _set_import_commit_info(window, None)
+        if hasattr(window, "import_files_list"):
+            window.import_files_list.clear()
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("")
+        return
+    _set_import_commit_info(window, details)
+    stats_by_path = {item.path: item for item in details.file_stats}
+    window.import_files_list.blockSignals(True)
+    window.import_files_list.clear()
+    for file_path in files:
+        stat = stats_by_path.get(file_path)
+        if stat is None:
+            label = file_path
+        elif stat.is_binary:
+            label = f"{file_path} [binario]"
+        else:
+            label = f"{file_path} (+{stat.added}/-{stat.deleted})"
+        item = QListWidgetItem(label, window.import_files_list)
+        item.setData(Qt.ItemDataRole.UserRole, file_path)
+    window.import_files_list.blockSignals(False)
+    if window.import_files_list.count() > 0:
+        window.import_files_list.setCurrentRow(0)
+    on_import_file_selected(window)
+
+
+def on_import_file_selected(window: object) -> None:
+    selected_items = window.import_files_list.selectedItems() if hasattr(window, "import_files_list") else []
+    if not selected_items:
+        window.import_current_file_path = ""
+    else:
+        value = selected_items[0].data(Qt.ItemDataRole.UserRole)
+        window.import_current_file_path = str(value).strip() if value is not None else ""
+    refresh_import_patch_view(window)
+
+
+def refresh_import_patch_view(window: object) -> None:
+    source_repo = window.import_source_repo_path.strip()
+    commit_hash = window.import_current_commit_hash.strip()
+    if not source_repo or not commit_hash:
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "(nenhum commit selecionado)", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("")
+        if hasattr(window, "import_patch_stack"):
+            window.import_patch_stack.setCurrentIndex(0)
+        return
+    word_diff = bool(getattr(window, "import_word_diff_check", None) and window.import_word_diff_check.isChecked())
+    selected_path = window.import_current_file_path.strip()
+    if not selected_path:
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "(selecione um arquivo)", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("(selecione um arquivo)")
+        if hasattr(window, "import_patch_stack"):
+            window.import_patch_stack.setCurrentIndex(0)
+        return
+    path = selected_path
+    try:
+        patch = core_get_commit_patch(source_repo, commit_hash, path=path, word_diff=word_diff)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Importar", str(exc))
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("")
+        return
+    if hasattr(window, "import_patch_stack"):
+        window.import_patch_stack.setCurrentIndex(0)
+    render_diff_into_columns(
+        window.import_patch_table,
+        patch or "",
+        show_header_lines=False,
+        word_diff_plain=word_diff,
+    )
 
 
 def get_selected_import_summaries(window: object) -> list[CommitSummary]:
@@ -261,9 +444,25 @@ def _copy_import_commit_patch(window: object, commit_hash: str) -> None:
     QMessageBox.information(window, "Importar", "Sem patch para copiar neste commit.")
 
 
+def _copy_import_file_patch(window: object, commit_hash: str, file_path: str) -> None:
+    source_repo = window.import_source_repo_path.strip()
+    if not source_repo:
+        QMessageBox.warning(window, "Importar", "Selecione repositorio e branch de origem.")
+        return
+    try:
+        patch = core_get_commit_patch(source_repo, commit_hash, path=file_path, word_diff=False)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Importar", str(exc))
+        return
+    if window._copy_to_clipboard(patch, status="Patch do arquivo copiado."):
+        return
+    QMessageBox.information(window, "Importar", "Nao foi possivel copiar o patch do arquivo.")
+
+
 def on_import_commit_context_menu(window: object, pos: QPoint) -> None:
     if not window.import_source_repo_path.strip():
         return
+    previous_rows = sorted(int(index.row()) for index in window.import_commits_list.selectedIndexes())
     item = window.import_commits_list.itemAt(pos)
     if item is not None:
         value = item.data(Qt.ItemDataRole.UserRole)
@@ -285,7 +484,8 @@ def on_import_commit_context_menu(window: object, pos: QPoint) -> None:
     action_copy_files = menu.addAction("Copiar lista de arquivos")
     action_copy_patch = menu.addAction("Copiar patch completo")
 
-    selected_action = menu.exec(window.import_commits_list.mapToGlobal(pos))
+    selected_action = menu.exec(window.import_commits_list.viewport().mapToGlobal(pos))
+    _restore_import_commit_selection(window, previous_rows)
     if selected_action is None:
         return
     if selected_action == action_open_github:
@@ -304,6 +504,71 @@ def on_import_commit_context_menu(window: object, pos: QPoint) -> None:
         _copy_import_commit_patch(window, commit_hash)
 
 
+def on_import_file_context_menu(window: object, pos: QPoint) -> None:
+    source_repo = window.import_source_repo_path.strip()
+    commit_hash = window.import_current_commit_hash.strip()
+    if not source_repo or not commit_hash:
+        return
+    item = window.import_files_list.itemAt(pos)
+    if item is not None:
+        value = item.data(Qt.ItemDataRole.UserRole)
+        file_path = str(value).strip() if value is not None else ""
+    else:
+        selected_items = window.import_files_list.selectedItems()
+        if selected_items:
+            value = selected_items[-1].data(Qt.ItemDataRole.UserRole)
+            file_path = str(value).strip() if value is not None else ""
+        else:
+            file_path = window.import_current_file_path.strip()
+
+    menu = QMenu(window.import_files_list)
+    action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
+    action_open_folder = menu.addAction("Abrir na pasta")
+    action_copy_relative = menu.addAction("Copiar caminho relativo")
+    menu.addSeparator()
+    action_copy_file_patch = menu.addAction("Copiar patch do arquivo")
+    action_copy_commit_patch = menu.addAction("Copiar patch completo")
+
+    has_file = bool(file_path)
+    action_open_vscode.setEnabled(has_file)
+    action_open_folder.setEnabled(has_file)
+    action_copy_relative.setEnabled(has_file)
+    action_copy_file_patch.setEnabled(has_file)
+
+    selected_action = menu.exec(window.import_files_list.viewport().mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_open_vscode:
+        window._open_repo_file_in_vscode(file_path, source_repo)
+        return
+    if selected_action == action_open_folder:
+        window._open_repo_file_in_explorer(file_path, source_repo)
+        return
+    if selected_action == action_copy_relative:
+        window._copy_to_clipboard(file_path, status="Caminho relativo copiado.")
+        return
+    if selected_action == action_copy_file_patch:
+        _copy_import_file_patch(window, commit_hash, file_path)
+        return
+    if selected_action == action_copy_commit_patch:
+        _copy_import_commit_patch(window, commit_hash)
+
+
+def _restore_import_commit_selection(window: object, rows: list[int]) -> None:
+    if not rows:
+        return
+    window.import_commits_list.blockSignals(True)
+    try:
+        window.import_commits_list.clearSelection()
+        for row in rows:
+            item = window.import_commits_list.item(row)
+            if item is not None:
+                item.setSelected(True)
+        window.import_commits_list.setCurrentRow(rows[-1])
+    finally:
+        window.import_commits_list.blockSignals(False)
+
+
 def import_selected_commits(window: object) -> None:
     if not window.repo_path:
         QMessageBox.information(window, "Importar", "Selecione um repositório destino válido primeiro.")
@@ -311,6 +576,9 @@ def import_selected_commits(window: object) -> None:
     source_repo = window.import_source_repo_path
     if not source_repo:
         QMessageBox.warning(window, "Importar", "Selecione o repositório de origem.")
+        return
+    if normalize_repo_path(source_repo) == normalize_repo_path(window.repo_path):
+        QMessageBox.warning(window, "Importar", "Origem e destino não podem ser o mesmo repositório.")
         return
     selected = get_selected_import_summaries(window)
     if not selected:
@@ -400,9 +668,14 @@ def update_import_controls_state(window: object) -> None:
     if not hasattr(window, "import_run_button"):
         return
     source_ready = bool(window.import_source_repo_path and window.import_source_branch_combo.currentData())
+    source_equals_target = bool(
+        window.repo_path
+        and window.import_source_repo_path
+        and normalize_repo_path(window.import_source_repo_path) == normalize_repo_path(window.repo_path)
+    )
     selected = bool(window.import_commits_list.selectedItems())
     has_source_options = window.import_source_repo_combo.count() > 0
-    can_import = bool(window.repo_path and source_ready and selected)
+    can_import = bool(window.repo_path and source_ready and selected and not source_equals_target)
     window.import_run_button.setEnabled(can_import)
     window.import_copy_hashes_button.setEnabled(selected)
     window.import_source_branch_combo.setEnabled(source_ready or bool(window.import_source_repo_path))

@@ -88,6 +88,8 @@ class TestPySideShellSmoke(unittest.TestCase):
         self.assertGreaterEqual(self.window.history_commits_list.count(), 1)
         self.assertGreaterEqual(self.window.compare_origin_combo.count(), 1)
         self.assertGreaterEqual(self.window.import_source_repo_combo.count(), 1)
+        self.assertGreaterEqual(self.window.import_commits_list.count(), 1)
+        self.assertGreaterEqual(self.window.import_files_list.count(), 1)
 
     def test_history_rows_show_local_marker_without_upstream(self) -> None:
         self.window._reload_history_commits()
@@ -96,6 +98,26 @@ class TestPySideShellSmoke(unittest.TestCase):
         self.assertIsNotNone(first_item)
         text = first_item.text() if first_item is not None else ""
         self.assertTrue(text.startswith("[L] "))
+
+    def test_stash_tab_visibility_tracks_stashes(self) -> None:
+        tab_names = [self.window.tabs.tabText(index) for index in range(self.window.tabs.count())]
+        self.assertNotIn("Stash", tab_names)
+
+        readme_path = self.repo_path / "README.md"
+        readme_path.write_text("hello\nworld\nstash\n", encoding="utf-8")
+        _run(["git", "stash", "push", "-u", "-m", "smoke stash"], cwd=str(self.repo_path))
+
+        self.window._refresh_stash_tab_visibility()
+        tab_names = [self.window.tabs.tabText(index) for index in range(self.window.tabs.count())]
+        self.assertIn("Stash", tab_names)
+        self.assertGreaterEqual(self.window.stash_entries_list.count(), 1)
+        self.assertTrue(self.window.stash_repo_label.text().startswith("Repositorio:"))
+        self.assertTrue(self.window.stash_branch_label.text().startswith("Branch:"))
+
+        _run(["git", "stash", "drop", "stash@{0}"], cwd=str(self.repo_path))
+        self.window._refresh_stash_tab_visibility()
+        tab_names = [self.window.tabs.tabText(index) for index in range(self.window.tabs.count())]
+        self.assertNotIn("Stash", tab_names)
 
 
 if __name__ == "__main__":
