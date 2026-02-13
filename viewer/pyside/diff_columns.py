@@ -26,6 +26,7 @@ ROW_KIND_ROLE = Qt.ItemDataRole.UserRole + 41
 HUNK_INDEX_ROLE = Qt.ItemDataRole.UserRole + 42
 LINE_INFO_ROLE = Qt.ItemDataRole.UserRole + 43
 SCOPE_ROLE = Qt.ItemDataRole.UserRole + 44
+HUNK_HEADER_ROLE = Qt.ItemDataRole.UserRole + 45
 
 
 class DiffColumnsView(QTreeWidget):
@@ -137,6 +138,17 @@ class DiffColumnsView(QTreeWidget):
             QTreeView::indicator {
                 width: 14px;
                 height: 14px;
+                border: 1px solid palette(mid);
+                border-radius: 2px;
+                background: palette(base);
+            }
+            QTreeView::indicator:checked {
+                border-color: palette(highlight);
+                background: palette(highlight);
+            }
+            QTreeView::indicator:indeterminate {
+                border-color: palette(highlight);
+                background: palette(midlight);
             }
             """
         )
@@ -376,6 +388,7 @@ class DiffColumnsRenderer:
         *,
         kind: str,
         hunk_index: int | None = None,
+        hunk_header: str = "",
         line_info: DiffLineInfo | None = None,
         marker: str = "",
         bold: bool = False,
@@ -386,6 +399,8 @@ class DiffColumnsRenderer:
         item.setData(0, SCOPE_ROLE, self.scope_value)
         if hunk_index is not None:
             item.setData(0, HUNK_INDEX_ROLE, hunk_index)
+        if hunk_header:
+            item.setData(0, HUNK_HEADER_ROLE, hunk_header)
         if line_info is not None:
             item.setData(0, LINE_INFO_ROLE, line_info)
         if tooltip:
@@ -420,6 +435,7 @@ class DiffColumnsRenderer:
                     self._line_row_values(line_no, line_info.content),
                     kind=line_info.line_type,
                     hunk_index=hunk_index,
+                    hunk_header=hunk.header,
                     line_info=line_info,
                     line_color_kind=line_info.line_type,
                 )
@@ -443,6 +459,7 @@ class DiffColumnsRenderer:
                         self._line_row_values(str(int(removed_line.old_line)), removed_line.content),
                         kind="removed",
                         hunk_index=hunk_index,
+                        hunk_header=hunk.header,
                         line_info=removed_line,
                         line_color_kind="removed",
                     )
@@ -458,6 +475,7 @@ class DiffColumnsRenderer:
                         self._line_row_values(str(int(added_line.new_line)), added_line.content),
                         kind="modified",
                         hunk_index=hunk_index,
+                        hunk_header=hunk.header,
                         line_info=added_line,
                         tooltip=f"Linha original: {removed_line.content}",
                         line_color_kind="modified",
@@ -467,6 +485,7 @@ class DiffColumnsRenderer:
                     self._line_row_values(str(int(removed_line.old_line)), removed_line.content),
                     kind="removed",
                     hunk_index=hunk_index,
+                    hunk_header=hunk.header,
                     line_info=removed_line,
                     line_color_kind="removed",
                 )
@@ -474,6 +493,7 @@ class DiffColumnsRenderer:
                     self._line_row_values(str(int(added_line.new_line)), added_line.content),
                     kind="added",
                     hunk_index=hunk_index,
+                    hunk_header=hunk.header,
                     line_info=added_line,
                     line_color_kind="added",
                 )
@@ -503,6 +523,7 @@ class DiffColumnsRenderer:
             self._hunk_row_values(hunk_marker, hunk),
             kind="hunk",
             hunk_index=hunk_index,
+            hunk_header=hunk.header,
             marker=hunk_marker,
             bold=True,
             tooltip=_hunk_context_preview(hunk) if not self.view.include_marker_column else "",
@@ -520,6 +541,7 @@ class DiffColumnsRenderer:
                     self._line_row_values(_line_number_text(line_info), line_info.content, marker=marker),
                     kind=line_info.line_type,
                     hunk_index=hunk_index,
+                    hunk_header=hunk.header,
                     line_info=line_info,
                     marker=marker,
                     line_color_kind=line_info.line_type,

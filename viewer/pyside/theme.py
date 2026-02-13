@@ -343,6 +343,21 @@ def build_theme_stylesheet(theme: str, theme_overrides: object | None = None) ->
     QTreeWidget#DiffColumnsView, QTreeWidget#DiffColumnsView::item {{
       background-color: {p["diff_bg"]};
     }}
+    QTreeWidget#DiffColumnsView::indicator {{
+      width: 14px;
+      height: 14px;
+      border: 1px solid {p["border"]};
+      border-radius: 2px;
+      background-color: {p["field"]};
+    }}
+    QTreeWidget#DiffColumnsView::indicator:checked {{
+      background-color: {p["accent"]};
+      border-color: {p["accent"]};
+    }}
+    QTreeWidget#DiffColumnsView::indicator:indeterminate {{
+      background-color: {p["chip_bg"]};
+      border-color: {p["accent"]};
+    }}
     QListWidget::item {{
       min-height: 22px;
       padding: 1px 4px;
