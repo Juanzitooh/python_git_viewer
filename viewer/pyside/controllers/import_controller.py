@@ -223,6 +223,25 @@ def load_import_source_commits(window: object) -> None:
         if not source_repo or not branch:
             clear_import_selection(window, "Selecione origem e branch para carregar commits.")
             return
+        window.import_current_commit_hash = ""
+        window.import_current_file_path = ""
+        if hasattr(window, "import_commits_list"):
+            window.import_commits_list.blockSignals(True)
+            try:
+                window.import_commits_list.clear()
+            finally:
+                window.import_commits_list.blockSignals(False)
+        if hasattr(window, "import_files_list"):
+            window.import_files_list.blockSignals(True)
+            try:
+                window.import_files_list.clear()
+            finally:
+                window.import_files_list.blockSignals(False)
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("")
+        _set_import_commit_info(window, None)
         window.import_status_label.setText(f"Carregando commits de {branch}...")
         filters = CommitFilters(ref=branch)
         limit = 200
@@ -233,16 +252,15 @@ def load_import_source_commits(window: object) -> None:
             clear_import_selection(window, "Falha ao carregar commits da origem.")
             return
         window.import_commit_summaries = summaries
-        window.import_current_commit_hash = ""
-        window.import_current_file_path = ""
-        if hasattr(window, "import_files_list"):
-            window.import_files_list.clear()
-        _set_import_commit_info(window, None)
-        window.import_commits_list.clear()
-        for summary in summaries:
-            label = f"{summary.commit_hash[:7]} | {summary.subject}"
-            item = QListWidgetItem(label, window.import_commits_list)
-            item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+        window.import_commits_list.blockSignals(True)
+        try:
+            window.import_commits_list.clear()
+            for summary in summaries:
+                label = f"{summary.commit_hash[:7]} | {summary.subject}"
+                item = QListWidgetItem(label, window.import_commits_list)
+                item.setData(Qt.ItemDataRole.UserRole, summary.commit_hash)
+        finally:
+            window.import_commits_list.blockSignals(False)
         if summaries:
             window.import_status_label.setText(f"{len(summaries)} commits carregados da branch {branch}.")
             window.import_commits_list.setCurrentRow(0)
@@ -275,6 +293,21 @@ def _selected_primary_import_commit_hash(window: object) -> str:
 
 def on_import_commit_selected(window: object) -> None:
     commit_hash = _selected_primary_import_commit_hash(window)
+    valid_hashes = {item.commit_hash for item in window.import_commit_summaries}
+    if commit_hash and commit_hash not in valid_hashes:
+        window.import_current_commit_hash = ""
+        window.import_current_file_path = ""
+        if hasattr(window, "import_files_list"):
+            window.import_files_list.clear()
+        _set_import_commit_info(window, None)
+        if hasattr(window, "import_patch_table"):
+            render_diff_into_columns(window.import_patch_table, "(nenhum commit selecionado)", show_header_lines=False)
+        if hasattr(window, "import_patch_text"):
+            window.import_patch_text.setPlainText("")
+        if hasattr(window, "import_patch_stack"):
+            window.import_patch_stack.setCurrentIndex(0)
+        window.import_status_label.setText("Commit selecionado não pertence mais à origem/branch atual.")
+        return
     window.import_current_commit_hash = commit_hash
     window.import_current_file_path = ""
     if not commit_hash:
@@ -295,7 +328,23 @@ def on_import_commit_selected(window: object) -> None:
         details = load_commit_details(source_repo, commit_hash)
         files = core_list_commit_files(source_repo, commit_hash)
     except RuntimeError as exc:
-        QMessageBox.critical(window, "Importar", str(exc))
+        message = str(exc)
+        normalized_message = message.lower()
+        if "bad object" in normalized_message or "unknown revision" in normalized_message:
+            window.import_current_commit_hash = ""
+            window.import_current_file_path = ""
+            if hasattr(window, "import_files_list"):
+                window.import_files_list.clear()
+            if hasattr(window, "import_patch_table"):
+                render_diff_into_columns(window.import_patch_table, "(nenhum commit selecionado)", show_header_lines=False)
+            if hasattr(window, "import_patch_text"):
+                window.import_patch_text.setPlainText("")
+            if hasattr(window, "import_patch_stack"):
+                window.import_patch_stack.setCurrentIndex(0)
+            _set_import_commit_info(window, None)
+            window.import_status_label.setText("Commit não existe mais na origem/branch selecionada.")
+            return
+        QMessageBox.critical(window, "Importar", message)
         _set_import_commit_info(window, None)
         if hasattr(window, "import_files_list"):
             window.import_files_list.clear()
