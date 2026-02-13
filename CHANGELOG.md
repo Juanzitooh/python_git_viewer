@@ -4,8 +4,48 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 
 ## [Unreleased]
 
+- Barra global do PySide6 simplificada: botoes explicitos de Pull/Push foram substituidos por botoes `Behind` e `Ahead` clicaveis, com tooltip contextual e estado desabilitado quando contador = 0.
+- Barra global do PySide6 agora oculta chips `Behind/Ahead` quando o contador esta em zero, exibindo apenas quando ha acao pendente.
+- Aba Commit no PySide6 passou a agrupar arquivos por pasta com cabecalhos checkaveis (`(todos)` + grupo), habilitando selecao em lote direto na lista e removendo botoes redundantes de "Selecionar tudo/Limpar selecao".
+- Aba Commit no PySide6 agora limita o fluxo de `Undo commit` aos modos `soft` e `mixed` (sem opcao `hard`).
+- Aba Commit no PySide6 agora trata selecao como estado de stage: marcar/desmarcar arquivo, pasta ou `(todos)` sincroniza automaticamente stage/unstage real no Git.
+- Aba Commit no PySide6 agora aplica auto-stage inicial por repositorio ao abrir a tela, iniciando com arquivos selecionados e stageados por padrao.
+- Corrigido crash de inicializacao no PySide6 quando auto-stage do Commit ocorria antes da status bar estar pronta.
+- Acao de Stash na aba Commit (PySide6) agora respeita somente os arquivos selecionados e nao mais todo o worktree.
+- Botao `Stash` da aba Commit no PySide6 agora abre um gerenciador visual de stashes (lista, arquivos e diff), com acoes de criar stash dos selecionados, aplicar, aplicar+remover e descartar.
+- Stash no PySide6 agora foi consolidado em uma aba dedicada e dinamica: ela aparece somente quando existem stashes no repositorio atual e exibe contexto de repositorio/branch no topo.
+- Aba Commit no PySide6 removeu os botoes de stage/unstage do topo; as acoes agora sao orientadas por selecao no proprio diff via menu de contexto (arquivo, bloco e linha).
+- Novo renderer de diff no PySide6 com numeracao de linhas old/new, marcadores por bloco/linha e colorizacao consistente (adicionado=verde, removido=vermelho), reaproveitado em Commit, Historico, Comparar e Stash.
+- Aba Commit no PySide6 agora usa diff mais limpo (sem cabecalho `diff --git` no painel), com clique no marcador da linha/bloco para alternar stage/unstage direto e manter a hierarquia parcial `[~]` no arquivo/pasta/(todos).
+- Diff da aba Commit foi refinado para o formato `numero | marcador | sinal | conteudo`, com coluna de marcador fixa e clique no marcador sem bloquear selecao por arraste/`Ctrl+C`.
+- Abas Historico, Comparar e Stash agora exibem diff no formato simples `numero | sinal | conteudo`, enquanto o Commit mantem coluna de marcador (`[x]/[ ]/[~]`) para acao de stage por linha/bloco.
+- Corrigido parse de `--word-diff=plain` no core para linhas iniciadas por marcadores inline (`{+...+}`, `[-...-]`, `{-...-}`), restaurando visualizacao e realce de palavras alteradas nas abas que usam diff por palavra.
+- Historico, Comparar e Stash no PySide6 agora usam visualizacao de diff em colunas (`Linha`, `Sinal`, `Conteudo`) para modo normal, com fallback automatico para visualizacao textual quando `Diff por palavra` estiver ativo.
+- Aba Importar no PySide6 agora segue o mesmo padrao de leitura de diff: lista de commits + lista de arquivos do commit e painel de diff por arquivo (colunas por padrao e fallback textual no modo `Diff por palavra`).
+- Aba Historico no PySide6 agora usa carregamento progressivo por scroll (infinite scroll) na lista de commits, removendo dependencia de limite fixo no cabecalho.
+- Historico/Importar/Comparar no PySide6 agora iniciam em `Diff por linha` por padrao (toggle `Diff por palavra` permanece disponivel).
+- Aba Commit no PySide6 agora possui janela avancada de diff em tela cheia com 3 modos de visualizacao (`Linha a linha`, `Lado a lado`, `Cima/baixo`), mantendo stage por marcador no modo principal e adicionando menu de contexto para copiar/reverter linha ou bloco.
+- Copia por selecao (`Ctrl+C`) nos diffs do PySide6 agora remove prefixos visuais de interface (numero, marcador e sinal), levando para a area de transferencia apenas o conteudo util das linhas.
+- Hierarquia de selecao no Commit agora considera estado parcial real (`[~]`): ao stagear parcialmente por linha/bloco, arquivo/pasta/(todos) passam a refletir que nao estao 100% selecionados.
+- Ajustado layout responsivo no PySide6 para reduzir estouro visual em janela maximizada: controles superiores da aba Commit foram divididos em duas linhas e a largura minima da branch no topo foi reduzida.
+- Corrigido crash no fluxo "Abrir PR" do PySide6 causado por import ausente de branches no dialogo base/head.
+- Aba Historico no PySide6 agora suporta multisselecao de commits (Ctrl) para exportacao e preserva selecao ao abrir menu de contexto por clique direito.
+- Corrigido menu de contexto de arquivos no Historico (PySide6), com resolucao correta do item alvo e acoes clicaveis.
+- Aba Repositorios no PySide6 agora abre o repositorio no VS Code no duplo clique da lista.
+- Aba Repositorios no PySide6 voltou ao layout de cards com scroll (em vez de tabela), exibindo branch, `Ahead/Behind` e status por repositorio, com clique simples para selecionar, duplo clique para abrir no VS Code e card final de adicionar repositorio.
+- Regras de clone em pasta opcional foram ajustadas para namespace por padrao (`pasta/repo`), evitando clone em nome literal inesperado.
+- Menu de contexto de repositorio ganhou acao de exclusao local com confirmacao, removendo tambem o repo de recentes/favoritos apos apagar a pasta.
+- Historico/Importar/Comparar agora sempre exibem `Descricao` nos detalhes do commit (incluindo fallback `(sem descricao)`), e listas de arquivos passaram a mostrar `(+X/-Y)` por arquivo quando aplicavel.
+- Aba Importar no PySide6 removeu o botao `Usar atual`, focando selecao explicita de origem no combobox de repositorios.
+- Aba Configuracoes no PySide6 removeu `Limite padrao de commits`; a carga de Historico passou a ser progressiva.
+- Shell PySide6 ganhou timers de fundo para auto status update (15s) e auto fetch (180s quando houver upstream), aproximando comportamento da UI Tk.
+- Renderizador de diff em colunas no PySide6 recebeu ajustes de contraste para leitura em temas claro/escuro e destaque visual de linhas modificadas em cor dedicada.
+- Comboboxes de alto impacto no PySide6 (repositorio/branch global e branch dos cards de workspace) agora ignoram scroll com dropdown fechado para evitar troca acidental de branch/repositorio.
+- Motor de diff das abas sem stage (Historico/Importar/Comparar/Stash) foi padronizado para colunas `old/new/sinal/conteudo`, preservando a ordem real do patch e consolidando `del+add` como linha modificada (`#`) com tooltip da versao anterior.
+- Aba Commit no PySide6 deixou de renderizar diff como texto corrido: o painel principal agora usa grade em colunas com marcador dedicado, tornando explicito onde clicar para stage/unstage por linha ou bloco.
 - R7.4.2 iniciado com validacao automatizada do shell PySide6: `py_compile` dos modulos PySide, startup headless sem traceback e suite `unittest` validada no `.venv`.
 - Adicionado teste de smoke `tests/test_pyside_shell_smoke.py` cobrindo inicializacao da janela PySide6 com repo temporario e refresh dos fluxos principais (repo/commit/historico/comparar/importar).
+- Adicionado `tests/test_commit_ops.py` para validar montagem do comando de stash com e sem pathspec.
 - Aba Historico no PySide6 agora marca commits com `[L]` (apenas local) e `[L+O]` (local+online), usando upstream para diferenciar o que ainda nao foi enviado.
 - Aba Historico no PySide6 agora inclui fluxo de "Exportar" commits selecionados para outra branch e ferramenta de "Reordenar locais" com backup automatico antes da reescrita.
 - Aba Commit no PySide6 agora abre dialogo de selecao de branches base/head ao acionar "Abrir PR", montando a URL de compare com as escolhas do usuario.

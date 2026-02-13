@@ -74,7 +74,7 @@ Como usar:
 - [x] Commit com titulo e descricao opcional funciona.
 - [ ] Stash funciona e atualiza tela.
 - [bug] Undo commit (soft/mixed/hard) funciona. deixa só o soft e mixed por favor
-- [ ] Botao Abrir PR so habilita com worktree limpo.
+- [x] Botao Abrir PR so habilita com worktree limpo.
 - [bug] Abrir PR abre dialogo base/head e abre URL correta no navegador. não ta abrindo o dialogo para selecionar quais serão as branchs
 
 ## 6. Aba Historico
@@ -102,7 +102,7 @@ tudo bugado no menu, ele aparece mas somente a ultima opção é possivel clicar
   - [ ] Copiar patch completo
 - [bug] Botao Exportar funciona (copiar hashes + confirmar exportacao). ao apertar ctrl e apertar em outro commit não é possivel adicionar mais um a seleção e isso faz o exportar só funcionar unitariamente
 - [ ] Exportar trata conflito abrindo dialogo de conflitos.
-- [ ] Botao Reordenar locais aparece so quando ha >=2 commits locais com upstream.
+- [x] Botao Reordenar locais aparece so quando ha >=2 commits locais com upstream.
 - [ ] Reordenar locais funciona com backup e atualiza historico.
 
 ## 7. Aba Importar
@@ -175,3 +175,84 @@ Use 1 linha por bug.
 |---|---|---|---|---|---|---|---|
 | BUG-001 |  |  |  |  |  |  | Aberto |
 
+apareceu um traceback
+
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+Traceback (most recent call last):
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 1023, in _open_commit_pr_in_github
+    selection = self._prompt_pr_branch_selection(resolved_repo)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jp/Documentos/github/viewer/viewer/pyside/window.py", line 903, in _prompt_pr_branch_selection
+    branch_options = core_list_branches(resolved_repo)
+                     ^^^^^^^^^^^^^^^^^^
+NameError: name 'core_list_branches' is not defined
+
+BUG2
+
+está bem dificil ler varias partes, tipo fundo preto com letra preta, falta uma identidade visual minima
+
+Bug3
+
+todos locais que mostrar diff de dentro do arquivo estão mal feitos, por exmeplo não exibem linha o + o -, nem a cor verde e vermelha classica de diff
+
+Bug4
+
+os repostórios viraram lista, era pra ser cards bonitos com uma primeira pagina mostrando, verifica o tkinter ocmo era a ui de lá
+
+bug 5
+muito botão na aba commit, usabilidade pessima
+
+aba commit principalmente
+
+lá não tem o fluxo de selecionar e isso funcionar para selecionar todos os aruqivo, selecionar todos aruqivos de uma pasta, ordenado por pasta, nem ordenada as linhas ou blocos del inha, verifica o tkinter ocmo era a aba commit lá, está diferente a usabilidade
+
+pártece tb que não ta acontecendo fetch e atualizar status sozinho.. verifica os locks e como era o funcionamento no tkinter pfv
+
+Atenção: eu teste parcialmente, vamos rtesolver o que tá marcado por bug, se não tá marcado não foi testado

@@ -306,6 +306,10 @@ Legenda
 - [ ] R7.4.2.2 Checklist manual de usabilidade final
   Escopo: validar interativamente os fluxos de Repositorios, Commit, Historico, Importar, Comparar e Configuracoes no shell PySide6, incluindo menus de contexto, conflitos, clone e fluxos de PR.
   Aceite: sem regressao funcional percebida nos fluxos principais e sem bloqueios de UX para uso diario.
+- [~] R7.4.2.3 Fechamento progressivo de bugs da rodada em `bugs.md`
+  Escopo: tratar em lotes os bugs reportados no checklist manual, priorizando P0/P1 (crash, bloqueios de fluxo e regressao clara de usabilidade) antes dos polimentos.
+  Aceite: cada bug tratado deve ser movido para `resolvido` em `bugs.md` com validacao automatizada/local e, apos reteste manual, para `validado`.
+  Progresso atual: lote Commit `B007/B008/B010/B011` implementado (linha `(todos)`, agrupamento por pasta, simplificacao de controles, Undo limitado a `soft/mixed`, selecao sincronizada com stage/auto-stage inicial e gerenciador visual de stashes), com evolucao do stash para aba dinamica (somente quando houver stashes, com contexto de repositorio/branch); `B009` em progresso com janela avancada de diff (linha/lado-a-lado/cima-baixo, copiar/reverter linha/bloco) e novo diff principal em grade com marcador clicavel no Commit, aguardando validacao manual; `B004` resolvido com retorno da aba Repositorios para cards com scroll e card de adicionar repositorio; `B019/B021/B024` resolvidos com simplificacao da aba Importar, remocao de limite fixo nas configuracoes e timers de auto status/auto fetch no shell; `B013` resolvido com infinite scroll no Historico; `B014/B020` em ajuste com novo motor de diff em colunas padronizado para abas sem stage.
 - [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
   Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
   Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.
