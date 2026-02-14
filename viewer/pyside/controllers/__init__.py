@@ -89,6 +89,7 @@ from .import_controller import (
 )
 from .settings_controller import (
     load_settings_into_tab,
+    on_settings_update_profile_changed,
     on_settings_theme_changed,
     on_settings_theme_color_edited,
     pick_settings_workspace_root,
@@ -210,6 +211,7 @@ __all__ = [
     "import_selected_commits",
     "update_import_controls_state",
     "load_settings_into_tab",
+    "on_settings_update_profile_changed",
     "on_settings_theme_changed",
     "on_settings_theme_color_edited",
     "pick_settings_workspace_root",

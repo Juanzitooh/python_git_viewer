@@ -12,6 +12,7 @@ from ..theme import (
     normalize_theme_name,
     sanitize_theme_overrides,
 )
+from ..update_profiles import resolve_update_profile
 
 
 def _get_selected_theme(window: object) -> str:
@@ -65,6 +66,25 @@ def _apply_theme_preview_from_settings(window: object) -> None:
     window._apply_theme(theme, theme_overrides)
 
 
+def _sync_update_profile_summary(window: object) -> None:
+    if not hasattr(window, "settings_update_profile_combo"):
+        return
+    profile = resolve_update_profile(
+        {
+            **window.settings_data,
+            "update_profile": window.settings_update_profile_combo.currentData(),
+        }
+    )
+    summary = (
+        f"Status {profile.status_interval_sec}s | "
+        f"Fetch {profile.fetch_interval_sec}s | "
+        f"Head historico {profile.history_interval_sec}s | "
+        f"Cards {profile.workspace_interval_sec}s"
+    )
+    if hasattr(window, "settings_update_profile_summary_label"):
+        window.settings_update_profile_summary_label.setText(summary)
+
+
 def load_settings_into_tab(window: object) -> None:
     if not hasattr(window, "settings_theme_combo"):
         return
@@ -78,6 +98,15 @@ def load_settings_into_tab(window: object) -> None:
     if theme_index >= 0:
         window.settings_theme_combo.setCurrentIndex(theme_index)
     _sync_theme_color_inputs(window)
+
+    if hasattr(window, "settings_update_profile_combo"):
+        selected_profile = str(window.settings_data.get("update_profile", "balanced")).strip().lower()
+        profile_index = window.settings_update_profile_combo.findData(selected_profile)
+        if profile_index < 0:
+            profile_index = window.settings_update_profile_combo.findData("balanced")
+        if profile_index >= 0:
+            window.settings_update_profile_combo.setCurrentIndex(profile_index)
+        _sync_update_profile_summary(window)
 
     workspace_root = str(window.settings_data.get("repo_scan_root", window.repo_scan_root)).strip()
     if workspace_root:
@@ -100,6 +129,11 @@ def on_settings_theme_changed(window: object) -> None:
     _sync_theme_color_inputs(window)
     _apply_theme_preview_from_settings(window)
     window.settings_status_label.setText("Preview de tema aplicado (salve para persistir).")
+
+
+def on_settings_update_profile_changed(window: object) -> None:
+    _sync_update_profile_summary(window)
+    window.settings_status_label.setText("Perfil de atualizacao alterado (salve para persistir).")
 
 
 def on_settings_theme_color_edited(window: object, color_key: str) -> None:
@@ -166,6 +200,10 @@ def reset_settings_theme_colors(window: object) -> None:
 
 def save_settings_from_tab(window: object) -> None:
     theme = _get_selected_theme(window)
+    update_profile_data = window.settings_update_profile_combo.currentData()
+    update_profile = str(update_profile_data).strip().lower()
+    if update_profile not in {"realtime", "balanced", "economic", "custom"}:
+        update_profile = "balanced"
 
     workspace_text = window.settings_workspace_root_edit.text().strip()
     workspace_root = (
@@ -175,6 +213,7 @@ def save_settings_from_tab(window: object) -> None:
     )
 
     window.settings_data["theme"] = theme
+    window.settings_data["update_profile"] = update_profile
     window.settings_data["theme_overrides"] = sanitize_theme_overrides(
         _get_theme_overrides_draft(window)
     )
@@ -182,6 +221,7 @@ def save_settings_from_tab(window: object) -> None:
     window.repo_scan_root = workspace_root
 
     window._persist_state()
+    window._apply_background_update_profile()
     window._apply_theme_from_settings()
     window.workspace_root_edit.setText(window.repo_scan_root)
     window._scan_workspace_repos()

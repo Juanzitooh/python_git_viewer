@@ -6,9 +6,10 @@ import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from ..core.git_client import is_git_repo
+from ..core.git_client import is_git_repo, run_git
 from ..core.github_urls import (
     build_repo_actions_url as core_build_repo_actions_url,
     build_repo_branch_commits_url as core_build_repo_branch_commits_url,
@@ -35,6 +36,7 @@ from .theme import (
     normalize_theme_name,
     sanitize_theme_overrides,
 )
+from .update_profiles import UpdateProfile, resolve_update_profile
 from .controllers import (
     add_recent_repo,
     apply_selected_stash,
@@ -98,6 +100,7 @@ from .controllers import (
     set_repo,
     create_new_branch,
     load_settings_into_tab,
+    on_settings_update_profile_changed,
     on_settings_theme_changed,
     on_settings_theme_color_edited,
     pick_settings_workspace_root,
@@ -163,7 +166,7 @@ from .tabs import (
 )
 
 try:
-    from PySide6.QtCore import QPoint, Qt, QTimer, QUrl
+    from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont
     from PySide6.QtWidgets import (
         QApplication,
@@ -194,6 +197,56 @@ TAB_NAMES = [
     "Comparar",
     "Configuracoes",
 ]
+
+
+class _AutoUpdateBridge(QObject):
+    finished = Signal(str, str, int, object, str)
+
+
+def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
+    branches = core_list_branches(repo_path)
+    current_branch = core_get_current_branch(repo_path).strip()
+    upstream = core_get_upstream(repo_path) or ""
+    behind = 0
+    ahead = 0
+    if upstream:
+        behind, ahead = core_get_ahead_behind(repo_path, upstream)
+    head_hash = run_git(repo_path, ["rev-parse", "HEAD"]).strip()
+    return {
+        "branches": branches,
+        "current_branch": current_branch,
+        "upstream": upstream,
+        "behind": behind,
+        "ahead": ahead,
+        "head_hash": head_hash,
+    }
+
+
+def _collect_history_head_snapshot(repo_path: str) -> dict[str, str]:
+    head_hash = run_git(repo_path, ["rev-parse", "HEAD"]).strip()
+    upstream = core_get_upstream(repo_path)
+    upstream_head = ""
+    if upstream:
+        try:
+            upstream_head = run_git(repo_path, ["rev-parse", upstream]).strip()
+        except RuntimeError:
+            upstream_head = ""
+    return {
+        "head_hash": head_hash,
+        "upstream_head": upstream_head,
+    }
+
+
+def _run_auto_fetch(repo_path: str) -> dict[str, object]:
+    core_fetch_all_prune(repo_path)
+    return {}
+
+
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Git Viewer - shell PySide6.")
@@ -238,6 +291,15 @@ class QtShellWindow(QMainWindow):
         self._setting_branch_programmatically = False
         self._setting_workspace_selection = False
         self._busy_depth = 0
+        self._is_closing = False
+        self._repo_generation = 0
+        self._history_refresh_pending = False
+        self._history_probe_signature = ""
+        self._auto_task_state: dict[str, tuple[str, int]] = {}
+        self._auto_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="gv-auto")
+        self._auto_update_bridge = _AutoUpdateBridge(self)
+        self._auto_update_bridge.finished.connect(self._on_background_task_finished)
+        self._auto_profile: UpdateProfile = resolve_update_profile(self.settings_data)
 
         self.setWindowTitle("Git Viewer (PySide6)")
         self.resize(1280, 820)
@@ -357,41 +419,230 @@ class QtShellWindow(QMainWindow):
 
     def _setup_background_timers(self) -> None:
         self._auto_status_timer = QTimer(self)
-        self._auto_status_timer.setInterval(15_000)
         self._auto_status_timer.timeout.connect(self._on_auto_status_timer)
-        self._auto_status_timer.start()
-
         self._auto_fetch_timer = QTimer(self)
-        self._auto_fetch_timer.setInterval(180_000)
         self._auto_fetch_timer.timeout.connect(self._on_auto_fetch_timer)
+        self._auto_history_timer = QTimer(self)
+        self._auto_history_timer.timeout.connect(self._on_auto_history_timer)
+        self._auto_workspace_timer = QTimer(self)
+        self._auto_workspace_timer.timeout.connect(self._on_auto_workspace_timer)
+        self._apply_background_update_profile()
+        QTimer.singleShot(350, self._kick_background_refresh)
+
+    def _apply_background_update_profile(self) -> None:
+        self._auto_profile = resolve_update_profile(self.settings_data)
+        status_ms = max(5, int(self._auto_profile.status_interval_sec)) * 1000
+        fetch_ms = max(10, int(self._auto_profile.fetch_interval_sec)) * 1000
+        history_ms = max(10, int(self._auto_profile.history_interval_sec)) * 1000
+        workspace_ms = max(20, int(self._auto_profile.workspace_interval_sec)) * 1000
+        self._auto_status_timer.setInterval(status_ms)
+        self._auto_fetch_timer.setInterval(fetch_ms)
+        self._auto_history_timer.setInterval(history_ms)
+        self._auto_workspace_timer.setInterval(workspace_ms)
+        self._auto_status_timer.start()
         self._auto_fetch_timer.start()
+        self._auto_history_timer.start()
+        self._auto_workspace_timer.start()
+
+    def _kick_background_refresh(self) -> None:
+        self._schedule_background_status_probe(force=True)
+        self._schedule_history_head_probe(force=True)
+        self._on_auto_workspace_timer()
 
     def _on_auto_status_timer(self) -> None:
-        if not self.repo_path or self._busy_depth > 0:
+        self._schedule_background_status_probe(force=False)
+
+    def _on_auto_history_timer(self) -> None:
+        self._schedule_history_head_probe(force=False)
+
+    def _on_auto_workspace_timer(self) -> None:
+        if self._busy_depth > 0:
             return
-        self._refresh_repo_state_ui()
+        if self.tabs.currentWidget() is not self.repositories_tab:
+            return
         self._refresh_workspace_tree()
 
     def _on_auto_fetch_timer(self) -> None:
-        if not self.repo_path or self._busy_depth > 0:
+        if self._busy_depth > 0:
             return
-        upstream = core_get_upstream(self.repo_path)
+        repo_path = self._get_resolved_repo_path(self.repo_path)
+        if not repo_path:
+            return
+        upstream = core_get_upstream(repo_path)
         if not upstream:
             return
-        self._begin_busy("Auto fetch...")
-        try:
-            try:
-                core_fetch_all_prune(self.repo_path)
-            except RuntimeError as exc:
-                self._set_status(f"Auto fetch falhou: {exc}")
+        self._submit_background_task("fetch", repo_path, _run_auto_fetch)
+
+    def _schedule_background_status_probe(self, *, force: bool) -> None:
+        if self._busy_depth > 0 and not force:
+            return
+        repo_path = self._get_resolved_repo_path(self.repo_path)
+        if not repo_path:
+            return
+        self._submit_background_task("status", repo_path, _collect_repo_status_snapshot)
+
+    def _schedule_history_head_probe(self, *, force: bool) -> None:
+        if self._busy_depth > 0 and not force:
+            return
+        repo_path = self._get_resolved_repo_path(self.repo_path)
+        if not repo_path:
+            return
+        self._submit_background_task("history_head", repo_path, _collect_history_head_snapshot)
+
+    def _submit_background_task(self, kind: str, repo_path: str, task_func) -> None:
+        active = self._auto_task_state.get(kind)
+        if active is not None and active[0] == repo_path:
+            return
+        generation = self._repo_generation
+        self._auto_task_state[kind] = (repo_path, generation)
+        future = self._auto_executor.submit(task_func, repo_path)
+
+        def done_callback(done_future) -> None:
+            if self._is_closing:
                 return
-        finally:
-            self._end_busy()
-        self._set_status("Auto fetch concluido.")
-        self._refresh_repo_state_ui()
-        self._refresh_workspace_tree()
+            try:
+                payload = done_future.result()
+                error = ""
+            except Exception as exc:  # pragma: no cover - callback path
+                payload = None
+                error = str(exc)
+            try:
+                self._auto_update_bridge.finished.emit(kind, repo_path, generation, payload, error)
+            except RuntimeError:  # pragma: no cover - janela encerrando
+                return
+
+        future.add_done_callback(done_callback)
+
+    def _on_background_task_finished(
+        self,
+        kind: str,
+        repo_path: str,
+        generation: int,
+        payload: object,
+        error: str,
+    ) -> None:
+        if self._is_closing:
+            return
+        self._auto_task_state.pop(kind, None)
+        if generation != self._repo_generation:
+            return
+        current_repo = self._get_resolved_repo_path(self.repo_path)
+        if not current_repo or normalize_repo_path(repo_path) != normalize_repo_path(current_repo):
+            return
+        if error:
+            if kind == "fetch":
+                self._set_status(f"Auto fetch falhou: {error}")
+            return
+        if kind == "status":
+            if isinstance(payload, dict):
+                self._apply_repo_status_snapshot(payload)
+            return
+        if kind == "history_head":
+            if isinstance(payload, dict):
+                self._handle_history_head_snapshot(payload)
+            return
+        if kind == "fetch":
+            self._set_status("Auto fetch concluido.")
+            self._schedule_background_status_probe(force=True)
+            self._schedule_history_head_probe(force=True)
+
+    def _apply_repo_status_snapshot(self, snapshot: dict[str, object]) -> None:
+        branches_raw = snapshot.get("branches", [])
+        branches: list[str] = []
+        if isinstance(branches_raw, list):
+            for value in branches_raw:
+                if isinstance(value, str):
+                    candidate = value.strip()
+                    if candidate:
+                        branches.append(candidate)
+        current_branch = str(snapshot.get("current_branch", "")).strip()
+        upstream = str(snapshot.get("upstream", "")).strip()
+        behind = _safe_int(snapshot.get("behind"))
+        ahead = _safe_int(snapshot.get("ahead"))
+
+        has_repo = bool(self.repo_path)
+        self.fetch_button.setEnabled(has_repo)
+        self.new_branch_button.setEnabled(has_repo)
+        self.branch_combo.setEnabled(has_repo)
+        if not has_repo:
+            return
+
+        is_popup_open = bool(self.branch_combo.view().isVisible())
+        if not is_popup_open:
+            current_items = [
+                str(self.branch_combo.itemData(index) or "").strip()
+                for index in range(self.branch_combo.count())
+            ]
+            if current_items != branches:
+                self._setting_branch_programmatically = True
+                try:
+                    self.branch_combo.clear()
+                    for branch_name in branches:
+                        self.branch_combo.addItem(branch_name, branch_name)
+                finally:
+                    self._setting_branch_programmatically = False
+            if current_branch:
+                selected_index = self.branch_combo.findData(current_branch)
+                if selected_index >= 0 and selected_index != self.branch_combo.currentIndex():
+                    self._setting_branch_programmatically = True
+                    try:
+                        self.branch_combo.setCurrentIndex(selected_index)
+                    finally:
+                        self._setting_branch_programmatically = False
+
+        if not upstream:
+            self.behind_button.setEnabled(False)
+            self.ahead_button.setEnabled(False)
+            self.behind_button.setVisible(False)
+            self.ahead_button.setVisible(False)
+            self.behind_button.setText("Behind: 0")
+            self.ahead_button.setText("Ahead: 0")
+            self.behind_button.setToolTip("Pull indisponivel: branch sem upstream configurado.")
+            self.ahead_button.setToolTip("Push indisponivel: branch sem upstream configurado.")
+            self.fetch_button.setText("Fetch")
+            self._sync_import_target_label()
+            return
+
+        self.behind_button.setText(f"Behind: {behind}")
+        self.ahead_button.setText(f"Ahead: {ahead}")
+        self.behind_button.setEnabled(behind > 0)
+        self.ahead_button.setEnabled(ahead > 0)
+        self.behind_button.setVisible(behind > 0)
+        self.ahead_button.setVisible(ahead > 0)
+        if behind > 0:
+            self.behind_button.setToolTip(f"Pull ({behind} commit(s) remotos).")
+        else:
+            self.behind_button.setToolTip("Sem commits remotos pendentes para pull.")
+        if ahead > 0:
+            self.ahead_button.setToolTip(f"Push ({ahead} commit(s) locais).")
+        else:
+            self.ahead_button.setToolTip("Sem commits locais pendentes para push.")
+        self.fetch_button.setText(f"Fetch ({behind})" if behind > 0 else "Fetch")
+        self._sync_import_target_label()
+
+    def _handle_history_head_snapshot(self, snapshot: dict[str, object]) -> None:
+        head_hash = str(snapshot.get("head_hash", "")).strip()
+        upstream_head = str(snapshot.get("upstream_head", "")).strip()
+        signature = f"{head_hash}|{upstream_head}"
+        if not signature:
+            return
+        if not self._history_probe_signature:
+            self._history_probe_signature = signature
+            return
+        if signature == self._history_probe_signature:
+            return
+        self._history_probe_signature = signature
         if self.tabs.currentWidget() is self.history_tab:
             self._reload_history_commits()
+            self._history_refresh_pending = False
+            return
+        self._history_refresh_pending = True
+
+    def _invalidate_background_context(self) -> None:
+        self._repo_generation += 1
+        self._history_refresh_pending = False
+        self._history_probe_signature = ""
+        self._auto_task_state.clear()
 
     @staticmethod
     def _build_theme_stylesheet(theme: str, theme_overrides: object | None = None) -> str:
@@ -599,6 +850,9 @@ class QtShellWindow(QMainWindow):
     def _on_settings_theme_changed(self) -> None:
         on_settings_theme_changed(self)
 
+    def _on_settings_update_profile_changed(self) -> None:
+        on_settings_update_profile_changed(self)
+
     def _on_settings_theme_color_edited(self, color_key: str) -> None:
         on_settings_theme_color_edited(self, color_key)
 
@@ -759,7 +1013,14 @@ class QtShellWindow(QMainWindow):
         create_commit_from_selection(self)
 
     def _set_repo(self, repo_path: str, *, save: bool) -> None:
+        previous_repo = normalize_repo_path(self.repo_path) if self.repo_path else ""
         set_repo(self, repo_path, save=save)
+        current_repo = normalize_repo_path(self.repo_path) if self.repo_path else ""
+        if current_repo == previous_repo:
+            return
+        self._invalidate_background_context()
+        self._schedule_background_status_probe(force=True)
+        self._schedule_history_head_probe(force=True)
 
     def _select_repo_combo_item(self, repo_path: str) -> None:
         select_repo_combo_item(self, repo_path)
@@ -1193,9 +1454,26 @@ class QtShellWindow(QMainWindow):
         push_repo(self)
 
     def _on_tab_changed(self, _index: int) -> None:
+        if self.tabs.currentWidget() is self.repositories_tab:
+            self._on_auto_workspace_timer()
+        if self.tabs.currentWidget() is self.history_tab and self._history_refresh_pending:
+            self._reload_history_commits()
+            self._history_refresh_pending = False
         self._persist_state()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API
+        self._is_closing = True
+        for timer_name in (
+            "_auto_status_timer",
+            "_auto_fetch_timer",
+            "_auto_history_timer",
+            "_auto_workspace_timer",
+        ):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                timer.stop()
+        self._invalidate_background_context()
+        self._auto_executor.shutdown(wait=False, cancel_futures=True)
         self._persist_state()
         super().closeEvent(event)
 

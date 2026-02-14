@@ -10,8 +10,11 @@ from .repo_workspace import default_repo_scan_root
 
 DEFAULT_SETTINGS: dict[str, object] = {
     "commit_limit": 100,
+    "update_profile": "balanced",
     "fetch_interval_sec": 60,
     "status_interval_sec": 15,
+    "history_refresh_interval_sec": 45,
+    "workspace_refresh_interval_sec": 120,
     "last_tab_index": 0,
     "last_repo_path": "",
     "recent_repos": [],
@@ -90,6 +93,15 @@ def _coerce_str(value: object, default: str) -> str:
     if not isinstance(value, str):
         return default
     return value.strip()
+
+
+def _sanitize_update_profile(value: object) -> str:
+    if not isinstance(value, str):
+        return str(DEFAULT_SETTINGS["update_profile"])
+    candidate = value.strip().lower()
+    if candidate in {"realtime", "balanced", "economic", "custom"}:
+        return candidate
+    return str(DEFAULT_SETTINGS["update_profile"])
 
 
 def _sanitize_repo_list(items: object) -> list[str]:
@@ -206,6 +218,7 @@ def load_settings(path: Path) -> dict[str, object]:
             int(DEFAULT_SETTINGS["commit_limit"]),
             minimum=1,
         )
+        data["update_profile"] = _sanitize_update_profile(raw.get("update_profile"))
         data["fetch_interval_sec"] = _coerce_int(
             raw.get("fetch_interval_sec"),
             int(DEFAULT_SETTINGS["fetch_interval_sec"]),
@@ -215,6 +228,16 @@ def load_settings(path: Path) -> dict[str, object]:
             raw.get("status_interval_sec"),
             int(DEFAULT_SETTINGS["status_interval_sec"]),
             minimum=5,
+        )
+        data["history_refresh_interval_sec"] = _coerce_int(
+            raw.get("history_refresh_interval_sec"),
+            int(DEFAULT_SETTINGS["history_refresh_interval_sec"]),
+            minimum=10,
+        )
+        data["workspace_refresh_interval_sec"] = _coerce_int(
+            raw.get("workspace_refresh_interval_sec"),
+            int(DEFAULT_SETTINGS["workspace_refresh_interval_sec"]),
+            minimum=20,
         )
         data["last_tab_index"] = _coerce_int(
             raw.get("last_tab_index"),
@@ -240,6 +263,27 @@ def save_settings(path: Path, settings: dict[str, object]) -> None:
     data = dict(DEFAULT_SETTINGS)
     data.update(settings)
     data["last_repo_path"] = _sanitize_repo_path(data.get("last_repo_path"))
+    data["update_profile"] = _sanitize_update_profile(data.get("update_profile"))
+    data["fetch_interval_sec"] = _coerce_int(
+        data.get("fetch_interval_sec"),
+        int(DEFAULT_SETTINGS["fetch_interval_sec"]),
+        minimum=10,
+    )
+    data["status_interval_sec"] = _coerce_int(
+        data.get("status_interval_sec"),
+        int(DEFAULT_SETTINGS["status_interval_sec"]),
+        minimum=5,
+    )
+    data["history_refresh_interval_sec"] = _coerce_int(
+        data.get("history_refresh_interval_sec"),
+        int(DEFAULT_SETTINGS["history_refresh_interval_sec"]),
+        minimum=10,
+    )
+    data["workspace_refresh_interval_sec"] = _coerce_int(
+        data.get("workspace_refresh_interval_sec"),
+        int(DEFAULT_SETTINGS["workspace_refresh_interval_sec"]),
+        minimum=20,
+    )
     data["recent_repos"] = _sanitize_repo_list(data.get("recent_repos"))
     data["favorite_repos"] = _sanitize_repo_list(data.get("favorite_repos"))
     data["repo_scan_root"] = _sanitize_repo_root(data.get("repo_scan_root"))

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..theme import THEME_COLOR_FIELDS
+from ..update_profiles import UPDATE_PROFILES
 
 
 def build_settings_tab(window: object) -> None:
@@ -32,6 +33,24 @@ def build_settings_tab(window: object) -> None:
     content_layout.setSpacing(8)
     scroll.setWidget(scroll_content)
     layout.addWidget(scroll, stretch=1)
+
+    update_row = QWidget(scroll_content)
+    update_layout = QHBoxLayout(update_row)
+    update_layout.setContentsMargins(0, 0, 0, 0)
+    update_layout.setSpacing(6)
+    update_layout.addWidget(QLabel("Perfil de atualizacao:", update_row))
+    window.settings_update_profile_combo = QComboBox(update_row)
+    for profile in UPDATE_PROFILES:
+        window.settings_update_profile_combo.addItem(profile.label, profile.key)
+    window.settings_update_profile_combo.addItem("Personalizado (JSON)", "custom")
+    window.settings_update_profile_combo.currentIndexChanged.connect(
+        lambda _index: window._on_settings_update_profile_changed()
+    )
+    update_layout.addWidget(window.settings_update_profile_combo)
+    window.settings_update_profile_summary_label = QLabel("", update_row)
+    window.settings_update_profile_summary_label.setWordWrap(True)
+    update_layout.addWidget(window.settings_update_profile_summary_label, stretch=1)
+    content_layout.addWidget(update_row)
 
     theme_row = QWidget(scroll_content)
     theme_layout = QHBoxLayout(theme_row)
