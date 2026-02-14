@@ -25,6 +25,7 @@ from ..core.github_urls import (
 from ..core.models import CommitSummary
 from ..core.repo_workspace import default_repo_scan_root
 from ..core.repo_state import (
+    get_default_branch as core_get_default_branch,
     get_current_branch as core_get_current_branch,
     get_upstream as core_get_upstream,
     list_branches as core_list_branches,
@@ -49,6 +50,7 @@ from .controllers import (
     collect_repo_paths_from_settings,
     create_commit_from_selection,
     format_repo_display_label,
+    format_branch_display_label,
     format_workspace_relative_path,
     build_repo_snapshot,
     build_repo_status_summary,
@@ -207,6 +209,7 @@ class _AutoUpdateBridge(QObject):
 def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
     branches = core_list_branches(repo_path)
     current_branch = core_get_current_branch(repo_path).strip()
+    default_branch = core_get_default_branch(repo_path).strip()
     upstream = core_get_upstream(repo_path) or ""
     behind = 0
     ahead = 0
@@ -216,6 +219,7 @@ def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
     return {
         "branches": branches,
         "current_branch": current_branch,
+        "default_branch": default_branch,
         "upstream": upstream,
         "behind": behind,
         "ahead": ahead,
@@ -557,6 +561,7 @@ class QtShellWindow(QMainWindow):
                     if candidate:
                         branches.append(candidate)
         current_branch = str(snapshot.get("current_branch", "")).strip()
+        default_branch = str(snapshot.get("default_branch", "")).strip()
         upstream = str(snapshot.get("upstream", "")).strip()
         behind = _safe_int(snapshot.get("behind"))
         ahead = _safe_int(snapshot.get("ahead"))
@@ -579,7 +584,10 @@ class QtShellWindow(QMainWindow):
                 try:
                     self.branch_combo.clear()
                     for branch_name in branches:
-                        self.branch_combo.addItem(branch_name, branch_name)
+                        self.branch_combo.addItem(
+                            format_branch_display_label(branch_name, default_branch),
+                            branch_name,
+                        )
                 finally:
                     self._setting_branch_programmatically = False
             if current_branch:

@@ -5,8 +5,65 @@ from .git_client import run_git
 
 
 def list_branches(repo_path: str) -> list[str]:
-    output = run_git(repo_path, ["branch", "--format=%(refname:short)"])
-    return [line.strip() for line in output.splitlines() if line.strip()]
+    output = run_git(
+        repo_path,
+        ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+    )
+    local_branches: list[str] = []
+    local_branch_set: set[str] = set()
+    remote_branches: list[str] = []
+    for raw_line in output.splitlines():
+        ref = raw_line.strip()
+        if not ref:
+            continue
+        if ref.startswith("refs/heads/"):
+            name = ref[len("refs/heads/") :].strip()
+            if name and name not in local_branch_set:
+                local_branches.append(name)
+                local_branch_set.add(name)
+            continue
+        if not ref.startswith("refs/remotes/"):
+            continue
+        remote_short = ref[len("refs/remotes/") :].strip()
+        if not remote_short or remote_short.endswith("/HEAD"):
+            continue
+        remote_name, _, branch_name = remote_short.partition("/")
+        if not remote_name or not branch_name:
+            continue
+        if remote_name == "origin":
+            if branch_name in local_branch_set:
+                continue
+            candidate = f"origin/{branch_name}"
+        else:
+            candidate = f"{remote_name}/{branch_name}"
+        if candidate and candidate not in remote_branches:
+            remote_branches.append(candidate)
+    branches = list(local_branches)
+    for candidate in remote_branches:
+        if candidate not in branches:
+            branches.append(candidate)
+    return branches
+
+
+def get_default_branch(repo_path: str) -> str:
+    try:
+        output = run_git(repo_path, ["symbolic-ref", "refs/remotes/origin/HEAD"])
+    except RuntimeError:
+        branches = list_branches(repo_path)
+        if "main" in branches:
+            return "main"
+        if "master" in branches:
+            return "master"
+        if "origin/main" in branches:
+            return "main"
+        if "origin/master" in branches:
+            return "master"
+        return ""
+    ref = output.strip()
+    prefix = "refs/remotes/origin/"
+    if ref.startswith(prefix):
+        return ref[len(prefix) :].strip()
+    return ""
 
 
 def list_tags(repo_path: str) -> list[str]:

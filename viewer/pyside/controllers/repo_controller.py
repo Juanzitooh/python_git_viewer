@@ -28,6 +28,7 @@ from ...core.git_client import is_git_repo
 from ...core.repo_state import (
     get_ahead_behind as core_get_ahead_behind,
     get_current_branch as core_get_current_branch,
+    get_default_branch as core_get_default_branch,
     get_upstream as core_get_upstream,
     list_branches as core_list_branches,
     list_worktree_changed_files as core_list_worktree_changed_files,
@@ -100,6 +101,51 @@ def format_repo_display_label(window: object, repo_path: str) -> str:
     relative = format_workspace_relative_path(window, repo_path)
     favorite_prefix = "★ " if repo_is_favorite(window, repo_path) else ""
     return f"{favorite_prefix}{base_name} {relative}"
+
+
+def format_workspace_group_label(window: object, repo_path: str) -> str:
+    normalized_repo = normalize_repo_path(repo_path)
+    root = normalize_repo_path(window.repo_scan_root) if window.repo_scan_root else ""
+    if root:
+        try:
+            relative = os.path.relpath(normalized_repo, root).replace("\\", "/")
+        except ValueError:
+            relative = ""
+        if relative and not relative.startswith(".."):
+            parent = os.path.dirname(relative).replace("\\", "/").strip()
+            if not parent or parent == ".":
+                return "(raiz)"
+            return f"/{parent}"
+    parent = os.path.dirname(normalized_repo.rstrip(os.sep)).strip()
+    return parent or "(raiz)"
+
+
+def format_workspace_card_label(window: object, repo_path: str) -> str:
+    base_name = os.path.basename(repo_path.rstrip(os.sep)) or repo_path
+    favorite_prefix = "★ " if repo_is_favorite(window, repo_path) else ""
+    return f"{favorite_prefix}{base_name}"
+
+
+def _workspace_repo_sort_key(window: object, repo_path: str) -> tuple[str, str]:
+    base_name = (os.path.basename(repo_path.rstrip(os.sep)) or repo_path).casefold()
+    relative_path = format_workspace_relative_path(window, repo_path).lstrip("/").casefold()
+    return base_name, relative_path
+
+
+def format_branch_display_label(branch_name: str, default_branch: str) -> str:
+    display_name = branch_name
+    if branch_name.startswith("origin/"):
+        display_name = branch_name[len("origin/") :]
+    is_default = bool(
+        default_branch
+        and (
+            branch_name == default_branch
+            or branch_name == f"origin/{default_branch}"
+        )
+    )
+    if is_default:
+        return f"★ {display_name}"
+    return display_name
 
 
 def collect_known_repos(window: object) -> list[str]:
@@ -221,7 +267,7 @@ def _is_current_repo(window: object, repo_path: str) -> bool:
 
 
 def _format_workspace_card_title(window: object, repo_path: str) -> str:
-    title = format_repo_display_label(window, repo_path)
+    title = format_workspace_card_label(window, repo_path)
     if _is_current_repo(window, repo_path):
         return f"▶ {title}"
     return title
@@ -318,14 +364,16 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
     branch_combo = NoScrollComboBox(branch_row)
     branch_combo.setSizeAdjustPolicy(NoScrollComboBox.SizeAdjustPolicy.AdjustToContents)
     branch_combo.setToolTip("Trocar branch deste repositorio")
+    default_branch = ""
     try:
         branches = core_list_branches(repo_path)
+        default_branch = core_get_default_branch(repo_path).strip()
     except RuntimeError:
         branches = [branch]
     if not branches:
         branches = [branch]
     for branch_name in branches:
-        branch_combo.addItem(branch_name, branch_name)
+        branch_combo.addItem(format_branch_display_label(branch_name, default_branch), branch_name)
     current_index = branch_combo.findData(branch)
     if current_index >= 0:
         branch_combo.setCurrentIndex(current_index)
@@ -411,13 +459,52 @@ def refresh_workspace_tree(window: object) -> None:
         row = 1
         column = 0
     else:
-        for repo in repos:
-            card = _build_workspace_repo_card(window, repo)
-            grid.addWidget(card, row, column)
-            column += 1
-            if column >= columns:
-                column = 0
+        favorite_repos = [repo for repo in repos if repo_is_favorite(window, repo)]
+        favorite_set = {normalize_repo_path(repo) for repo in favorite_repos}
+        non_favorite_repos = [repo for repo in repos if normalize_repo_path(repo) not in favorite_set]
+
+        if favorite_repos:
+            if column != 0:
                 row += 1
+                column = 0
+            header_label = QLabel("Favoritos", window.workspace_cards_container)
+            header_label.setObjectName("WorkspaceCardMeta")
+            grid.addWidget(header_label, row, 0, 1, max(columns, 1))
+            row += 1
+            for repo in sorted(favorite_repos, key=lambda path: _workspace_repo_sort_key(window, path)):
+                card = _build_workspace_repo_card(window, repo)
+                grid.addWidget(card, row, column)
+                column += 1
+                if column >= columns:
+                    column = 0
+                    row += 1
+            if column != 0:
+                row += 1
+                column = 0
+
+        grouped_repos: dict[str, list[str]] = {}
+        for repo in non_favorite_repos:
+            group_label = format_workspace_group_label(window, repo)
+            grouped_repos.setdefault(group_label, []).append(repo)
+
+        for group_label in sorted(grouped_repos.keys(), key=str.casefold):
+            if column != 0:
+                row += 1
+                column = 0
+            header_label = QLabel(f"Pasta: {group_label}", window.workspace_cards_container)
+            header_label.setObjectName("WorkspaceCardMeta")
+            grid.addWidget(header_label, row, 0, 1, max(columns, 1))
+            row += 1
+            for repo in sorted(grouped_repos[group_label], key=lambda path: _workspace_repo_sort_key(window, path)):
+                card = _build_workspace_repo_card(window, repo)
+                grid.addWidget(card, row, column)
+                column += 1
+                if column >= columns:
+                    column = 0
+                    row += 1
+            if column != 0:
+                row += 1
+                column = 0
 
     add_card = _render_workspace_add_card(window)
     grid.addWidget(add_card, row, column)
@@ -837,6 +924,7 @@ def refresh_repo_state_ui(window: object) -> None:
     try:
         branches = core_list_branches(window.repo_path)
         current = core_get_current_branch(window.repo_path).strip()
+        default_branch = core_get_default_branch(window.repo_path).strip()
     except RuntimeError as exc:
         QMessageBox.critical(window, "Erro", str(exc))
         window.repo_path = ""
@@ -847,7 +935,7 @@ def refresh_repo_state_ui(window: object) -> None:
     try:
         window.branch_combo.clear()
         for branch in branches:
-            window.branch_combo.addItem(branch, branch)
+            window.branch_combo.addItem(format_branch_display_label(branch, default_branch), branch)
         index = window.branch_combo.findData(current)
         if index >= 0:
             window.branch_combo.setCurrentIndex(index)

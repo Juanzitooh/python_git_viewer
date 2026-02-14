@@ -207,7 +207,14 @@ def refresh_compare_view(window: object) -> None:
             behind, ahead = core_get_ahead_behind_between(window.repo_path, origin, dest)
             has_conflict = core_has_potential_conflict(window.repo_path, origin, dest)
         except RuntimeError as exc:
-            QMessageBox.critical(window, "Comparar", str(exc))
+            error_text = str(exc)
+            if _is_compare_ref_resolution_error(error_text):
+                clear_compare_view(window)
+                window.compare_status_label.setText(
+                    f"Branch invalida para comparacao: {origin} -> {dest}. Atualize as branches."
+                )
+                return
+            QMessageBox.critical(window, "Comparar", error_text)
             clear_compare_view(window)
             return
 
@@ -249,6 +256,20 @@ def refresh_compare_view(window: object) -> None:
         _update_compare_action_state(window)
     finally:
         window._end_busy()
+
+
+def _is_compare_ref_resolution_error(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return any(
+        token in lowered
+        for token in (
+            "unknown revision or path",
+            "ambiguous argument",
+            "bad revision",
+            "bad object",
+            "invalid object name",
+        )
+    )
 
 
 def _set_compare_commit_info(window: object, details: object | None, *, fallback: str = "") -> None:
