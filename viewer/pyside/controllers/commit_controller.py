@@ -590,21 +590,18 @@ def _resolve_hunk_index_by_header(
     return None
 
 
-def _resolve_line_info_for_scope(
-    window: object,
+def _resolve_line_info_in_diff(
+    diff_data: DiffData | None,
     *,
-    target_scope: str,
     source_line_info: DiffLineInfo | None,
     hunk_header: str,
     fallback_hunk_index: int | None,
 ) -> tuple[int | None, DiffLineInfo | None]:
     if not isinstance(source_line_info, DiffLineInfo):
         return (fallback_hunk_index, None)
-    diff_data = _get_commit_diff_data_for_scope(window, target_scope)
     if not isinstance(diff_data, DiffData):
         return (fallback_hunk_index, None)
     target_hunk_index = _resolve_hunk_index_by_header(diff_data, hunk_header, fallback_hunk_index)
-
     source_anchor = _diff_line_anchor(source_line_info)
     best_score: int | None = None
     best_hunk: int | None = None
@@ -632,6 +629,25 @@ def _resolve_line_info_for_scope(
     if best_line is not None:
         return (best_hunk, best_line)
     return (target_hunk_index, None)
+
+
+def _resolve_line_info_for_scope(
+    window: object,
+    *,
+    target_scope: str,
+    source_line_info: DiffLineInfo | None,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+) -> tuple[int | None, DiffLineInfo | None]:
+    if not isinstance(source_line_info, DiffLineInfo):
+        return (fallback_hunk_index, None)
+    diff_data = _get_commit_diff_data_for_scope(window, target_scope)
+    return _resolve_line_info_in_diff(
+        diff_data,
+        source_line_info=source_line_info,
+        hunk_header=hunk_header,
+        fallback_hunk_index=fallback_hunk_index,
+    )
 
 
 def _resolve_selected_commit_line_for_scope(window: object, target_scope: str) -> DiffLineInfo | None:
@@ -1502,8 +1518,7 @@ def _dialog_selected_hunk_ref(dialog_state: dict[str, object]) -> tuple[str, int
     if current_item is not None:
         value = current_item.data(0, ROLE_DIALOG_HUNK)
         if isinstance(value, int):
-            scope_value = current_item.data(0, ROLE_DIALOG_SCOPE)
-            scope = str(scope_value).strip() if scope_value is not None else ""
+            scope = _dialog_item_scope(current_item, dialog_state)
             return (scope, value)
     return None
 
@@ -1580,6 +1595,45 @@ def _dialog_diff_data_for_scope(dialog_state: dict[str, object], scope: str) -> 
             return candidate
     fallback = dialog_state.get("operation_diff_data")
     return fallback if isinstance(fallback, DiffData) else None
+
+
+def _resolve_dialog_line_infos_for_scope(
+    dialog_state: dict[str, object],
+    *,
+    target_scope: str,
+    old_line_info: DiffLineInfo | None,
+    new_line_info: DiffLineInfo | None,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+) -> tuple[int | None, DiffLineInfo | None, DiffLineInfo | None]:
+    diff_data = _dialog_diff_data_for_scope(dialog_state, target_scope)
+    resolved_hunk_index = _resolve_hunk_index_by_header(diff_data, hunk_header, fallback_hunk_index)
+
+    old_hunk_index = resolved_hunk_index
+    resolved_old: DiffLineInfo | None = None
+    if old_line_info is not None:
+        old_hunk_index, resolved_old = _resolve_line_info_in_diff(
+            diff_data,
+            source_line_info=old_line_info,
+            hunk_header=hunk_header,
+            fallback_hunk_index=resolved_hunk_index,
+        )
+        if isinstance(old_hunk_index, int):
+            resolved_hunk_index = old_hunk_index
+
+    new_hunk_index = resolved_hunk_index
+    resolved_new: DiffLineInfo | None = None
+    if new_line_info is not None:
+        new_hunk_index, resolved_new = _resolve_line_info_in_diff(
+            diff_data,
+            source_line_info=new_line_info,
+            hunk_header=hunk_header,
+            fallback_hunk_index=resolved_hunk_index,
+        )
+        if isinstance(new_hunk_index, int):
+            resolved_hunk_index = new_hunk_index
+
+    return (resolved_hunk_index, resolved_old, resolved_new)
 
 
 def _acquire_commit_diff_dialog_action_lock(dialog_state: dict[str, object]) -> bool:
@@ -1680,8 +1734,36 @@ def _apply_dialog_scope_after_toggle(
                 if item_scope != source_scope:
                     continue
                 _set_dialog_item_effective_scope(item, target_scope)
+                hunk_header_value = item.data(0, ROLE_DIALOG_HUNK_HEADER)
+                hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
+                resolved_hunk_index = _dialog_resolve_hunk_index_for_scope(
+                    dialog_state,
+                    scope=target_scope,
+                    hunk_index=hunk_index,
+                    hunk_header=hunk_header,
+                )
+                if isinstance(resolved_hunk_index, int):
+                    item.setData(0, ROLE_DIALOG_HUNK, resolved_hunk_index)
                 if item_kind == "line":
                     old_info, new_info = _dialog_item_line_infos(item)
+                    line_hunk_index, resolved_old, resolved_new = _resolve_dialog_line_infos_for_scope(
+                        dialog_state,
+                        target_scope=target_scope,
+                        old_line_info=old_info,
+                        new_line_info=new_info,
+                        hunk_header=hunk_header,
+                        fallback_hunk_index=resolved_hunk_index,
+                    )
+                    if isinstance(line_hunk_index, int):
+                        item.setData(0, ROLE_DIALOG_HUNK, line_hunk_index)
+                    if isinstance(resolved_old, DiffLineInfo):
+                        item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, resolved_old)
+                    if isinstance(resolved_new, DiffLineInfo):
+                        item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, resolved_new)
+                    if isinstance(resolved_old, DiffLineInfo):
+                        item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_old)
+                    elif isinstance(resolved_new, DiffLineInfo):
+                        item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_new)
                     if old_info is not None or new_info is not None:
                         item.setCheckState(2, target_state)
                 else:
@@ -1691,6 +1773,28 @@ def _apply_dialog_scope_after_toggle(
         # Linha individual.
         _set_dialog_item_effective_scope(current_item, target_scope)
         old_info, new_info = _dialog_item_line_infos(current_item)
+        hunk_header_value = current_item.data(0, ROLE_DIALOG_HUNK_HEADER)
+        hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
+        current_hunk_value = current_item.data(0, ROLE_DIALOG_HUNK)
+        current_hunk_index = int(current_hunk_value) if isinstance(current_hunk_value, int) else hunk_index
+        line_hunk_index, resolved_old, resolved_new = _resolve_dialog_line_infos_for_scope(
+            dialog_state,
+            target_scope=target_scope,
+            old_line_info=old_info,
+            new_line_info=new_info,
+            hunk_header=hunk_header,
+            fallback_hunk_index=current_hunk_index,
+        )
+        if isinstance(line_hunk_index, int):
+            current_item.setData(0, ROLE_DIALOG_HUNK, line_hunk_index)
+        if isinstance(resolved_old, DiffLineInfo):
+            current_item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, resolved_old)
+        if isinstance(resolved_new, DiffLineInfo):
+            current_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, resolved_new)
+        if isinstance(resolved_old, DiffLineInfo):
+            current_item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_old)
+        elif isinstance(resolved_new, DiffLineInfo):
+            current_item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_new)
         if old_info is not None or new_info is not None:
             current_item.setCheckState(2, target_state)
     finally:
@@ -1806,6 +1910,22 @@ def _apply_commit_diff_dialog_toggle(
     if operation_diff_data is None:
         return False
     if old_line_info is not None or new_line_info is not None:
+        resolved_hunk_index, resolved_old, resolved_new = _resolve_dialog_line_infos_for_scope(
+            dialog_state,
+            target_scope=normalized_scope,
+            old_line_info=old_line_info,
+            new_line_info=new_line_info,
+            hunk_header=hunk_header,
+            fallback_hunk_index=hunk_index,
+        )
+        if isinstance(resolved_hunk_index, int):
+            hunk_index = resolved_hunk_index
+        if isinstance(resolved_old, DiffLineInfo):
+            old_line_info = resolved_old
+        if isinstance(resolved_new, DiffLineInfo):
+            new_line_info = resolved_new
+        if old_line_info is None and new_line_info is None:
+            return False
         patch = _build_patch_for_dialog_row(
             operation_diff_data,
             old_line_info=old_line_info,
