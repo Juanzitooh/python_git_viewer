@@ -93,6 +93,8 @@ def build_commit_tab(window: object) -> None:
     window.commit_files_list = UnifiedListWidget(left_column)
     window.commit_files_list.itemChanged.connect(window._on_commit_file_item_changed)
     window.commit_files_list.itemSelectionChanged.connect(window._on_commit_file_selected)
+    window.commit_files_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.commit_files_list.customContextMenuRequested.connect(window._on_commit_file_context_menu)
     left_layout.addWidget(window.commit_files_list, stretch=1)
 
     window.commit_title_input = QLineEdit(left_column)
@@ -148,6 +150,7 @@ def build_commit_tab(window: object) -> None:
     right_layout.addWidget(diff_header)
 
     window.commit_diff_view = DiffColumnsView(include_marker_column=True, parent=right_column)
+    window.commit_diff_view.set_internal_context_menu_enabled(False)
     window.commit_diff_view.setHeaderHidden(True)
     window.commit_diff_view.setColumnWidth(window.commit_diff_view._marker_column, 42)
     window.commit_diff_view.setColumnWidth(window.commit_diff_view._line_column, 56)

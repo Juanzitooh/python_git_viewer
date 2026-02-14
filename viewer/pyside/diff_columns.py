@@ -85,13 +85,22 @@ class DiffColumnsView(QTreeWidget):
 
         self._enforce_column_layout()
 
+        self._internal_context_menu_enabled = True
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self._show_context_menu)
+        self.customContextMenuRequested.connect(self._on_context_menu_requested)
         self._copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
         self._copy_shortcut.activated.connect(self._copy_selected_content)
         self.itemSelectionChanged.connect(self._apply_selection_colors)
         self.setItemDelegate(DiffWrapDelegate(self))
         self._apply_unified_theme()
+
+    def set_internal_context_menu_enabled(self, enabled: bool) -> None:
+        self._internal_context_menu_enabled = bool(enabled)
+
+    def _on_context_menu_requested(self, point: QPoint) -> None:
+        if not self._internal_context_menu_enabled:
+            return
+        self._show_context_menu(point)
 
     def _enforce_column_layout(self) -> None:
         self.setColumnHidden(self._line_column, False)

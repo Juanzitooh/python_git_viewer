@@ -140,6 +140,7 @@ from .controllers import (
     on_stash_file_selected,
     on_commit_diff_context_menu,
     open_commit_diff_window,
+    on_commit_file_context_menu,
     on_history_file_selected,
     on_commit_diff_item_changed,
     on_commit_diff_marker_clicked,
@@ -928,6 +929,9 @@ class QtShellWindow(QMainWindow):
     def _on_commit_file_item_changed(self, _item: QListWidgetItem) -> None:
         on_commit_file_item_changed(self, _item)
 
+    def _on_commit_file_context_menu(self, pos: QPoint) -> None:
+        on_commit_file_context_menu(self, pos)
+
     def _on_commit_diff_cursor_changed(self) -> None:
         on_commit_diff_cursor_changed(self)
 
@@ -1091,7 +1095,12 @@ class QtShellWindow(QMainWindow):
             return False
         return True
 
-    def _open_repo_file_in_vscode(self, repo_relative_path: str, repo_path: str = "") -> bool:
+    def _open_repo_file_in_vscode(
+        self,
+        repo_relative_path: str,
+        repo_path: str = "",
+        line_no: int = 0,
+    ) -> bool:
         absolute_path = self._resolve_repo_file_path(repo_relative_path, repo_path)
         if not absolute_path:
             QMessageBox.warning(self, "VS Code", "Arquivo invalido para abrir no VS Code.")
@@ -1100,8 +1109,11 @@ class QtShellWindow(QMainWindow):
         if not code_bin:
             QMessageBox.warning(self, "VS Code", "Comando 'code' nao encontrado no PATH.")
             return False
+        goto_target = absolute_path
+        if int(line_no) > 0:
+            goto_target = f"{absolute_path}:{int(line_no)}:1"
         try:
-            subprocess.Popen([code_bin, "--goto", absolute_path])
+            subprocess.Popen([code_bin, "--goto", goto_target])
         except OSError as exc:
             QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
             return False

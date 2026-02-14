@@ -990,6 +990,40 @@ def on_commit_file_selected(window: object) -> None:
     _sync_commit_stage_buttons(window)
 
 
+def on_commit_file_context_menu(window: object, pos: QPoint) -> None:
+    if not hasattr(window, "commit_files_list"):
+        return
+    item = window.commit_files_list.itemAt(pos)
+    if item is None:
+        selected_items = window.commit_files_list.selectedItems()
+        item = selected_items[-1] if selected_items else None
+    if item is None:
+        return
+    kind_value = item.data(ROLE_KIND)
+    kind = str(kind_value).strip() if kind_value is not None else ""
+    path_value = item.data(ROLE_PATH)
+    file_path = str(path_value).strip() if path_value is not None else ""
+    if kind != KIND_FILE or not file_path:
+        return
+
+    menu = QMenu(window.commit_files_list)
+    action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
+    action_open_folder = menu.addAction("Abrir na pasta")
+    action_copy_relative = menu.addAction("Copiar caminho relativo")
+
+    selected_action = menu.exec(window.commit_files_list.viewport().mapToGlobal(pos))
+    if selected_action is None:
+        return
+    if selected_action == action_open_vscode:
+        window._open_repo_file_in_vscode(file_path)
+        return
+    if selected_action == action_open_folder:
+        window._open_repo_file_in_explorer(file_path)
+        return
+    if selected_action == action_copy_relative:
+        window._copy_to_clipboard(file_path, status="Caminho relativo copiado.")
+
+
 def _load_commit_patch_for_path(
     window: object,
     path: str,
@@ -2671,6 +2705,17 @@ def _selected_commit_line_info(window: object) -> object | None:
     return None
 
 
+def _selected_commit_editor_line(window: object) -> int:
+    line_info = _selected_commit_line_info(window)
+    if not isinstance(line_info, DiffLineInfo):
+        return 0
+    if int(line_info.new_line) > 0:
+        return int(line_info.new_line)
+    if int(line_info.old_line) > 0:
+        return int(line_info.old_line)
+    return 0
+
+
 def on_commit_diff_cursor_changed(window: object) -> None:
     if not hasattr(window, "commit_diff_view"):
         return
@@ -2777,12 +2822,17 @@ def on_commit_diff_context_menu(window: object, pos: object) -> None:
     selected_hunk = _selected_commit_hunk_index(window)
     line_info = _selected_commit_line_info(window)
     is_changed_line = bool(line_info and line_info.line_type in ("added", "removed"))
+    editor_line = _selected_commit_editor_line(window)
     scope = _selected_commit_scope(window) or str(getattr(window, "commit_diff_scope", "")).strip()
 
     menu = QMenu(window.commit_diff_view)
+    action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
+    action_open_line_vscode = menu.addAction("Abrir linha no VS Code")
+    action_open_line_vscode.setEnabled(editor_line > 0)
+    menu.addSeparator()
     action_stage_file = menu.addAction("Stage arquivo") if has_unstaged else None
     action_unstage_file = menu.addAction("Unstage arquivo") if has_staged else None
-    if menu.actions():
+    if action_stage_file or action_unstage_file:
         menu.addSeparator()
     action_stage_hunk = None
     action_unstage_hunk = None
@@ -2803,6 +2853,13 @@ def on_commit_diff_context_menu(window: object, pos: object) -> None:
     else:
         chosen_action = menu.exec(window.commit_diff_view.mapToGlobal(pos))
     if chosen_action is None:
+        return
+    if chosen_action == action_open_vscode:
+        window._open_repo_file_in_vscode(path)
+        return
+    if chosen_action == action_open_line_vscode:
+        if editor_line > 0:
+            window._open_repo_file_in_vscode(path, line_no=editor_line)
         return
     if chosen_action == action_stage_file:
         stage_selected_commit_file(window, preserve_diff_rows=True)
