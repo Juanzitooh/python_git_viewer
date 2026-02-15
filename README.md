@@ -17,6 +17,7 @@ Parâmetros:
 - `--repo`: caminho do repositório (default: diretório atual).
 - `--limit`: quantidade inicial de commits a carregar.
 - `--perf`: habilita indicador de performance na UI e gravações em `performance.log` na raiz.
+- `GIT_VIEWER_TRACE_SELECTION=1`: habilita trace detalhado do fluxo de selecao/stage na aba Commit (PySide6), gravando em `selection_trace.log` (ou caminho definido em `GIT_VIEWER_TRACE_FILE`).
 
 No Windows:
 
@@ -73,3 +74,4 @@ Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/versi
 - O estado do Git é atualizado automaticamente em intervalo configurável.
 - `main_pyside6.py` é o shell inicial da migração; a UI completa segue em `main.py` (Tkinter) até concluir o R7.
 - No estado atual do PySide6, as abas `Repositorios`, `Commit`, `Historico`, `Importar`, `Comparar` e `Configuracoes` já têm fluxo funcional inicial.
+- Trace detalhado de selecao/stage (UI + comandos Git + retorno): `docs/SELECTION_TRACE.md`.
