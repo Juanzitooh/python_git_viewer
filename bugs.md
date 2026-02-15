@@ -25,16 +25,16 @@ Convencao:
 | B011 | resolvido | P2 | Commit | ux | Undo commit deveria expor apenas `soft` e `mixed` (remover `hard`). | Checklist secao 5 |
 | B012 | resolvido | P1 | Historico | bug | Busca por texto nao filtra conforme esperado em tempo real. | Checklist secao 6 |
 | B013 | resolvido | P2 | Historico | ux | Limite fixo de commits deveria migrar para scroll infinito. | Checklist secao 6 |
-| B014 | aberto | P1 | Diff (Historico) | regressao | Diff por palavra/patch pouco legivel comparado ao Tk. | Checklist secao 6 + observacao BUG3 |
-| B015 | aberto | P2 | Historico | bug | Tooltip de commit nao aparece no fluxo manual. | Checklist secao 6 |
+| B014 | em_progresso | P1 | Diff (Historico) | regressao | Diff por palavra/patch pouco legivel comparado ao Tk. | Checklist secao 6 + observacao BUG3 |
+| B015 | resolvido | P2 | Historico | bug | Tooltip de commit nao aparece no fluxo manual. | Checklist secao 6 |
 | B016 | resolvido | P1 | Historico | bug | Clique direito em commit altera selecao (nao deveria). | Checklist secao 6 |
 | B017 | resolvido | P0 | Historico | bug | Menu de contexto de arquivo aparece, mas so ultima opcao clicavel. | Checklist secao 6 |
 | B018 | resolvido | P1 | Historico/Exportar | bug | Exportar nao suporta multisselecao com Ctrl no fluxo esperado. | Checklist secao 6 |
 | B019 | resolvido | P3 | Importar | ux | Botao `Usar atual` parece sem sentido no fluxo de importacao entre repos. | Checklist secao 7 |
-| B020 | aberto | P1 | Diff (Comparar) | regressao | Visual de diff em comparar tambem esta ruim/sem padrao visual do Tk. | Checklist secao 8 + observacao BUG3 |
+| B020 | em_progresso | P1 | Diff (Comparar) | regressao | Visual de diff em comparar tambem esta ruim/sem padrao visual do Tk. | Checklist secao 8 + observacao BUG3 |
 | B021 | resolvido | P2 | Configuracoes | ux | `Limite padrao de commits` nao faz sentido se migrar para scroll infinito. | Checklist secao 9 |
-| B022 | aberto | P1 | Persistencia | bug | Ultima aba ativa nao esta restaurando corretamente. | Checklist secao 11 |
-| B023 | aberto | P2 | Persistencia | bug | Persistencia de preferencias em `settings.json` esta incerta no teste. | Checklist secao 11 |
+| B022 | resolvido | P1 | Persistencia | bug | Ultima aba ativa nao esta restaurando corretamente. | Checklist secao 11 |
+| B023 | resolvido | P2 | Persistencia | bug | Persistencia de preferencias em `settings.json` esta incerta no teste. | Checklist secao 11 |
 | B024 | resolvido | P1 | Sync/Status | regressao | Auto fetch / auto status update parece nao estar ocorrendo como na UI Tk. | Observacao final do checklist |
 | B025 | resolvido | P1 | Repositorios/Branch | bug | Scroll no workspace podia acionar troca de branch acidental via combobox do card, disparando erro de checkout em repositorio sujo. | Validacao manual apos ajuste de combobox sem wheel |
 
@@ -92,6 +92,14 @@ Convencao:
   - `B025` comboboxes criticos (repo/branch global e branch dos cards) passaram a ignorar wheel com dropdown fechado, evitando troca acidental ao usar scroll na tela.
   - Motor de diff em colunas (Historico/Importar/Comparar/Stash) foi reestruturado para layout padrao sem checkbox no estilo `old/new/sinal/conteudo`, preservando ordem do patch por hunk e consolidando pares `-`/`+` em linha `#` (modificada) com tooltip da linha original.
   - `B009` aba Commit no PySide6 agora usa visualizacao em colunas com marcador dedicado (`[ ]/[x]`) no diff principal; clique na coluna de marcador executa stage/unstage de linha ou bloco sem depender de texto corrido.
+  - `B020` fluxo de selecao de commit na aba Comparar ficou mais resiliente: hash do commit agora e resolvido para SHA completo antes de abrir arquivos/diff, e falhas de referencia (`bad object`/`ambiguous argument`) no patch deixam de abrir popup bloqueante durante troca de repositorio/branch.
+  - `B020` quando carregar detalhes de commit falha, a lista de arquivos do commit ainda tenta ser montada via `list_commit_files`, evitando cair sempre no agregado total.
+  - `B020` selecao da aba Comparar foi estabilizada para sempre considerar `currentItem` (commit/arquivo), com listas em modo de selecao unica; reduz inconsistencias onde os arquivos pareciam ficar no agregado total.
+  - `B014` Historico tambem passou a usar `currentItem` como referencia principal do commit ativo, evitando mostrar diff de item antigo quando ha multisselecao para exportacao.
+  - Scroll acidental em listas/diff foi reduzido com `setAutoScroll(False)` em widgets padrao (`UnifiedListWidget` e `DiffColumnsView`) para mitigar salto de viewport em cliques rapidos.
+  - `B015` aba Historico agora reforca tooltip de commit no hover (`itemEntered`), mostrando hash/data/presenca local-online de forma consistente no fluxo manual.
+  - `B022` restauracao da aba ativa foi corrigida com preferencia por `last_tab_name` e fallback seguro por indice (incluindo caso dinamico da aba `Stash`).
+  - `B023` persistencia de `last_tab_name` e preferencias de tema/fontes foi consolidada no `settings_store`, com testes de regressao.
 
 - Aguardando validacao manual:
   - Reexecutar os itens marcados no checklist para confirmar status `validado`.
