@@ -1,10 +1,61 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from dataclasses import dataclass
 
 from .git_client import run_git
+from .selection_trace import trace_selection
+
+
+def _normalize_porcelain_path(path: str) -> str:
+    normalized = path.strip()
+    if normalized.startswith(("a/", "b/")):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _is_dev_null_path(path: str) -> bool:
+    normalized = _normalize_porcelain_path(path)
+    return normalized in {"dev/null", "/dev/null"}
+
+
+def _format_rename_display_path(old_path: str, new_path: str) -> str:
+    if _is_dev_null_path(old_path) and not _is_dev_null_path(new_path):
+        return new_path
+    if _is_dev_null_path(new_path) and not _is_dev_null_path(old_path):
+        return old_path
+    return f"{old_path} -> {new_path}"
+
+
+def _summarize_patch(payload: str) -> dict[str, object]:
+    lines = payload.splitlines()
+    preview_lines = lines[:20]
+    preview = "\n".join(preview_lines)
+    if len(lines) > len(preview_lines):
+        preview += "\n...(truncated)"
+    digest = hashlib.sha1(payload.encode("utf-8", errors="replace")).hexdigest()
+    return {
+        "patch_hash": digest[:12],
+        "patch_bytes": len(payload.encode("utf-8", errors="replace")),
+        "patch_lines": len(lines),
+        "patch_preview": preview,
+    }
+
+
+def _trace_git_call(repo_path: str, args: list[str], *, output: str = "", error: str = "", ok: bool = True) -> None:
+    command = ["git", "-C", repo_path, *args]
+    event_suffix = "response" if ok else "error"
+    trace_selection(
+        f"git.run.{event_suffix}",
+        repo_path=repo_path,
+        args=args,
+        command=command,
+        ok=ok,
+        output=output.strip(),
+        error=error.strip(),
+    )
 
 
 def list_modified_files(repo_path: str) -> list[str]:
@@ -41,22 +92,50 @@ def stage_paths(repo_path: str, paths: list[str]) -> None:
     cleaned = [item.strip() for item in paths if item.strip()]
     if not cleaned:
         return
-    run_git(repo_path, ["add", "--", *cleaned])
+    args = ["add", "--", *cleaned]
+    trace_selection("git.stage_paths.request", repo_path=repo_path, args=args, paths=cleaned)
+    try:
+        output = run_git(repo_path, args)
+    except RuntimeError as exc:
+        _trace_git_call(repo_path, args, error=str(exc), ok=False)
+        raise
+    _trace_git_call(repo_path, args, output=output, ok=True)
 
 
 def stage_all(repo_path: str) -> None:
-    run_git(repo_path, ["add", "-A"])
+    args = ["add", "-A"]
+    trace_selection("git.stage_all.request", repo_path=repo_path, args=args)
+    try:
+        output = run_git(repo_path, args)
+    except RuntimeError as exc:
+        _trace_git_call(repo_path, args, error=str(exc), ok=False)
+        raise
+    _trace_git_call(repo_path, args, output=output, ok=True)
 
 
 def unstage_all(repo_path: str) -> None:
-    run_git(repo_path, ["reset"])
+    args = ["reset"]
+    trace_selection("git.unstage_all.request", repo_path=repo_path, args=args)
+    try:
+        output = run_git(repo_path, args)
+    except RuntimeError as exc:
+        _trace_git_call(repo_path, args, error=str(exc), ok=False)
+        raise
+    _trace_git_call(repo_path, args, output=output, ok=True)
 
 
 def unstage_paths(repo_path: str, paths: list[str]) -> None:
     cleaned = [item.strip() for item in paths if item.strip()]
     if not cleaned:
         return
-    run_git(repo_path, ["reset", "HEAD", "--", *cleaned])
+    args = ["reset", "HEAD", "--", *cleaned]
+    trace_selection("git.unstage_paths.request", repo_path=repo_path, args=args, paths=cleaned)
+    try:
+        output = run_git(repo_path, args)
+    except RuntimeError as exc:
+        _trace_git_call(repo_path, args, error=str(exc), ok=False)
+        raise
+    _trace_git_call(repo_path, args, output=output, ok=True)
 
 
 def has_staged_changes(repo_path: str) -> bool:
@@ -198,9 +277,13 @@ def list_status_entries(repo_path: str) -> list[dict[str, str | bool]]:
         path = raw[3:]
         path_for_git = path
         if status[0] in ("R", "C") and index + 1 < len(chunks):
+            old_path = path
             new_path = chunks[index + 1]
-            path = f"{path} -> {new_path}"
-            path_for_git = new_path
+            path = _format_rename_display_path(old_path, new_path)
+            if _is_dev_null_path(new_path) and not _is_dev_null_path(old_path):
+                path_for_git = old_path
+            else:
+                path_for_git = new_path
             index += 1
         staged = status[0] not in (" ", "?")
         unstaged = status[1] != " "
@@ -257,12 +340,30 @@ def apply_patch_to_index(repo_path: str, patch: str, *, reverse: bool = False) -
     cmd = ["git", "-C", repo_path, "apply", "--recount", "--unidiff-zero", "--cached"]
     if reverse:
         cmd.append("-R")
+    patch_summary = _summarize_patch(payload)
+    trace_selection(
+        "git.apply_patch_to_index.request",
+        repo_path=repo_path,
+        reverse=reverse,
+        command=cmd,
+        **patch_summary,
+    )
     result = subprocess.run(
         cmd,
         input=payload + "\n",
         text=True,
         capture_output=True,
         errors="replace",
+    )
+    trace_selection(
+        "git.apply_patch_to_index.response",
+        repo_path=repo_path,
+        reverse=reverse,
+        command=cmd,
+        returncode=result.returncode,
+        stdout=result.stdout.strip(),
+        stderr=result.stderr.strip(),
+        patch_hash=patch_summary.get("patch_hash", ""),
     )
     if result.returncode == 0:
         return
@@ -277,12 +378,30 @@ def apply_patch_to_worktree(repo_path: str, patch: str, *, reverse: bool = False
     cmd = ["git", "-C", repo_path, "apply", "--recount", "--unidiff-zero"]
     if reverse:
         cmd.append("-R")
+    patch_summary = _summarize_patch(payload)
+    trace_selection(
+        "git.apply_patch_to_worktree.request",
+        repo_path=repo_path,
+        reverse=reverse,
+        command=cmd,
+        **patch_summary,
+    )
     result = subprocess.run(
         cmd,
         input=payload + "\n",
         text=True,
         capture_output=True,
         errors="replace",
+    )
+    trace_selection(
+        "git.apply_patch_to_worktree.response",
+        repo_path=repo_path,
+        reverse=reverse,
+        command=cmd,
+        returncode=result.returncode,
+        stdout=result.stdout.strip(),
+        stderr=result.stderr.strip(),
+        patch_hash=patch_summary.get("patch_hash", ""),
     )
     if result.returncode == 0:
         return

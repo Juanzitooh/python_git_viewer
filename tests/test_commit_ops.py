@@ -10,6 +10,7 @@ from viewer.core.commit_ops import (
     create_stash,
     drop_stash,
     get_stash_patch,
+    list_status_entries,
     list_stash_files_from_patch,
     list_stashes,
 )
@@ -98,6 +99,15 @@ class TestCommitOps(unittest.TestCase):
         self.assertNotIn("--cached", args[0])
         self.assertIn("-R", args[0])
         self.assertTrue(kwargs["input"].strip().startswith("@@"))
+
+    def test_list_status_entries_normalizes_dev_null_rename_display(self) -> None:
+        porcelain = "R  /dev/null\0README.md\0"
+        with patch("viewer.core.commit_ops.run_git", return_value=porcelain):
+            entries = list_status_entries("/tmp/repo")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["path"], "README.md")
+        self.assertEqual(entries[0]["path_for_git"], "README.md")
+        self.assertEqual(entries[0]["status"], "R ")
 
 
 if __name__ == "__main__":

@@ -48,13 +48,13 @@ def build_top_bar(window: object, root_layout: QVBoxLayout, parent: QWidget) -> 
     window.fetch_button.clicked.connect(window._fetch_repo)
     bar_layout.addWidget(window.fetch_button)
 
-    window.behind_button = QPushButton("Behind: 0", bar)
+    window.behind_button = QPushButton("Pull: 0", bar)
     window.behind_button.setObjectName("SyncChip")
     window.behind_button.clicked.connect(window._pull_repo)
     window.behind_button.setToolTip("Pull: buscar commits remotos pendentes (behind > 0).")
     bar_layout.addWidget(window.behind_button)
 
-    window.ahead_button = QPushButton("Ahead: 0", bar)
+    window.ahead_button = QPushButton("Push: 0", bar)
     window.ahead_button.setObjectName("SyncChip")
     window.ahead_button.clicked.connect(window._push_repo)
     window.ahead_button.setToolTip("Push: enviar commits locais pendentes (ahead > 0).")

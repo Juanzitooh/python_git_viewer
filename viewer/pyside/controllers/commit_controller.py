@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QTimer, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -46,6 +47,7 @@ from ...core.commit_ops import (
     undo_last_commit as core_undo_last_commit,
 )
 from ...core.diff_utils import build_patch_for_hunk, build_patch_for_line, parse_diff_data
+from ...core.selection_trace import trace_selection
 from ..diff_columns import (
     HUNK_HEADER_ROLE,
     HUNK_INDEX_ROLE,
@@ -77,6 +79,59 @@ KIND_ALL = "all"
 KIND_FOLDER = "folder"
 KIND_FILE = "file"
 STASH_MESSAGE_DEFAULT = "git_viewer"
+
+
+def _line_info_to_trace_payload(line_info: DiffLineInfo | None) -> dict[str, object]:
+    if not isinstance(line_info, DiffLineInfo):
+        return {}
+    return {
+        "line_type": line_info.line_type,
+        "old_line": int(line_info.old_line),
+        "new_line": int(line_info.new_line),
+        "line_content": line_info.content,
+    }
+
+
+def _trace_commit_selection_event(window: object, event: str, **fields: object) -> None:
+    repo_path = str(getattr(window, "repo_path", "")).strip()
+    selected_path = str(getattr(window, "commit_selected_path", "")).strip()
+    selected_scope = _selected_commit_scope(window) or str(getattr(window, "commit_diff_scope", "")).strip()
+    selected_line = int(getattr(window, "commit_diff_selected_line", 0) or 0)
+    payload: dict[str, object] = {
+        "repo_path": repo_path,
+        "selected_path": selected_path,
+        "selected_scope": selected_scope,
+        "selected_line": selected_line,
+    }
+    payload.update(fields)
+    trace_selection(event, **payload)
+
+
+def _check_state_to_int(state: object) -> int:
+    if isinstance(state, Qt.CheckState):
+        return int(state.value)
+    value = getattr(state, "value", None)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(state)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return int(Qt.CheckState.Unchecked.value)
+
+
+def _summarize_patch_for_trace(patch: str) -> dict[str, object]:
+    payload = patch.strip()
+    if not payload:
+        return {"patch_hash": "", "patch_lines": 0, "patch_preview": ""}
+    lines = payload.splitlines()
+    preview = "\n".join(lines[:12])
+    if len(lines) > 12:
+        preview += "\n...(truncated)"
+    return {
+        "patch_hash": hashlib.sha1(payload.encode("utf-8", errors="replace")).hexdigest()[:12],
+        "patch_lines": len(lines),
+        "patch_preview": preview,
+    }
 
 
 def _entry_has_staged(entry: dict[str, str | bool]) -> bool:
@@ -225,6 +280,30 @@ def _checked_state_for_paths(window: object, paths: list[str]) -> Qt.CheckState:
     return Qt.CheckState.PartiallyChecked
 
 
+def _status_entry_to_check_state(entry: dict[str, str | bool]) -> Qt.CheckState:
+    if _entry_has_staged(entry) and _entry_has_unstaged(entry):
+        return Qt.CheckState.PartiallyChecked
+    if _entry_has_staged(entry):
+        return Qt.CheckState.Checked
+    return Qt.CheckState.Unchecked
+
+
+def _sync_commit_path_check_state(window: object, path: str) -> None:
+    normalized_path = str(path).strip()
+    if not normalized_path:
+        return
+    file_item_by_path = getattr(window, "commit_file_item_by_path", {})
+    status_entries_by_path = getattr(window, "commit_status_entries_by_path", {})
+    item = file_item_by_path.get(normalized_path) if isinstance(file_item_by_path, dict) else None
+    if item is None:
+        return
+    entry = status_entries_by_path.get(normalized_path, {}) if isinstance(status_entries_by_path, dict) else {}
+    state = _status_entry_to_check_state(entry if isinstance(entry, dict) else {})
+    _set_commit_item_check_state(window, item, state)
+    _sync_commit_group_check_states(window)
+    update_commit_selection_label(window)
+
+
 def _apply_stage_state_from_selection(window: object, paths: list[str]) -> bool:
     repo_path = str(getattr(window, "repo_path", "")).strip()
     if not repo_path:
@@ -252,15 +331,44 @@ def _apply_stage_state_from_selection(window: object, paths: list[str]) -> bool:
         if _entry_has_staged(entry):
             unstage_paths.append(normalized_path)
     if not stage_paths and not unstage_paths:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.files.selection.noop",
+            requested_paths=paths,
+            stage_paths=[],
+            unstage_paths=[],
+        )
         return False
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.files.selection.apply.request",
+        requested_paths=paths,
+        stage_paths=stage_paths,
+        unstage_paths=unstage_paths,
+    )
     try:
         if unstage_paths:
             core_unstage_paths(repo_path, unstage_paths)
         if stage_paths:
             core_stage_paths(repo_path, stage_paths)
     except RuntimeError as exc:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.files.selection.apply.error",
+            requested_paths=paths,
+            stage_paths=stage_paths,
+            unstage_paths=unstage_paths,
+            error=str(exc),
+        )
         QMessageBox.critical(window, "Commit", str(exc))
         return False
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.files.selection.apply.done",
+        requested_paths=paths,
+        stage_paths=stage_paths,
+        unstage_paths=unstage_paths,
+    )
     return True
 
 
@@ -308,12 +416,7 @@ def _sync_commit_status_entries_in_place(window: object) -> bool:
     try:
         for path, item in file_item_by_path.items():
             entry = new_by_path.get(path, {})
-            if _entry_has_staged(entry) and _entry_has_unstaged(entry):
-                item.setCheckState(Qt.CheckState.PartiallyChecked)
-            elif _entry_has_staged(entry):
-                item.setCheckState(Qt.CheckState.Checked)
-            else:
-                item.setCheckState(Qt.CheckState.Unchecked)
+            item.setCheckState(_status_entry_to_check_state(entry))
     finally:
         window.commit_syncing_checks = previous
     _sync_commit_group_check_states(window)
@@ -381,65 +484,96 @@ def _set_commit_diff_item_check_state(window: object, item: QTreeWidgetItem, sta
         window.commit_diff_rendering = previous
 
 
+def _is_commit_diff_item_toggleable(item: QTreeWidgetItem, marker_column: int) -> bool:
+    if marker_column < 0:
+        return False
+    try:
+        flags = item.flags()
+    except RuntimeError:
+        return False
+    return bool(flags & Qt.ItemFlag.ItemIsUserCheckable)
+
+
 def _sync_commit_diff_hunk_markers(window: object) -> None:
     if not hasattr(window, "commit_diff_view"):
         return
     marker_column = int(getattr(window.commit_diff_view, "_marker_column", 0))
-    hunk_rows: dict[tuple[str, int], QTreeWidgetItem] = {}
-    line_states: dict[tuple[str, int], list[Qt.CheckState]] = {}
+    current_hunk_item: QTreeWidgetItem | None = None
+    current_states: list[Qt.CheckState] = []
+
+    def _flush_current_hunk() -> None:
+        nonlocal current_hunk_item, current_states
+        if current_hunk_item is None:
+            return
+        if not _is_commit_diff_item_toggleable(current_hunk_item, marker_column):
+            current_hunk_item = None
+            current_states = []
+            return
+        if not current_states:
+            target = Qt.CheckState.Unchecked
+        else:
+            checked_count = sum(1 for state in current_states if state == Qt.CheckState.Checked)
+            if checked_count <= 0:
+                target = Qt.CheckState.Unchecked
+            elif checked_count >= len(current_states):
+                target = Qt.CheckState.Checked
+            else:
+                target = Qt.CheckState.PartiallyChecked
+        _set_commit_diff_item_check_state(window, current_hunk_item, target)
+        current_hunk_item = None
+        current_states = []
+
     for row_index in range(window.commit_diff_view.topLevelItemCount()):
         item = window.commit_diff_view.topLevelItem(row_index)
         if item is None:
             continue
-        scope_value = item.data(0, SCOPE_ROLE)
-        scope = str(scope_value).strip() if scope_value is not None else ""
-        hunk_value = item.data(0, HUNK_INDEX_ROLE)
-        if not isinstance(hunk_value, int):
-            continue
-        key = (scope, hunk_value)
         kind_value = item.data(0, ROW_KIND_ROLE)
         kind = str(kind_value).strip() if kind_value is not None else ""
         if kind == "hunk":
-            hunk_rows[key] = item
+            _flush_current_hunk()
+            current_hunk_item = item
+            current_states = []
             continue
         if kind not in {"added", "removed"}:
             continue
-        line_states.setdefault(key, []).append(item.checkState(marker_column))
-    for key, hunk_item in hunk_rows.items():
-        states = line_states.get(key, [])
-        if not states:
+        if current_hunk_item is None:
             continue
-        checked_count = sum(1 for state in states if state == Qt.CheckState.Checked)
-        if checked_count <= 0:
-            target = Qt.CheckState.Unchecked
-        elif checked_count >= len(states):
-            target = Qt.CheckState.Checked
-        else:
-            target = Qt.CheckState.PartiallyChecked
-        _set_commit_diff_item_check_state(window, hunk_item, target)
+        if not _is_commit_diff_item_toggleable(item, marker_column):
+            continue
+        current_states.append(item.checkState(marker_column))
+    _flush_current_hunk()
 
 
-def _set_commit_diff_hunk_line_states(window: object, hunk_index: int, scope: str, state: Qt.CheckState) -> None:
+def _set_commit_diff_hunk_line_states(
+    window: object,
+    *,
+    hunk_row_index: int,
+    scope: str,
+    state: Qt.CheckState,
+) -> None:
     if not hasattr(window, "commit_diff_view"):
         return
     marker_column = int(getattr(window.commit_diff_view, "_marker_column", 0))
     previous = bool(getattr(window, "commit_diff_rendering", False))
     window.commit_diff_rendering = True
     try:
-        for row_index in range(window.commit_diff_view.topLevelItemCount()):
+        if hunk_row_index < 0:
+            return
+        for row_index in range(hunk_row_index + 1, window.commit_diff_view.topLevelItemCount()):
             item = window.commit_diff_view.topLevelItem(row_index)
             if item is None:
                 continue
             kind_value = item.data(0, ROW_KIND_ROLE)
             kind = str(kind_value).strip() if kind_value is not None else ""
+            if kind == "hunk":
+                break
             if kind not in {"added", "removed"}:
                 continue
             item_scope_value = item.data(0, SCOPE_ROLE)
             item_scope = str(item_scope_value).strip() if item_scope_value is not None else ""
             if scope and item_scope and item_scope != scope:
                 continue
-            value = item.data(0, HUNK_INDEX_ROLE)
-            if not isinstance(value, int) or value != hunk_index:
+            if not _is_commit_diff_item_toggleable(item, marker_column):
                 continue
             item.setCheckState(marker_column, state)
     finally:
@@ -453,21 +587,63 @@ def _apply_commit_stage_change_ui(
     path: str,
     preserve_diff_rows: bool,
 ) -> None:
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.stage_change_ui.start",
+        status_message=status_message,
+        path=path,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
     window._set_status(status_message)
     window.commit_selected_path = path
     if preserve_diff_rows and _sync_commit_status_entries_in_place(window):
+        _sync_commit_path_check_state(window, path)
         # Mantem linhas/ordem do diff visiveis, apenas sincronizando cache e escopo.
         _refresh_commit_diff_data_cache(window, path)
         _update_commit_diff_scope_after_toggle(window)
+        _sync_commit_diff_hunk_markers(window)
         _sync_commit_stage_buttons(window)
     else:
         refresh_commit_files(window)
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.stage_change_ui.done",
+        status_message=status_message,
+        path=path,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
 
 
-def _commit_diff_line_marker_for_scope(scope: str, line_info: DiffLineInfo) -> str:
+def _is_effective_commit_change_line(window: object, scope: str, line_info: DiffLineInfo) -> bool:
+    if line_info.line_type not in {"added", "removed"}:
+        return False
+    diff_data = _get_commit_diff_data_for_scope(window, scope)
+    if not isinstance(diff_data, DiffData):
+        return True
+    hunk_index = int(getattr(line_info, "hunk_index", -1))
+    if hunk_index < 0 or hunk_index >= len(diff_data.hunks):
+        return True
+    hunk = diff_data.hunks[hunk_index]
+    for candidate in hunk.lines:
+        if candidate.line_type not in {"added", "removed"}:
+            continue
+        if candidate.line_type == line_info.line_type:
+            continue
+        if (
+            candidate.content == line_info.content
+            and int(candidate.old_line) == int(line_info.old_line)
+            and int(candidate.new_line) == int(line_info.new_line)
+        ):
+            return False
+    return True
+
+
+def _commit_diff_line_marker_for_scope(window: object, scope: str, line_info: DiffLineInfo) -> str:
     if line_info.line_type not in ("added", "removed"):
+        return ""
+    if not _is_effective_commit_change_line(window, scope, line_info):
         return ""
     if scope == "staged":
         return "[x]"
@@ -476,8 +652,8 @@ def _commit_diff_line_marker_for_scope(scope: str, line_info: DiffLineInfo) -> s
     return "[~]"
 
 
-def _commit_diff_hunk_marker_for_scope(scope: str, _hunk_index: int, hunk: DiffHunk) -> str:
-    has_changes = any(line.line_type in ("added", "removed") for line in hunk.lines)
+def _commit_diff_hunk_marker_for_scope(window: object, scope: str, _hunk_index: int, hunk: DiffHunk) -> str:
+    has_changes = any(_is_effective_commit_change_line(window, scope, line) for line in hunk.lines)
     if not has_changes:
         return ""
     if scope == "staged":
@@ -581,12 +757,23 @@ def _resolve_hunk_index_by_header(
     if not isinstance(diff_data, DiffData):
         return None
     normalized_header = str(hunk_header).strip()
+    fallback_valid = isinstance(fallback_index, int) and 0 <= fallback_index < len(diff_data.hunks)
+    if fallback_valid:
+        fallback_header = diff_data.hunks[fallback_index].header.strip()
+        if normalized_header and fallback_header == normalized_header:
+            return fallback_index
     if normalized_header:
-        for index, hunk in enumerate(diff_data.hunks):
-            if hunk.header.strip() == normalized_header:
-                return index
-    if isinstance(fallback_index, int) and 0 <= fallback_index < len(diff_data.hunks):
-        return fallback_index
+        matched_indices = [
+            index for index, hunk in enumerate(diff_data.hunks) if hunk.header.strip() == normalized_header
+        ]
+        if matched_indices:
+            if fallback_valid and fallback_index in matched_indices:
+                return fallback_index
+            if fallback_valid:
+                return min(matched_indices, key=lambda index: abs(index - int(fallback_index)))
+            return matched_indices[0]
+    if fallback_valid:
+        return int(fallback_index)
     return None
 
 
@@ -650,6 +837,120 @@ def _resolve_line_info_for_scope(
     )
 
 
+def _line_info_exists_in_diff(
+    diff_data: DiffData | None,
+    *,
+    line_info: DiffLineInfo | None,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+) -> bool:
+    if not isinstance(diff_data, DiffData) or not isinstance(line_info, DiffLineInfo):
+        return False
+    target_hunk_index = _resolve_hunk_index_by_header(diff_data, hunk_header, fallback_hunk_index)
+    candidate_hunks: list[DiffHunk]
+    if isinstance(target_hunk_index, int) and 0 <= target_hunk_index < len(diff_data.hunks):
+        candidate_hunks = [diff_data.hunks[target_hunk_index]]
+    else:
+        candidate_hunks = list(diff_data.hunks)
+    for hunk in candidate_hunks:
+        for current in hunk.lines:
+            if (
+                current.line_type == line_info.line_type
+                and int(current.old_line) == int(line_info.old_line)
+                and int(current.new_line) == int(line_info.new_line)
+                and current.content == line_info.content
+            ):
+                return True
+    return False
+
+
+def _resolve_line_info_for_diff_data(
+    diff_data: DiffData | None,
+    *,
+    source_line_info: DiffLineInfo | None,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+) -> DiffLineInfo | None:
+    if not isinstance(diff_data, DiffData) or not isinstance(source_line_info, DiffLineInfo):
+        return None
+    if _line_info_exists_in_diff(
+        diff_data,
+        line_info=source_line_info,
+        hunk_header=hunk_header,
+        fallback_hunk_index=fallback_hunk_index,
+    ):
+        return source_line_info
+    _resolved_hunk_index, resolved_line_info = _resolve_line_info_in_diff(
+        diff_data,
+        source_line_info=source_line_info,
+        hunk_header=hunk_header,
+        fallback_hunk_index=fallback_hunk_index,
+    )
+    return resolved_line_info if isinstance(resolved_line_info, DiffLineInfo) else None
+
+
+def _hunk_changed_signature(lines: list[DiffLineInfo]) -> tuple[tuple[str, str], ...]:
+    return tuple((line.line_type, line.content) for line in lines if line.line_type in {"added", "removed"})
+
+
+def _collect_hunk_changed_signature_from_view(window: object, hunk_row_index: int, scope: str) -> tuple[tuple[str, str], ...]:
+    if not hasattr(window, "commit_diff_view") or hunk_row_index < 0:
+        return ()
+    marker_column = int(getattr(window.commit_diff_view, "_marker_column", 0))
+    signature: list[tuple[str, str]] = []
+    for row_index in range(hunk_row_index + 1, window.commit_diff_view.topLevelItemCount()):
+        item = window.commit_diff_view.topLevelItem(row_index)
+        if item is None:
+            continue
+        kind_value = item.data(0, ROW_KIND_ROLE)
+        kind = str(kind_value).strip() if kind_value is not None else ""
+        if kind == "hunk":
+            break
+        if kind not in {"added", "removed"}:
+            continue
+        item_scope_value = item.data(0, SCOPE_ROLE)
+        item_scope = str(item_scope_value).strip() if item_scope_value is not None else ""
+        if scope and item_scope and item_scope != scope:
+            continue
+        if not _is_commit_diff_item_toggleable(item, marker_column):
+            continue
+        line_info_value = item.data(0, LINE_INFO_ROLE)
+        if isinstance(line_info_value, DiffLineInfo):
+            signature.append((line_info_value.line_type, line_info_value.content))
+    return tuple(signature)
+
+
+def _resolve_hunk_index_for_row_snapshot(
+    window: object,
+    diff_data: DiffData | None,
+    *,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+    hunk_row_index: int,
+    row_scope: str,
+) -> int | None:
+    if not isinstance(diff_data, DiffData):
+        return None
+
+    view_signature = _collect_hunk_changed_signature_from_view(window, hunk_row_index, row_scope)
+    if view_signature:
+        exact_matches: list[int] = []
+        for index, hunk in enumerate(diff_data.hunks):
+            if _hunk_changed_signature(hunk.lines) == view_signature:
+                exact_matches.append(index)
+        if exact_matches:
+            if isinstance(fallback_hunk_index, int) and fallback_hunk_index in exact_matches:
+                return fallback_hunk_index
+            normalized_header = str(hunk_header).strip()
+            if normalized_header:
+                for index in exact_matches:
+                    if diff_data.hunks[index].header.strip() == normalized_header:
+                        return index
+            return exact_matches[0]
+
+    return _resolve_hunk_index_by_header(diff_data, hunk_header, fallback_hunk_index)
+
+
 def _resolve_selected_commit_line_for_scope(window: object, target_scope: str) -> DiffLineInfo | None:
     source_line_info = _selected_commit_line_info(window)
     if not isinstance(source_line_info, DiffLineInfo):
@@ -682,6 +983,30 @@ def _resolve_selected_commit_line_for_scope(window: object, target_scope: str) -
     return None
 
 
+def _load_operation_diff_data_for_scope(window: object, path: str, scope: str) -> DiffData | None:
+    repo_path = str(getattr(window, "repo_path", "")).strip()
+    normalized_path = str(path).strip()
+    normalized_scope = str(scope).strip()
+    if not repo_path or not normalized_path or normalized_scope not in {"staged", "unstaged", "untracked"}:
+        return None
+    entry = window.commit_status_entries_by_path.get(normalized_path, {})
+    status_code = str(entry.get("status", "")).strip()
+    untracked = status_code == "??"
+    try:
+        patch = core_get_file_patch(
+            repo_path,
+            normalized_path,
+            word_diff=False,
+            cached=(normalized_scope == "staged"),
+            untracked=(normalized_scope in {"unstaged", "untracked"} and untracked),
+        )
+    except RuntimeError:
+        return None
+    if not patch.strip():
+        return None
+    return parse_diff_data(patch, word_diff_plain=False)
+
+
 def _update_commit_diff_scope_after_toggle(window: object) -> None:
     if not hasattr(window, "commit_diff_view"):
         return
@@ -711,6 +1036,19 @@ def _update_commit_diff_scope_after_toggle(window: object) -> None:
     hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
     target_diff_data = _get_commit_diff_data_for_scope(window, target_scope)
     target_hunk_index = _resolve_hunk_index_by_header(target_diff_data, hunk_header, hunk_index)
+    if (
+        target_hunk_index is None
+        and isinstance(target_diff_data, DiffData)
+        and len(target_diff_data.hunks) == 1
+    ):
+        target_hunk_index = 0
+    target_hunk_header = ""
+    if (
+        isinstance(target_diff_data, DiffData)
+        and isinstance(target_hunk_index, int)
+        and 0 <= target_hunk_index < len(target_diff_data.hunks)
+    ):
+        target_hunk_header = target_diff_data.hunks[target_hunk_index].header
 
     previous = bool(getattr(window, "commit_diff_rendering", False))
     window.commit_diff_rendering = True
@@ -734,6 +1072,8 @@ def _update_commit_diff_scope_after_toggle(window: object) -> None:
                 item.setData(0, SCOPE_ROLE, target_scope)
                 if isinstance(target_hunk_index, int):
                     item.setData(0, HUNK_INDEX_ROLE, target_hunk_index)
+                    if target_hunk_header:
+                        item.setData(0, HUNK_HEADER_ROLE, target_hunk_header)
                 if item_kind in {"added", "removed"}:
                     source_line_info = item.data(0, LINE_INFO_ROLE)
                     source_info = source_line_info if isinstance(source_line_info, DiffLineInfo) else None
@@ -744,7 +1084,18 @@ def _update_commit_diff_scope_after_toggle(window: object) -> None:
                         hunk_header=hunk_header,
                         fallback_hunk_index=target_hunk_index,
                     )
-                    if isinstance(line_hunk_index, int):
+                    if not isinstance(target_hunk_index, int) and isinstance(line_hunk_index, int):
+                        target_hunk_index = line_hunk_index
+                        if (
+                            isinstance(target_diff_data, DiffData)
+                            and 0 <= target_hunk_index < len(target_diff_data.hunks)
+                        ):
+                            target_hunk_header = target_diff_data.hunks[target_hunk_index].header
+                    if isinstance(target_hunk_index, int):
+                        item.setData(0, HUNK_INDEX_ROLE, target_hunk_index)
+                        if target_hunk_header:
+                            item.setData(0, HUNK_HEADER_ROLE, target_hunk_header)
+                    elif isinstance(line_hunk_index, int):
                         item.setData(0, HUNK_INDEX_ROLE, line_hunk_index)
                     if isinstance(target_line_info, DiffLineInfo):
                         item.setData(0, LINE_INFO_ROLE, target_line_info)
@@ -752,6 +1103,8 @@ def _update_commit_diff_scope_after_toggle(window: object) -> None:
             current_item.setData(0, SCOPE_ROLE, target_scope)
             if isinstance(target_hunk_index, int):
                 current_item.setData(0, HUNK_INDEX_ROLE, target_hunk_index)
+                if target_hunk_header:
+                    current_item.setData(0, HUNK_HEADER_ROLE, target_hunk_header)
             current_item.setCheckState(marker_column, item_state)
         elif kind in {"added", "removed"}:
             current_item.setData(0, SCOPE_ROLE, target_scope)
@@ -987,6 +1340,14 @@ def on_commit_file_item_changed(window: object, item: QListWidgetItem) -> None:
         file_path = str(path_value).strip() if path_value is not None else ""
         if file_path:
             affected_paths = [file_path]
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.files.item_changed",
+        item_kind=kind,
+        item_state=_check_state_to_int(item.checkState()),
+        affected_paths=affected_paths,
+        selected_path_before=selected_path,
+    )
     _sync_commit_group_check_states(window)
     if affected_paths:
         changed = _apply_stage_state_from_selection(window, affected_paths)
@@ -1295,10 +1656,10 @@ def refresh_commit_diff(window: object) -> None:
                 append=(scope_index > 0),
                 scope_value=scope,
                 line_marker_resolver=lambda info, current_scope=scope: _commit_diff_line_marker_for_scope(
-                    current_scope, info
+                    window, current_scope, info
                 ),
                 hunk_marker_resolver=lambda idx, hunk, current_scope=scope: _commit_diff_hunk_marker_for_scope(
-                    current_scope, idx, hunk
+                    window, current_scope, idx, hunk
                 ),
                 show_header_lines=False,
                 scroll_to_top=False,
@@ -1339,6 +1700,7 @@ def refresh_commit_diff(window: object) -> None:
             vertical_scroll_bar.setValue(min(previous_scroll_value, vertical_scroll_bar.maximum()))
     else:
         window.commit_diff_selected_line = 0
+    _sync_commit_diff_hunk_markers(window)
     _sync_active_commit_diff_data(window)
     window.commit_current_patch = "\n".join(section_patch for _scope, section_patch in patches_by_scope)
     _sync_commit_stage_buttons(window)
@@ -1394,6 +1756,13 @@ def _dialog_apply_marker_to_item(item: QTreeWidgetItem, marker: str) -> None:
     item.setCheckState(2, Qt.CheckState.Unchecked)
 
 
+def _is_dialog_item_toggleable(item: QTreeWidgetItem) -> bool:
+    try:
+        return bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+    except RuntimeError:
+        return False
+
+
 def _dialog_apply_row_color(
     item: QTreeWidgetItem,
     *,
@@ -1439,48 +1808,68 @@ def _sync_dialog_hunk_markers(dialog_state: dict[str, object]) -> None:
     previous = bool(dialog_state.get("rendering_tree", False))
     dialog_state["rendering_tree"] = True
     try:
-        line_states_by_hunk: dict[tuple[str, int], list[Qt.CheckState]] = {}
-        hunk_items: dict[tuple[str, int], QTreeWidgetItem] = {}
+        current_hunk_item: QTreeWidgetItem | None = None
+        current_scope = ""
+        current_states: list[Qt.CheckState] = []
+
+        def _flush_current_hunk() -> None:
+            nonlocal current_hunk_item, current_scope, current_states
+            if current_hunk_item is None:
+                return
+            if not _is_dialog_item_toggleable(current_hunk_item):
+                current_hunk_item = None
+                current_scope = ""
+                current_states = []
+                return
+            if not current_states:
+                target = Qt.CheckState.Unchecked
+            else:
+                checked = sum(1 for state in current_states if state == Qt.CheckState.Checked)
+                if checked <= 0:
+                    target = Qt.CheckState.Unchecked
+                elif checked >= len(current_states):
+                    target = Qt.CheckState.Checked
+                else:
+                    target = Qt.CheckState.PartiallyChecked
+            current_hunk_item.setCheckState(2, target)
+            current_hunk_item = None
+            current_scope = ""
+            current_states = []
+
         for row_index in range(side_tree.topLevelItemCount()):
             item = side_tree.topLevelItem(row_index)
             if item is None:
                 continue
-            hunk_value = item.data(0, ROLE_DIALOG_HUNK)
-            if not isinstance(hunk_value, int):
-                continue
             scope_value = item.data(0, ROLE_DIALOG_SCOPE)
             scope = str(scope_value).strip() if scope_value is not None else ""
-            key = (scope, hunk_value)
             kind_value = item.data(0, ROLE_DIALOG_KIND)
             kind = str(kind_value).strip() if kind_value is not None else ""
             if kind == "hunk":
-                hunk_items[key] = item
+                _flush_current_hunk()
+                current_hunk_item = item
+                current_scope = scope
+                current_states = []
                 continue
             if kind != "line":
+                continue
+            if current_hunk_item is None:
+                continue
+            if current_scope and scope and scope != current_scope:
                 continue
             old_info, new_info = _dialog_item_line_infos(item)
             if old_info is None and new_info is None:
                 continue
-            line_states_by_hunk.setdefault(key, []).append(item.checkState(2))
-        for key, hunk_item in hunk_items.items():
-            states = line_states_by_hunk.get(key, [])
-            if not states:
+            if not _is_dialog_item_toggleable(item):
                 continue
-            checked = sum(1 for state in states if state == Qt.CheckState.Checked)
-            if checked <= 0:
-                target = Qt.CheckState.Unchecked
-            elif checked >= len(states):
-                target = Qt.CheckState.Checked
-            else:
-                target = Qt.CheckState.PartiallyChecked
-            hunk_item.setCheckState(2, target)
+            current_states.append(item.checkState(2))
+        _flush_current_hunk()
     finally:
         dialog_state["rendering_tree"] = previous
 
 
 def _set_dialog_hunk_line_states(
     dialog_state: dict[str, object],
-    hunk_index: int,
+    hunk_row_index: int,
     scope: str,
     state: Qt.CheckState,
 ) -> None:
@@ -1490,16 +1879,17 @@ def _set_dialog_hunk_line_states(
     previous = bool(dialog_state.get("rendering_tree", False))
     dialog_state["rendering_tree"] = True
     try:
-        for row_index in range(side_tree.topLevelItemCount()):
+        if hunk_row_index < 0:
+            return
+        for row_index in range(hunk_row_index + 1, side_tree.topLevelItemCount()):
             item = side_tree.topLevelItem(row_index)
             if item is None:
                 continue
             kind_value = item.data(0, ROLE_DIALOG_KIND)
             kind = str(kind_value).strip() if kind_value is not None else ""
+            if kind in {"hunk", "scope"}:
+                break
             if kind != "line":
-                continue
-            value = item.data(0, ROLE_DIALOG_HUNK)
-            if not isinstance(value, int) or value != hunk_index:
                 continue
             scope_value = item.data(0, ROLE_DIALOG_SCOPE)
             item_scope = str(scope_value).strip() if scope_value is not None else ""
@@ -1507,6 +1897,8 @@ def _set_dialog_hunk_line_states(
                 continue
             old_info, new_info = _dialog_item_line_infos(item)
             if old_info is None and new_info is None:
+                continue
+            if not _is_dialog_item_toggleable(item):
                 continue
             item.setCheckState(2, state)
     finally:
@@ -2291,9 +2683,26 @@ def _apply_commit_diff_dialog_stage_change(
         return False
     if not patch.strip():
         return False
+    patch_summary = _summarize_patch_for_trace(patch)
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.dialog.stage_change.request",
+        reverse=bool(reverse),
+        success_message=success_message,
+        scope=str(dialog_state.get("scope", "")).strip(),
+        **patch_summary,
+    )
     try:
         core_apply_patch_to_index(window.repo_path, patch, reverse=reverse)
     except RuntimeError as exc:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.dialog.stage_change.error",
+            reverse=bool(reverse),
+            error=str(exc),
+            scope=str(dialog_state.get("scope", "")).strip(),
+            patch_hash=patch_summary.get("patch_hash", ""),
+        )
         QMessageBox.critical(window, "Commit", str(exc))
         return False
     path = str(dialog_state.get("path", "")).strip()
@@ -2306,6 +2715,14 @@ def _apply_commit_diff_dialog_stage_change(
     _refresh_commit_diff_dialog_data_cache(window, dialog_state)
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.dialog.stage_change.done",
+        reverse=bool(reverse),
+        success_message=success_message,
+        scope=str(dialog_state.get("scope", "")).strip(),
+        patch_hash=patch_summary.get("patch_hash", ""),
+    )
     return True
 
 
@@ -2351,6 +2768,18 @@ def _on_commit_diff_dialog_marker_clicked(window: object, dialog_state: dict[str
         hunk_index = _dialog_selected_hunk_index(dialog_state)
         hunk_header_value = current_item.data(0, ROLE_DIALOG_HUNK_HEADER)
         hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.dialog.marker_clicked",
+            requested_line=int(line_no or 0),
+            effective_line=int(dialog_state.get("selected_line", 0) or 0),
+            item_scope=scope,
+            item_kind=kind,
+            hunk_index=hunk_index,
+            hunk_header=hunk_header,
+            old_line=_line_info_to_trace_payload(old_line_info),
+            new_line=_line_info_to_trace_payload(new_line_info),
+        )
         target_scope = _dialog_target_scope_for_state(scope, current_item.checkState(2))
         toggled = _apply_commit_diff_dialog_toggle(
             window,
@@ -2403,6 +2832,8 @@ def _on_commit_diff_dialog_item_changed(
         return
     if column != 2:
         return
+    if not _is_dialog_item_toggleable(item):
+        return
     kind_value = item.data(0, ROLE_DIALOG_KIND)
     kind = str(kind_value).strip() if kind_value is not None else ""
     if kind not in {"line", "hunk"}:
@@ -2429,8 +2860,29 @@ def _on_commit_diff_dialog_item_changed(
     hunk_index = int(hunk_value) if isinstance(hunk_value, int) else None
     hunk_header_value = item.data(0, ROLE_DIALOG_HUNK_HEADER)
     hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
-    if kind == "hunk" and hunk_index is not None:
-        _set_dialog_hunk_line_states(dialog_state, hunk_index, scope, state)
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.dialog.item_changed",
+        item_scope=scope,
+        item_kind=kind,
+        checked_state=_check_state_to_int(state),
+        should_toggle=bool(should_toggle),
+        line_no=int(dialog_state.get("selected_line", 0) or 0),
+        hunk_index=hunk_index,
+        hunk_header=hunk_header,
+        old_line=_line_info_to_trace_payload(old_line_info),
+        new_line=_line_info_to_trace_payload(new_line_info),
+    )
+    if kind == "hunk":
+        side_tree = dialog_state.get("side_tree")
+        hunk_row_index = side_tree.indexOfTopLevelItem(item) if isinstance(side_tree, QTreeWidget) else -1
+        if hunk_row_index >= 0:
+            _set_dialog_hunk_line_states(
+                dialog_state,
+                hunk_row_index=hunk_row_index,
+                scope=scope,
+                state=state,
+            )
     if not _acquire_commit_diff_dialog_action_lock(dialog_state):
         return
     dialog_state["toggle_inflight"] = True
@@ -2854,11 +3306,127 @@ def on_commit_diff_item_clicked(window: object, item: object, column: int) -> No
         return
     if item is None:
         return
-    row_index = window.commit_diff_view.indexOfTopLevelItem(item)
+    try:
+        row_index = window.commit_diff_view.indexOfTopLevelItem(item)
+    except RuntimeError:
+        return
     if row_index < 0:
         return
     window.commit_diff_selected_line = row_index + 1
     _sync_commit_stage_buttons(window)
+
+
+def _toggle_commit_diff_row_from_snapshot(
+    window: object,
+    *,
+    path: str,
+    row_index: int,
+    row_kind: str,
+    row_scope: str,
+    checked_state: Qt.CheckState,
+    hunk_index: int | None,
+    hunk_header: str,
+    line_info: DiffLineInfo | None,
+    preserve_diff_rows: bool,
+) -> None:
+    if not window.repo_path:
+        return
+    effective_path = path.strip() if isinstance(path, str) else ""
+    if not effective_path:
+        effective_path = _current_commit_file_path(window)
+    if not effective_path:
+        return
+    if row_scope not in {"staged", "unstaged", "untracked"}:
+        return
+    if checked_state == Qt.CheckState.PartiallyChecked:
+        return
+    should_unstage = row_scope == "staged" and checked_state == Qt.CheckState.Unchecked
+    should_stage = row_scope in {"unstaged", "untracked"} and checked_state == Qt.CheckState.Checked
+    if not should_stage and not should_unstage:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.main.snapshot_toggle.noop",
+            path=effective_path,
+            row_kind=row_kind,
+            row_scope=row_scope,
+            checked_state=_check_state_to_int(checked_state),
+        )
+        return
+
+    patch = ""
+    reverse = should_unstage
+    status_message = ""
+    if row_kind == "hunk":
+        source_scope = "staged" if reverse else "unstaged"
+        diff_data = _load_operation_diff_data_for_scope(window, effective_path, source_scope)
+        if diff_data is None:
+            diff_data = _get_commit_diff_data_for_scope(window, source_scope)
+        resolved_hunk_index = _resolve_hunk_index_for_row_snapshot(
+            window,
+            diff_data,
+            hunk_header=hunk_header,
+            fallback_hunk_index=hunk_index,
+            hunk_row_index=row_index,
+            row_scope=row_scope,
+        )
+        if not isinstance(diff_data, DiffData) or resolved_hunk_index is None:
+            return
+        patch = build_patch_for_hunk(diff_data, resolved_hunk_index)
+        status_message = "Bloco removido do stage." if reverse else "Bloco adicionado ao stage."
+    elif row_kind in {"added", "removed"} and isinstance(line_info, DiffLineInfo):
+        source_scope = "staged" if reverse else "unstaged"
+        diff_data = _load_operation_diff_data_for_scope(window, effective_path, source_scope)
+        if diff_data is None:
+            diff_data = _get_commit_diff_data_for_scope(window, source_scope)
+        resolved_line_info = _resolve_line_info_for_diff_data(
+            diff_data,
+            source_line_info=line_info,
+            hunk_header=hunk_header,
+            fallback_hunk_index=hunk_index,
+        )
+        if not isinstance(diff_data, DiffData) or not isinstance(resolved_line_info, DiffLineInfo):
+            return
+        patch = build_patch_for_line(diff_data, resolved_line_info)
+        status_message = "Linha removida do stage." if reverse else "Linha adicionada ao stage."
+    else:
+        return
+
+    if not patch.strip():
+        return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.snapshot_toggle.request",
+        path=effective_path,
+        row_kind=row_kind,
+        row_scope=row_scope,
+        checked_state=_check_state_to_int(checked_state),
+        reverse=bool(reverse),
+        preserve_diff_rows=bool(preserve_diff_rows),
+        hunk_index=hunk_index,
+        hunk_header=hunk_header,
+        **_line_info_to_trace_payload(line_info),
+    )
+    try:
+        core_apply_patch_to_index(window.repo_path, patch, reverse=reverse)
+    except RuntimeError as exc:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.main.snapshot_toggle.error",
+            path=effective_path,
+            row_kind=row_kind,
+            row_scope=row_scope,
+            checked_state=_check_state_to_int(checked_state),
+            reverse=bool(reverse),
+            error=str(exc),
+        )
+        QMessageBox.critical(window, "Commit", str(exc))
+        return
+    _apply_commit_stage_change_ui(
+        window,
+        status_message=status_message,
+        path=effective_path,
+        preserve_diff_rows=preserve_diff_rows,
+    )
 
 
 def on_commit_diff_item_changed(window: object, item: object, column: int) -> None:
@@ -2866,11 +3434,20 @@ def on_commit_diff_item_changed(window: object, item: object, column: int) -> No
         return
     if bool(getattr(window, "commit_diff_rendering", False)):
         return
+    try:
+        _ = item.treeWidget()
+    except RuntimeError:
+        return
     marker_column = int(getattr(window.commit_diff_view, "_marker_column", 0))
     if column != marker_column:
         return
-    row_index = window.commit_diff_view.indexOfTopLevelItem(item)
+    try:
+        row_index = window.commit_diff_view.indexOfTopLevelItem(item)
+    except RuntimeError:
+        return
     if row_index < 0:
+        return
+    if not _is_commit_diff_item_toggleable(item, marker_column):
         return
     kind_value = item.data(0, ROW_KIND_ROLE)
     kind = str(kind_value).strip() if kind_value is not None else ""
@@ -2878,18 +3455,68 @@ def on_commit_diff_item_changed(window: object, item: object, column: int) -> No
         return
     scope_value = item.data(0, SCOPE_ROLE)
     row_scope = str(scope_value).strip() if scope_value is not None else ""
+    checked_state = item.checkState(marker_column)
+    line_info_value = item.data(0, LINE_INFO_ROLE)
+    line_info = line_info_value if isinstance(line_info_value, DiffLineInfo) else None
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.item_changed",
+        row_index=row_index + 1,
+        marker_column=marker_column,
+        row_scope=row_scope,
+        row_kind=kind,
+        checked_state=_check_state_to_int(checked_state),
+        hunk_index=item.data(0, HUNK_INDEX_ROLE),
+        **_line_info_to_trace_payload(line_info),
+    )
+    if checked_state == Qt.CheckState.PartiallyChecked:
+        window.commit_diff_selected_line = row_index + 1
+        _sync_commit_diff_hunk_markers(window)
+        _sync_commit_stage_buttons(window)
+        return
     if kind == "hunk":
-        hunk_value = item.data(0, HUNK_INDEX_ROLE)
-        if isinstance(hunk_value, int):
-            _set_commit_diff_hunk_line_states(window, hunk_value, row_scope, item.checkState(marker_column))
+        _set_commit_diff_hunk_line_states(
+            window,
+            hunk_row_index=row_index,
+            scope=row_scope,
+            state=checked_state,
+        )
     window.commit_diff_selected_line = row_index + 1
+    window.commit_diff_view.setCurrentItem(item)
+    _sync_commit_diff_hunk_markers(window)
+
+    hunk_value = item.data(0, HUNK_INDEX_ROLE)
+    hunk_index = int(hunk_value) if isinstance(hunk_value, int) else None
+    hunk_header_value = item.data(0, HUNK_HEADER_ROLE)
+    hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
+    selected_path = _current_commit_file_path(window)
+    snapshot_line_info = line_info if isinstance(line_info, DiffLineInfo) else None
+
     if not _acquire_commit_diff_action_lock(window):
         _sync_commit_diff_hunk_markers(window)
         return
-    try:
-        on_commit_diff_marker_clicked(window, window.commit_diff_selected_line, _lock_already_held=True)
-    finally:
-        _release_commit_diff_action_lock(window)
+
+    def _run_deferred_toggle() -> None:
+        try:
+            if bool(getattr(window, "_is_closing", False)):
+                return
+            _toggle_commit_diff_row_from_snapshot(
+                window,
+                path=selected_path,
+                row_index=row_index,
+                row_kind=kind,
+                row_scope=row_scope,
+                checked_state=checked_state,
+                hunk_index=hunk_index,
+                hunk_header=hunk_header,
+                line_info=snapshot_line_info,
+                preserve_diff_rows=True,
+            )
+        finally:
+            _release_commit_diff_action_lock(window)
+
+    # Evita alterar modelo do QTreeWidget durante o sinal itemChanged.
+    QTimer.singleShot(0, _run_deferred_toggle)
 
 
 def on_commit_diff_marker_clicked(window: object, line_no: int, *, _lock_already_held: bool = False) -> None:
@@ -2904,6 +3531,16 @@ def on_commit_diff_marker_clicked(window: object, line_no: int, *, _lock_already
         window.commit_diff_selected_line = max(1, int(line_no or 1))
         scope = _selected_commit_scope(window) or str(getattr(window, "commit_diff_scope", "")).strip()
         line_info = _selected_commit_line_info(window)
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.main.marker_clicked",
+            requested_line=int(line_no or 0),
+            effective_line=window.commit_diff_selected_line,
+            effective_scope=scope,
+            lock_already_held=bool(_lock_already_held),
+            hunk_index=_selected_commit_hunk_index(window),
+            **_line_info_to_trace_payload(line_info),
+        )
         if line_info is not None and line_info.line_type in ("added", "removed"):
             if scope == "staged":
                 unstage_selected_commit_line(window, preserve_diff_rows=True)
@@ -3012,9 +3649,16 @@ def stage_selected_commit_file(window: object, *, preserve_diff_rows: bool = Fal
     if not path:
         QMessageBox.information(window, "Commit", "Selecione um arquivo para stage.")
         return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.stage_file.request",
+        path=path,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
     try:
         core_stage_paths(window.repo_path, [path])
     except RuntimeError as exc:
+        _trace_commit_selection_event(window, "ui.commit.main.stage_file.error", path=path, error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
     _apply_commit_stage_change_ui(
@@ -3033,9 +3677,16 @@ def unstage_selected_commit_file(window: object, *, preserve_diff_rows: bool = F
     if not path:
         QMessageBox.information(window, "Commit", "Selecione um arquivo para unstage.")
         return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.unstage_file.request",
+        path=path,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
     try:
         core_unstage_paths(window.repo_path, [path])
     except RuntimeError as exc:
+        _trace_commit_selection_event(window, "ui.commit.main.unstage_file.error", path=path, error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
     _apply_commit_stage_change_ui(
@@ -3066,9 +3717,17 @@ def stage_selected_commit_hunk(window: object, *, preserve_diff_rows: bool = Fal
     patch = build_patch_for_hunk(diff_data, resolved_hunk_index)
     if not patch:
         return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.stage_hunk.request",
+        hunk_index=resolved_hunk_index,
+        hunk_header=hunk_header,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
     try:
         core_apply_patch_to_index(window.repo_path, patch, reverse=False)
     except RuntimeError as exc:
+        _trace_commit_selection_event(window, "ui.commit.main.stage_hunk.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
     path = _current_commit_file_path(window)
@@ -3100,9 +3759,17 @@ def unstage_selected_commit_hunk(window: object, *, preserve_diff_rows: bool = F
     patch = build_patch_for_hunk(diff_data, resolved_hunk_index)
     if not patch:
         return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.unstage_hunk.request",
+        hunk_index=resolved_hunk_index,
+        hunk_header=hunk_header,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
     try:
         core_apply_patch_to_index(window.repo_path, patch, reverse=True)
     except RuntimeError as exc:
+        _trace_commit_selection_event(window, "ui.commit.main.unstage_hunk.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
     path = _current_commit_file_path(window)
@@ -3130,16 +3797,33 @@ def stage_selected_commit_line(window: object, *, preserve_diff_rows: bool = Fal
     if line_type not in ("added", "removed"):
         QMessageBox.information(window, "Commit", "A linha selecionada não é uma alteração.")
         return
-    line_info = _resolve_selected_commit_line_for_scope(window, "unstaged")
+    selected_hunk_header = _selected_commit_hunk_header(window)
+    selected_hunk_index = _selected_commit_hunk_index(window)
+    if isinstance(source_line_info, DiffLineInfo) and _line_info_exists_in_diff(
+        diff_data,
+        line_info=source_line_info,
+        hunk_header=selected_hunk_header,
+        fallback_hunk_index=selected_hunk_index,
+    ):
+        line_info = source_line_info
+    else:
+        line_info = _resolve_selected_commit_line_for_scope(window, "unstaged")
     if not isinstance(line_info, DiffLineInfo):
         window._set_status("Linha nao localizada no diff atual (tente novamente).")
         return
     patch = build_patch_for_line(diff_data, line_info)
     if not patch:
         return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.stage_line.request",
+        preserve_diff_rows=bool(preserve_diff_rows),
+        **_line_info_to_trace_payload(line_info),
+    )
     try:
         core_apply_patch_to_index(window.repo_path, patch, reverse=False)
     except RuntimeError as exc:
+        _trace_commit_selection_event(window, "ui.commit.main.stage_line.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
     path = _current_commit_file_path(window)
@@ -3167,16 +3851,33 @@ def unstage_selected_commit_line(window: object, *, preserve_diff_rows: bool = F
     if line_type not in ("added", "removed"):
         QMessageBox.information(window, "Commit", "A linha selecionada não é uma alteração.")
         return
-    line_info = _resolve_selected_commit_line_for_scope(window, "staged")
+    selected_hunk_header = _selected_commit_hunk_header(window)
+    selected_hunk_index = _selected_commit_hunk_index(window)
+    if isinstance(source_line_info, DiffLineInfo) and _line_info_exists_in_diff(
+        diff_data,
+        line_info=source_line_info,
+        hunk_header=selected_hunk_header,
+        fallback_hunk_index=selected_hunk_index,
+    ):
+        line_info = source_line_info
+    else:
+        line_info = _resolve_selected_commit_line_for_scope(window, "staged")
     if not isinstance(line_info, DiffLineInfo):
         window._set_status("Linha nao localizada no diff atual (tente novamente).")
         return
     patch = build_patch_for_line(diff_data, line_info)
     if not patch:
         return
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.unstage_line.request",
+        preserve_diff_rows=bool(preserve_diff_rows),
+        **_line_info_to_trace_payload(line_info),
+    )
     try:
         core_apply_patch_to_index(window.repo_path, patch, reverse=True)
     except RuntimeError as exc:
+        _trace_commit_selection_event(window, "ui.commit.main.unstage_line.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
     path = _current_commit_file_path(window)
