@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -93,6 +95,12 @@ def _history_commit_presence(window: object, commit_hash: str) -> str:
 def _format_history_commit_label(window: object, commit_hash: str, subject: str) -> str:
     presence = _history_commit_presence(window, commit_hash)
     return f"[{presence}] {commit_hash[:7]} | {subject}"
+
+
+def _build_history_commit_tooltip(window: object, commit_hash: str, date: str) -> str:
+    marker = _history_commit_presence(window, commit_hash)
+    marker_text = "Local (ainda nao enviado)" if marker == "L" else "Local + online"
+    return f"{commit_hash}\n{date}\n{marker_text}".strip()
 
 
 def _refresh_history_local_state(window: object) -> None:
@@ -207,10 +215,7 @@ def _append_history_page(window: object, summaries: list[object]) -> None:
             label = _format_history_commit_label(window, commit_hash, summary.subject)
             item = QListWidgetItem(label, window.history_commits_list)
             item.setData(Qt.ItemDataRole.UserRole, commit_hash)
-            marker = _history_commit_presence(window, commit_hash)
-            marker_text = "Local (ainda nao enviado)" if marker == "L" else "Local + online"
-            tooltip = f"{commit_hash}\n{summary.date}\n{marker_text}"
-            item.setToolTip(tooltip.strip())
+            item.setToolTip(_build_history_commit_tooltip(window, commit_hash, summary.date))
     finally:
         window.history_commits_list.blockSignals(False)
 
@@ -265,8 +270,11 @@ def on_history_scroll_value_changed(window: object, value: int) -> None:
 
 
 def on_history_commit_selected(window: object) -> None:
-    selected_items = window.history_commits_list.selectedItems()
-    if not selected_items:
+    current_item = window.history_commits_list.currentItem()
+    if current_item is None:
+        selected_items = window.history_commits_list.selectedItems()
+        current_item = selected_items[-1] if selected_items else None
+    if current_item is None:
         window.history_current_commit_hash = ""
         window.history_current_file_path = ""
         window.history_files_list.clear()
@@ -276,14 +284,28 @@ def on_history_commit_selected(window: object) -> None:
         if hasattr(window, "history_patch_text"):
             window.history_patch_text.setPlainText("")
         return
-    item = selected_items[0]
-    value = item.data(Qt.ItemDataRole.UserRole)
+    value = current_item.data(Qt.ItemDataRole.UserRole)
     commit_hash = str(value).strip() if value is not None else ""
     if not commit_hash:
         return
     window.history_current_commit_hash = commit_hash
     window.history_current_file_path = ""
     load_history_commit_content(window, commit_hash)
+
+
+def on_history_commit_hovered(window: object, item: QListWidgetItem | None) -> None:
+    if item is None:
+        return
+    tooltip = item.toolTip().strip()
+    if not tooltip:
+        value = item.data(Qt.ItemDataRole.UserRole)
+        commit_hash = str(value).strip() if value is not None else ""
+        summary = getattr(window, "history_summary_by_hash", {}).get(commit_hash)
+        if commit_hash and summary is not None:
+            tooltip = _build_history_commit_tooltip(window, commit_hash, str(summary.date))
+            item.setToolTip(tooltip)
+    if tooltip:
+        QToolTip.showText(QCursor.pos(), tooltip, window.history_commits_list)
 
 
 def load_history_commit_content(window: object, commit_hash: str) -> None:

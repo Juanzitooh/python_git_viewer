@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QHBoxLayout,
     QLabel,
@@ -101,6 +102,7 @@ def build_compare_tab(window: object) -> None:
     body_splitter.setChildrenCollapsible(False)
 
     window.compare_commits_list = UnifiedListWidget(body_splitter)
+    window.compare_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     window.compare_commits_list.itemSelectionChanged.connect(window._on_compare_commit_selected)
     window.compare_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.compare_commits_list.customContextMenuRequested.connect(window._on_compare_commit_context_menu)
@@ -112,6 +114,7 @@ def build_compare_tab(window: object) -> None:
     window.compare_commit_info.setReadOnly(True)
 
     window.compare_files_list = UnifiedListWidget(right_splitter)
+    window.compare_files_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     window.compare_files_list.itemSelectionChanged.connect(window._on_compare_file_selected)
     window.compare_files_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.compare_files_list.customContextMenuRequested.connect(window._on_compare_file_context_menu)

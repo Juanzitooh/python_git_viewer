@@ -27,4 +27,5 @@ class UnifiedListWidget(QListWidget):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setAutoScroll(False)
         self.setFont(QFont("JetBrains Mono", 10))

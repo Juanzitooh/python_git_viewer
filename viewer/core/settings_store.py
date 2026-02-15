@@ -16,6 +16,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "history_refresh_interval_sec": 45,
     "workspace_refresh_interval_sec": 120,
     "last_tab_index": 0,
+    "last_tab_name": "",
     "last_repo_path": "",
     "recent_repos": [],
     "favorite_repos": [],
@@ -244,6 +245,7 @@ def load_settings(path: Path) -> dict[str, object]:
             int(DEFAULT_SETTINGS["last_tab_index"]),
             minimum=0,
         )
+        data["last_tab_name"] = _coerce_str(raw.get("last_tab_name"), "")
         data["last_repo_path"] = _sanitize_repo_path(raw.get("last_repo_path"))
         data["recent_repos"] = _sanitize_repo_list(raw.get("recent_repos"))
         data["favorite_repos"] = _sanitize_repo_list(raw.get("favorite_repos"))
@@ -264,6 +266,7 @@ def save_settings(path: Path, settings: dict[str, object]) -> None:
     data.update(settings)
     data["last_repo_path"] = _sanitize_repo_path(data.get("last_repo_path"))
     data["update_profile"] = _sanitize_update_profile(data.get("update_profile"))
+    data["last_tab_name"] = _coerce_str(data.get("last_tab_name"), "")
     data["fetch_interval_sec"] = _coerce_int(
         data.get("fetch_interval_sec"),
         int(DEFAULT_SETTINGS["fetch_interval_sec"]),

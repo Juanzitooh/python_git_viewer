@@ -63,6 +63,7 @@ class DiffColumnsView(QTreeWidget):
         self.setAlternatingRowColors(False)
         self.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
+        self.setAutoScroll(False)
         self.setWordWrap(True)
         self.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.setIndentation(0)

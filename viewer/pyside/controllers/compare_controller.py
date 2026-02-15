@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QListWidgetItem, QMenu, QMessageBox
 
@@ -25,6 +27,9 @@ from ...core.repo_state import (
 from ..diff_columns import render_diff_into_columns
 
 
+_COMMIT_TOKEN_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+
 def clear_compare_view(window: object) -> None:
     window.compare_file_entries = []
     window.compare_current_file_path = ""
@@ -46,6 +51,24 @@ def clear_compare_view(window: object) -> None:
     if hasattr(window, "compare_action_status_label"):
         window.compare_action_status_label.setText("Selecione origem e destino.")
     _update_compare_action_state(window)
+
+
+def _extract_compare_commit_token(commit_line: str) -> str:
+    token = commit_line.split(" ", 1)[0].strip() if commit_line else ""
+    if not token or not _COMMIT_TOKEN_RE.fullmatch(token):
+        return ""
+    return token
+
+
+def _resolve_compare_commit_hash(repo_path: str, commit_token: str) -> str:
+    token = commit_token.strip()
+    if not token:
+        return ""
+    try:
+        resolved = run_git(repo_path, ["rev-parse", "--verify", f"{token}^{{commit}}"]).strip()
+    except RuntimeError:
+        return token
+    return resolved or token
 
 
 def _set_compare_files_items(window: object, entries: list[tuple[str, int, int, bool]]) -> None:
@@ -85,11 +108,15 @@ def _set_compare_files_for_commit(window: object, commit_hash: str) -> bool:
     if not window.repo_path or not commit_hash:
         return False
     try:
-        details = load_commit_details(window.repo_path, commit_hash)
         files = core_list_commit_files(window.repo_path, commit_hash)
     except RuntimeError:
         return False
-    stats_by_path = {item.path: item for item in details.file_stats}
+    stats_by_path: dict[str, object] = {}
+    try:
+        details = load_commit_details(window.repo_path, commit_hash)
+        stats_by_path = {item.path: item for item in details.file_stats}
+    except RuntimeError:
+        stats_by_path = {}
     entries: list[tuple[str, int, int, bool]] = []
     for file_path in files:
         stat = stats_by_path.get(file_path)
@@ -226,7 +253,8 @@ def refresh_compare_view(window: object) -> None:
         window.compare_commits_list.clear()
         for line in commits:
             item = QListWidgetItem(line, window.compare_commits_list)
-            commit_hash = line.split(" ", 1)[0].strip() if line else ""
+            commit_token = _extract_compare_commit_token(line)
+            commit_hash = _resolve_compare_commit_hash(window.repo_path, commit_token)
             item.setData(Qt.ItemDataRole.UserRole, commit_hash)
         window.compare_commits_list.blockSignals(False)
 
@@ -294,8 +322,11 @@ def _set_compare_commit_info(window: object, details: object | None, *, fallback
 
 
 def on_compare_commit_selected(window: object) -> None:
-    selected_items = window.compare_commits_list.selectedItems()
-    if not selected_items:
+    current_item = window.compare_commits_list.currentItem()
+    if current_item is None:
+        selected_items = window.compare_commits_list.selectedItems()
+        current_item = selected_items[-1] if selected_items else None
+    if current_item is None:
         window.compare_current_commit_hash = ""
         _set_compare_commit_info(window, None)
         _set_compare_files_from_aggregate(window)
@@ -303,8 +334,7 @@ def on_compare_commit_selected(window: object) -> None:
             window.compare_files_list.setCurrentRow(0)
         on_compare_file_selected(window)
         return
-    item = selected_items[0]
-    value = item.data(Qt.ItemDataRole.UserRole)
+    value = current_item.data(Qt.ItemDataRole.UserRole)
     commit_hash = str(value).strip() if value is not None else ""
     window.compare_current_commit_hash = commit_hash
     if not commit_hash or not window.repo_path:
@@ -385,7 +415,18 @@ def refresh_compare_patch(window: object) -> None:
                 word_diff=word_diff,
             )
     except RuntimeError as exc:
-        QMessageBox.critical(window, "Comparar", str(exc))
+        error_text = str(exc)
+        if _is_compare_ref_resolution_error(error_text):
+            if hasattr(window, "compare_patch_table"):
+                render_diff_into_columns(
+                    window.compare_patch_table,
+                    "(diff indisponivel para a referencia selecionada)",
+                    show_header_lines=False,
+                )
+            if hasattr(window, "compare_patch_text"):
+                window.compare_patch_text.setPlainText("(diff indisponivel para a referencia selecionada)")
+            return
+        QMessageBox.critical(window, "Comparar", error_text)
         if hasattr(window, "compare_patch_table"):
             render_diff_into_columns(window.compare_patch_table, "", show_header_lines=False)
         if hasattr(window, "compare_patch_text"):

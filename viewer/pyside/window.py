@@ -131,6 +131,7 @@ from .controllers import (
     load_more_history_commits,
     on_compare_file_context_menu,
     on_history_commit_context_menu,
+    on_history_commit_hovered,
     on_history_commit_selected,
     on_history_search_text_changed,
     on_history_scroll_value_changed,
@@ -317,23 +318,28 @@ class QtShellWindow(QMainWindow):
         if not initial_repo and self.repo_combo.count() > 0:
             initial_repo = self.repo_combo.currentData() or ""
         self._set_repo(initial_repo, save=True)
+        self._restore_last_tab_from_settings()
 
+        self._setup_background_timers()
+
+    def _restore_last_tab_from_settings(self) -> None:
+        if not hasattr(self, "tabs"):
+            return
         last_tab_name = str(self.settings_data.get("last_tab_name", "")).strip()
         if last_tab_name:
             for index in range(self.tabs.count()):
                 if self.tabs.tabText(index) == last_tab_name:
                     self.tabs.setCurrentIndex(index)
-                    break
-            else:
-                last_tab_index = int(self.settings_data.get("last_tab_index", 0) or 0)
-                if 0 <= last_tab_index < self.tabs.count():
-                    self.tabs.setCurrentIndex(last_tab_index)
-        else:
-            last_tab_index = int(self.settings_data.get("last_tab_index", 0) or 0)
-            if 0 <= last_tab_index < self.tabs.count():
-                self.tabs.setCurrentIndex(last_tab_index)
-
-        self._setup_background_timers()
+                    return
+            # Se a aba Stash nao existir nesta sessao, cair em Commit mantem fluxo esperado.
+            if last_tab_name == "Stash":
+                for index in range(self.tabs.count()):
+                    if self.tabs.tabText(index) == "Commit":
+                        self.tabs.setCurrentIndex(index)
+                        return
+        last_tab_index = int(self.settings_data.get("last_tab_index", 0) or 0)
+        if 0 <= last_tab_index < self.tabs.count():
+            self.tabs.setCurrentIndex(last_tab_index)
 
     def _load_workspace_root_from_settings(self) -> str:
         raw = self.settings_data.get("repo_scan_root", "")
@@ -701,6 +707,9 @@ class QtShellWindow(QMainWindow):
 
     def _on_history_commit_selected(self) -> None:
         on_history_commit_selected(self)
+
+    def _on_history_commit_hovered(self, item) -> None:
+        on_history_commit_hovered(self, item)
 
     def _on_history_search_text_changed(self, text: str) -> None:
         on_history_search_text_changed(self, text)

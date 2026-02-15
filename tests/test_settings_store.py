@@ -41,6 +41,52 @@ class TestSettingsStore(unittest.TestCase):
             data = load_settings(path)
             self.assertEqual(data["update_profile"], "economic")
 
+    def test_last_tab_name_is_loaded_and_saved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            payload = {
+                "last_tab_index": 3,
+                "last_tab_name": "Historico",
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            loaded = load_settings(path)
+            self.assertEqual(loaded["last_tab_index"], 3)
+            self.assertEqual(loaded["last_tab_name"], "Historico")
+
+            save_settings(path, loaded)
+            reloaded = load_settings(path)
+            self.assertEqual(reloaded["last_tab_name"], "Historico")
+
+    def test_theme_overrides_and_fonts_are_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            save_settings(
+                path,
+                {
+                    "theme": "dark",
+                    "theme_overrides": {
+                        "dark": {
+                            "bg": "#101010",
+                            "accent": "#1A73E8",
+                            "invalid": "nope",
+                        }
+                    },
+                    "ui_font_family": "Noto Sans",
+                    "ui_font_size": 11,
+                    "mono_font_family": "JetBrains Mono",
+                    "mono_font_size": 10,
+                },
+            )
+            data = load_settings(path)
+            self.assertEqual(data["theme"], "dark")
+            self.assertEqual(data["ui_font_family"], "Noto Sans")
+            self.assertEqual(data["ui_font_size"], 11)
+            self.assertEqual(data["mono_font_family"], "JetBrains Mono")
+            self.assertEqual(data["mono_font_size"], 10)
+            self.assertEqual(data["theme_overrides"]["dark"]["bg"], "#101010")
+            self.assertEqual(data["theme_overrides"]["dark"]["accent"], "#1A73E8")
+            self.assertNotIn("invalid", data["theme_overrides"]["dark"])
+
 
 if __name__ == "__main__":
     unittest.main()
