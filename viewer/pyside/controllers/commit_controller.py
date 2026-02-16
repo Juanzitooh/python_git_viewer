@@ -146,6 +146,116 @@ def _entry_is_fully_staged(entry: dict[str, str | bool]) -> bool:
     return _entry_has_staged(entry) and not _entry_has_unstaged(entry)
 
 
+def _normalize_git_path(path: str) -> str:
+    normalized = str(path).strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.startswith(("a/", "b/")):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _is_dev_null_path(path: str) -> bool:
+    return _normalize_git_path(path) in {"dev/null", "/dev/null"}
+
+
+def _is_phantom_dev_null_entry(repo_path: str, entry: dict[str, str | bool]) -> bool:
+    normalized_path = _normalize_git_path(str(entry.get("path_for_git", "")).strip())
+    if normalized_path != "dev/null":
+        return False
+    candidate = os.path.join(repo_path, normalized_path)
+    return not os.path.exists(candidate)
+
+
+def _load_commit_status_entries(window: object) -> list[dict[str, str | bool]]:
+    repo_path = str(getattr(window, "repo_path", "")).strip()
+    if not repo_path:
+        return []
+    status_entries = core_list_status_entries(repo_path)
+    has_phantom_dev_null = any(_is_phantom_dev_null_entry(repo_path, entry) for entry in status_entries)
+    if not has_phantom_dev_null:
+        return status_entries
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.files.dev_null.cleanup.request",
+    )
+    try:
+        core_unstage_paths(repo_path, ["dev/null"])
+    except RuntimeError as exc:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.files.dev_null.cleanup.error",
+            error=str(exc),
+        )
+        return status_entries
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.files.dev_null.cleanup.done",
+    )
+    return core_list_status_entries(repo_path)
+
+
+def _diff_has_dev_null_transition(diff_data: DiffData | None) -> bool:
+    if not isinstance(diff_data, DiffData):
+        return False
+    old_path = ""
+    new_path = ""
+    for raw_line in diff_data.header_lines:
+        line = str(raw_line).strip()
+        if line.startswith("--- "):
+            old_path = line[4:].strip()
+        elif line.startswith("+++ "):
+            new_path = line[4:].strip()
+    return _is_dev_null_path(old_path) or _is_dev_null_path(new_path)
+
+
+def _apply_commit_file_level_toggle(
+    window: object,
+    *,
+    path: str,
+    stage: bool,
+    preserve_diff_rows: bool,
+    reason: str,
+) -> bool:
+    if not window.repo_path:
+        return False
+    normalized_path = str(path).strip()
+    if not normalized_path:
+        return False
+    status_message = "Arquivo adicionado ao stage." if stage else "Arquivo removido do stage."
+    _trace_commit_selection_event(
+        window,
+        "ui.commit.main.file_level_toggle.request",
+        path=normalized_path,
+        stage=bool(stage),
+        reason=reason,
+        preserve_diff_rows=bool(preserve_diff_rows),
+    )
+    try:
+        if stage:
+            core_stage_paths(window.repo_path, [normalized_path])
+        else:
+            core_unstage_paths(window.repo_path, [normalized_path])
+    except RuntimeError as exc:
+        _trace_commit_selection_event(
+            window,
+            "ui.commit.main.file_level_toggle.error",
+            path=normalized_path,
+            stage=bool(stage),
+            reason=reason,
+            error=str(exc),
+        )
+        QMessageBox.critical(window, "Commit", str(exc))
+        return False
+    _apply_commit_stage_change_ui(
+        window,
+        status_message=status_message,
+        path=normalized_path,
+        preserve_diff_rows=preserve_diff_rows,
+    )
+    return True
+
+
 def _sync_commit_pr_button_state(window: object, file_count: int) -> None:
     if not hasattr(window, "commit_open_pr_button"):
         return
@@ -396,7 +506,7 @@ def _sync_commit_status_entries_in_place(window: object) -> bool:
     if not isinstance(file_item_by_path, dict) or not file_item_by_path:
         return False
     try:
-        status_entries = core_list_status_entries(repo_path)
+        status_entries = _load_commit_status_entries(window)
     except RuntimeError as exc:
         QMessageBox.critical(window, "Commit", str(exc))
         return False
@@ -1202,7 +1312,7 @@ def refresh_commit_files(window: object) -> None:
         update_commit_selection_label(window)
         return
     try:
-        status_entries = core_list_status_entries(window.repo_path)
+        status_entries = _load_commit_status_entries(window)
     except RuntimeError as exc:
         window.commit_files_list.blockSignals(False)
         window.commit_selected_path = ""
@@ -2301,6 +2411,19 @@ def _apply_commit_diff_dialog_toggle(
     operation_diff_data = _dialog_diff_data_for_scope(dialog_state, normalized_scope)
     if operation_diff_data is None:
         return False
+    path = str(dialog_state.get("path", "")).strip()
+    if _diff_has_dev_null_transition(operation_diff_data):
+        toggled = _apply_commit_file_level_toggle(
+            window,
+            path=path,
+            stage=(normalized_scope != "staged"),
+            preserve_diff_rows=False,
+            reason="dev_null_dialog",
+        )
+        if toggled:
+            _refresh_commit_diff_dialog_data_cache(window, dialog_state)
+            _refresh_commit_diff_dialog_views(window, dialog_state)
+        return toggled
     if old_line_info is not None or new_line_info is not None:
         resolved_hunk_index, resolved_old, resolved_new = _resolve_dialog_line_infos_for_scope(
             dialog_state,
@@ -3361,6 +3484,15 @@ def _toggle_commit_diff_row_from_snapshot(
         diff_data = _load_operation_diff_data_for_scope(window, effective_path, source_scope)
         if diff_data is None:
             diff_data = _get_commit_diff_data_for_scope(window, source_scope)
+        if _diff_has_dev_null_transition(diff_data):
+            _apply_commit_file_level_toggle(
+                window,
+                path=effective_path,
+                stage=not reverse,
+                preserve_diff_rows=preserve_diff_rows,
+                reason="dev_null_hunk",
+            )
+            return
         resolved_hunk_index = _resolve_hunk_index_for_row_snapshot(
             window,
             diff_data,
@@ -3378,6 +3510,15 @@ def _toggle_commit_diff_row_from_snapshot(
         diff_data = _load_operation_diff_data_for_scope(window, effective_path, source_scope)
         if diff_data is None:
             diff_data = _get_commit_diff_data_for_scope(window, source_scope)
+        if _diff_has_dev_null_transition(diff_data):
+            _apply_commit_file_level_toggle(
+                window,
+                path=effective_path,
+                stage=not reverse,
+                preserve_diff_rows=preserve_diff_rows,
+                reason="dev_null_line",
+            )
+            return
         resolved_line_info = _resolve_line_info_for_diff_data(
             diff_data,
             source_line_info=line_info,
@@ -3714,6 +3855,16 @@ def stage_selected_commit_hunk(window: object, *, preserve_diff_rows: bool = Fal
     if resolved_hunk_index is None:
         QMessageBox.information(window, "Commit", "Selecione um bloco de diff.")
         return
+    path = _current_commit_file_path(window)
+    if _diff_has_dev_null_transition(diff_data):
+        _apply_commit_file_level_toggle(
+            window,
+            path=path,
+            stage=True,
+            preserve_diff_rows=preserve_diff_rows,
+            reason="dev_null_hunk_button",
+        )
+        return
     patch = build_patch_for_hunk(diff_data, resolved_hunk_index)
     if not patch:
         return
@@ -3730,7 +3881,6 @@ def stage_selected_commit_hunk(window: object, *, preserve_diff_rows: bool = Fal
         _trace_commit_selection_event(window, "ui.commit.main.stage_hunk.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
-    path = _current_commit_file_path(window)
     _apply_commit_stage_change_ui(
         window,
         status_message="Bloco adicionado ao stage.",
@@ -3756,6 +3906,16 @@ def unstage_selected_commit_hunk(window: object, *, preserve_diff_rows: bool = F
     if resolved_hunk_index is None:
         QMessageBox.information(window, "Commit", "Selecione um bloco de diff.")
         return
+    path = _current_commit_file_path(window)
+    if _diff_has_dev_null_transition(diff_data):
+        _apply_commit_file_level_toggle(
+            window,
+            path=path,
+            stage=False,
+            preserve_diff_rows=preserve_diff_rows,
+            reason="dev_null_hunk_button",
+        )
+        return
     patch = build_patch_for_hunk(diff_data, resolved_hunk_index)
     if not patch:
         return
@@ -3772,7 +3932,6 @@ def unstage_selected_commit_hunk(window: object, *, preserve_diff_rows: bool = F
         _trace_commit_selection_event(window, "ui.commit.main.unstage_hunk.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
-    path = _current_commit_file_path(window)
     _apply_commit_stage_change_ui(
         window,
         status_message="Bloco removido do stage.",
@@ -3811,6 +3970,16 @@ def stage_selected_commit_line(window: object, *, preserve_diff_rows: bool = Fal
     if not isinstance(line_info, DiffLineInfo):
         window._set_status("Linha nao localizada no diff atual (tente novamente).")
         return
+    path = _current_commit_file_path(window)
+    if _diff_has_dev_null_transition(diff_data):
+        _apply_commit_file_level_toggle(
+            window,
+            path=path,
+            stage=True,
+            preserve_diff_rows=preserve_diff_rows,
+            reason="dev_null_line_button",
+        )
+        return
     patch = build_patch_for_line(diff_data, line_info)
     if not patch:
         return
@@ -3826,7 +3995,6 @@ def stage_selected_commit_line(window: object, *, preserve_diff_rows: bool = Fal
         _trace_commit_selection_event(window, "ui.commit.main.stage_line.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
-    path = _current_commit_file_path(window)
     _apply_commit_stage_change_ui(
         window,
         status_message="Linha adicionada ao stage.",
@@ -3865,6 +4033,16 @@ def unstage_selected_commit_line(window: object, *, preserve_diff_rows: bool = F
     if not isinstance(line_info, DiffLineInfo):
         window._set_status("Linha nao localizada no diff atual (tente novamente).")
         return
+    path = _current_commit_file_path(window)
+    if _diff_has_dev_null_transition(diff_data):
+        _apply_commit_file_level_toggle(
+            window,
+            path=path,
+            stage=False,
+            preserve_diff_rows=preserve_diff_rows,
+            reason="dev_null_line_button",
+        )
+        return
     patch = build_patch_for_line(diff_data, line_info)
     if not patch:
         return
@@ -3880,7 +4058,6 @@ def unstage_selected_commit_line(window: object, *, preserve_diff_rows: bool = F
         _trace_commit_selection_event(window, "ui.commit.main.unstage_line.error", error=str(exc))
         QMessageBox.critical(window, "Commit", str(exc))
         return
-    path = _current_commit_file_path(window)
     _apply_commit_stage_change_ui(
         window,
         status_message="Linha removida do stage.",
