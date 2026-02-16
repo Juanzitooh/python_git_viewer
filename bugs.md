@@ -20,7 +20,7 @@ Convencao:
 | B006 | resolvido | P1 | Clone | bug | Campo pasta opcional clona em pasta literal; esperado `pasta/repo` quando informado namespace. | Checklist secao 4 |
 | B007 | resolvido | P1 | Commit | regressao | Lista de arquivos sem linha `(todos)` e sem agrupamento por pasta para selecao em lote. | Checklist secao 5 + observacao BUG5 |
 | B008 | resolvido | P1 | Commit | ux | Excesso de botoes e fluxo de selecao pior que Tk; checkbox/legenda confusos. | Checklist secao 5 + observacao BUG5 |
-| B009 | em_progresso | P1 | Diff (Commit) | regressao | Visual de diff ruim: sem leitura clara de `+/-`, cores e marcadores como no Tk. | Checklist secao 5 + observacao BUG3 |
+| B009 | resolvido | P1 | Diff (Commit) | regressao | Visual de diff ruim: sem leitura clara de `+/-`, cores e marcadores como no Tk. | Checklist secao 5 + observacao BUG3 |
 | B010 | resolvido | P1 | Commit | bug | Stash nao confirmado como funcionando/atualizando tela. | Checklist secao 5 |
 | B011 | resolvido | P2 | Commit | ux | Undo commit deveria expor apenas `soft` e `mixed` (remover `hard`). | Checklist secao 5 |
 | B012 | resolvido | P1 | Historico | bug | Busca por texto nao filtra conforme esperado em tempo real. | Checklist secao 6 |
@@ -99,6 +99,7 @@ Convencao:
   - Scroll acidental em listas/diff foi reduzido com `setAutoScroll(False)` em widgets padrao (`UnifiedListWidget` e `DiffColumnsView`) para mitigar salto de viewport em cliques rapidos.
   - Diff em colunas (Historico/Importar/Comparar/Stash) agora exibe numeracao `Ant`/`Nov` separada, mantendo ordem do patch e facilitando leitura de linhas removidas/adicionadas/modificadas.
   - Render de diff recebeu destaque visual adicional por tipo de linha (fundo suave para `added/removed/modified/hunk`), melhorando contraste e leitura sem depender de simbolos `+/-`.
+  - `B009` aba Commit passou a exibir prefixo semantico na coluna de linha (`+`, `-`, `~`) junto da numeracao no diff principal, com o mesmo motor de cores/fundo para reforcar leitura de adicao/remocao/modificacao.
   - `B014` e `B020` foram consolidados no mesmo motor de diff em colunas com padrao unico de numeracao e selecao, reduzindo divergencia visual entre abas.
   - `B015` aba Historico agora reforca tooltip de commit no hover (`itemEntered`), mostrando hash/data/presenca local-online de forma consistente no fluxo manual.
   - `B022` restauracao da aba ativa foi corrigida com preferencia por `last_tab_name` e fallback seguro por indice (incluindo caso dinamico da aba `Stash`).
