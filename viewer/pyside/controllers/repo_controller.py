@@ -23,7 +23,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.branch_ops import checkout_branch as core_checkout_branch
+from ...core.branch_ops import (
+    checkout_branch as core_checkout_branch,
+    delete_local_branch as core_delete_local_branch,
+    delete_remote_branch as core_delete_remote_branch,
+    local_branch_exists as core_local_branch_exists,
+    remote_branch_exists as core_remote_branch_exists,
+)
 from ...core.git_client import is_git_repo
 from ...core.repo_state import (
     get_ahead_behind as core_get_ahead_behind,
@@ -134,8 +140,17 @@ def _workspace_repo_sort_key(window: object, repo_path: str) -> tuple[str, str]:
 
 def format_branch_display_label(branch_name: str, default_branch: str) -> str:
     display_name = branch_name
+    is_remote_entry = False
+    # `list_branches` retorna remotas no formato `remote/branch` somente quando
+    # não existe equivalente local, então esse sufixo comunica o escopo ao usuário.
     if branch_name.startswith("origin/"):
         display_name = branch_name[len("origin/") :]
+        is_remote_entry = True
+    elif "/" in branch_name:
+        remote, _, short_name = branch_name.partition("/")
+        if remote and short_name and remote in {"origin", "upstream"}:
+            display_name = short_name
+            is_remote_entry = True
     is_default = bool(
         default_branch
         and (
@@ -143,9 +158,44 @@ def format_branch_display_label(branch_name: str, default_branch: str) -> str:
             or branch_name == f"origin/{default_branch}"
         )
     )
+    scope_suffix = " (remota)" if is_remote_entry else " (local)"
     if is_default:
-        return f"★ {display_name}"
-    return display_name
+        return f"★ {display_name}{scope_suffix}"
+    return f"{display_name}{scope_suffix}"
+
+
+def _split_remote_branch_ref(branch_name: str) -> tuple[str, str]:
+    remote, _, short_name = branch_name.partition("/")
+    return remote.strip(), short_name.strip()
+
+
+def _branch_target_capabilities(repo_path: str, branch_name: str) -> dict[str, str | bool]:
+    normalized = str(branch_name).strip()
+    local_exists = core_local_branch_exists(repo_path, normalized)
+    remote_ref = ""
+    remote_name = ""
+    remote_branch = ""
+
+    if core_remote_branch_exists(repo_path, normalized):
+        candidate_remote, candidate_branch = _split_remote_branch_ref(normalized)
+        if candidate_remote and candidate_branch:
+            remote_ref = normalized
+            remote_name = candidate_remote
+            remote_branch = candidate_branch
+    elif local_exists:
+        origin_candidate = f"origin/{normalized}"
+        if core_remote_branch_exists(repo_path, origin_candidate):
+            remote_ref = origin_candidate
+            remote_name = "origin"
+            remote_branch = normalized
+
+    return {
+        "branch": normalized,
+        "local_exists": local_exists,
+        "remote_ref": remote_ref,
+        "remote_name": remote_name,
+        "remote_branch": remote_branch,
+    }
 
 
 def collect_known_repos(window: object) -> list[str]:
@@ -300,35 +350,248 @@ def _workspace_card_columns(window: object) -> int:
     return 4
 
 
-def _on_workspace_card_branch_activated(window: object, repo_path: str, branch_combo: NoScrollComboBox) -> None:
-    target_value = branch_combo.currentData()
-    target_branch = str(target_value).strip() if target_value is not None else ""
-    if not target_branch:
-        return
+def _checkout_branch_in_repo(window: object, repo_path: str, target_branch: str) -> bool:
     normalized_repo = normalize_repo_path(repo_path)
+    normalized_target = str(target_branch).strip()
+    if not normalized_target:
+        return False
     try:
         current_branch = core_get_current_branch(normalized_repo).strip()
     except RuntimeError as exc:
         QMessageBox.critical(window, "Branch", str(exc))
         refresh_workspace_tree(window)
-        return
-    if current_branch == target_branch:
-        return
+        return False
+    if current_branch == normalized_target:
+        return False
     try:
-        core_checkout_branch(normalized_repo, target_branch)
+        core_checkout_branch(normalized_repo, normalized_target)
     except RuntimeError as exc:
         QMessageBox.critical(window, "Branch", str(exc))
         refresh_workspace_tree(window)
-        return
+        return False
 
     if _is_current_repo(window, normalized_repo):
         refresh_repo_state_ui(window)
         window._refresh_commit_files()
+        window._refresh_stash_tab_visibility()
         window._reload_history_commits()
         window._refresh_compare_branch_options()
         window._refresh_import_source_repos()
+        window._sync_import_target_label()
     refresh_workspace_tree(window)
-    window._set_status(f"Branch alterada em {os.path.basename(normalized_repo)}: {target_branch}")
+    window._set_status(f"Branch alterada em {os.path.basename(normalized_repo)}: {normalized_target}")
+    window._persist_state()
+    return True
+
+
+def _on_workspace_card_branch_activated(window: object, repo_path: str, branch_combo: NoScrollComboBox) -> None:
+    target_value = branch_combo.currentData()
+    target_branch = str(target_value).strip() if target_value is not None else ""
+    if not target_branch:
+        return
+    _checkout_branch_in_repo(window, repo_path, target_branch)
+
+
+def _delete_local_branch_with_optional_force(window: object, repo_path: str, branch_name: str) -> bool:
+    try:
+        core_delete_local_branch(repo_path, branch_name, force=False)
+        return True
+    except RuntimeError as exc:
+        lowered = str(exc).lower()
+        requires_force = "not fully merged" in lowered or "não está totalmente mesclada" in lowered
+        if not requires_force:
+            QMessageBox.critical(window, "Excluir branch", str(exc))
+            return False
+    force_answer = QMessageBox.question(
+        window,
+        "Excluir branch",
+        (
+            f"A branch local `{branch_name}` não está totalmente mesclada.\n\n"
+            "Deseja forçar exclusão local? (-D)"
+        ),
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    if force_answer != QMessageBox.StandardButton.Yes:
+        return False
+    try:
+        core_delete_local_branch(repo_path, branch_name, force=True)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Excluir branch", str(exc))
+        return False
+    return True
+
+
+def _delete_branch_with_confirmation(window: object, repo_path: str, branch_name: str) -> None:
+    normalized_repo = normalize_repo_path(repo_path)
+    capabilities = _branch_target_capabilities(normalized_repo, branch_name)
+    normalized_branch = str(capabilities.get("branch", "")).strip()
+    if not normalized_branch:
+        return
+    local_exists = bool(capabilities.get("local_exists", False))
+    remote_name = str(capabilities.get("remote_name", "")).strip()
+    remote_branch = str(capabilities.get("remote_branch", "")).strip()
+    remote_exists = bool(remote_name and remote_branch)
+
+    try:
+        current_branch = core_get_current_branch(normalized_repo).strip()
+    except RuntimeError:
+        current_branch = ""
+
+    can_delete_local = local_exists and normalized_branch != current_branch
+    can_delete_remote = remote_exists
+
+    if not can_delete_local and not can_delete_remote:
+        if local_exists and normalized_branch == current_branch:
+            QMessageBox.information(
+                window,
+                "Excluir branch",
+                "Não é possível excluir a branch local atualmente em uso.",
+            )
+        return
+
+    delete_local = False
+    delete_remote = False
+    if can_delete_local and can_delete_remote:
+        confirm = QMessageBox(window)
+        confirm.setWindowTitle("Excluir branch")
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setText(f"Branch selecionada: {normalized_branch}")
+        confirm.setInformativeText("Escolha como excluir:")
+        local_button = confirm.addButton("Excluir só local", QMessageBox.ButtonRole.AcceptRole)
+        both_button = confirm.addButton("Excluir local + remota", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_button = confirm.addButton(QMessageBox.StandardButton.Cancel)
+        confirm.setDefaultButton(cancel_button)
+        confirm.exec()
+        clicked = confirm.clickedButton()
+        if clicked == cancel_button or clicked is None:
+            return
+        if clicked == local_button:
+            delete_local = True
+        elif clicked == both_button:
+            delete_local = True
+            delete_remote = True
+    elif can_delete_local:
+        answer = QMessageBox.question(
+            window,
+            "Excluir branch local",
+            f"Excluir branch local `{normalized_branch}`?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        delete_local = answer == QMessageBox.StandardButton.Yes
+    elif can_delete_remote:
+        answer = QMessageBox.question(
+            window,
+            "Excluir branch remota",
+            f"Excluir branch remota `{remote_name}/{remote_branch}`?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        delete_remote = answer == QMessageBox.StandardButton.Yes
+
+    if not delete_local and not delete_remote:
+        return
+
+    performed_actions: list[str] = []
+    if delete_local:
+        if not _delete_local_branch_with_optional_force(window, normalized_repo, normalized_branch):
+            return
+        performed_actions.append(f"local `{normalized_branch}`")
+    if delete_remote:
+        try:
+            core_delete_remote_branch(normalized_repo, remote_name, remote_branch)
+        except RuntimeError as exc:
+            QMessageBox.critical(window, "Excluir branch", str(exc))
+            return
+        performed_actions.append(f"remota `{remote_name}/{remote_branch}`")
+
+    if _is_current_repo(window, normalized_repo):
+        refresh_repo_state_ui(window)
+        window._refresh_commit_files()
+        window._refresh_stash_tab_visibility()
+        window._reload_history_commits()
+        window._refresh_compare_branch_options()
+        window._refresh_import_source_repos()
+        window._sync_import_target_label()
+    refresh_workspace_tree(window)
+    window._persist_state()
+    window._set_status(f"Branch excluída: {', '.join(performed_actions)}")
+
+
+def _show_branch_context_menu(window: object, global_pos: QPoint, repo_path: str, branch_name: str) -> None:
+    normalized_repo = normalize_repo_path(repo_path)
+    normalized_branch = str(branch_name).strip()
+    if not normalized_repo or not normalized_branch:
+        return
+    if not os.path.isdir(normalized_repo) or not is_git_repo(normalized_repo):
+        return
+
+    capabilities = _branch_target_capabilities(normalized_repo, normalized_branch)
+    local_exists = bool(capabilities.get("local_exists", False))
+    remote_name = str(capabilities.get("remote_name", "")).strip()
+    remote_branch = str(capabilities.get("remote_branch", "")).strip()
+    remote_exists = bool(remote_name and remote_branch)
+
+    try:
+        current_branch = core_get_current_branch(normalized_repo).strip()
+    except RuntimeError:
+        current_branch = ""
+
+    can_checkout = normalized_branch != current_branch
+    can_delete_local = local_exists and normalized_branch != current_branch
+    can_delete_remote = remote_exists
+    branch_scope = "Remota" if normalized_branch.startswith(f"{remote_name}/") and remote_exists else "Local"
+
+    menu = QMenu(window)
+    title_action = menu.addAction(f"Branch: {normalized_branch}")
+    title_action.setEnabled(False)
+    scope_action = menu.addAction(f"Tipo: {branch_scope}")
+    scope_action.setEnabled(False)
+    if current_branch and normalized_branch == current_branch:
+        current_action = menu.addAction("Branch atual")
+        current_action.setEnabled(False)
+    menu.addSeparator()
+    action_checkout = menu.addAction("Fazer checkout")
+    action_checkout.setEnabled(can_checkout)
+    action_copy_name = menu.addAction("Copiar nome da branch")
+    menu.addSeparator()
+    action_delete_branch = menu.addAction("Excluir branch...")
+    action_delete_branch.setEnabled(can_delete_local or can_delete_remote)
+
+    selected_action = menu.exec(global_pos)
+    if selected_action is None:
+        return
+    if selected_action == action_checkout:
+        _checkout_branch_in_repo(window, normalized_repo, normalized_branch)
+        return
+    if selected_action == action_copy_name:
+        window._copy_to_clipboard(normalized_branch, status="Nome da branch copiado.")
+        return
+    if selected_action == action_delete_branch:
+        _delete_branch_with_confirmation(window, normalized_repo, normalized_branch)
+
+
+def _on_workspace_card_branch_dropdown_context_menu(
+    window: object,
+    repo_path: str,
+    branch_combo: NoScrollComboBox,
+    dropdown: object,
+    pos: QPoint,
+) -> None:
+    if not hasattr(dropdown, "indexAt") or not hasattr(dropdown, "viewport"):
+        return
+    index = dropdown.indexAt(pos)
+    branch_name = ""
+    if index.isValid():
+        value = index.data(Qt.ItemDataRole.UserRole)
+        branch_name = str(value).strip() if value is not None else ""
+    if not branch_name:
+        selected = branch_combo.currentData()
+        branch_name = str(selected).strip() if selected is not None else ""
+    if not branch_name:
+        return
+    _show_branch_context_menu(window, dropdown.viewport().mapToGlobal(pos), repo_path, branch_name)
 
 
 def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
@@ -382,7 +645,23 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
     )
     branch_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     branch_combo.customContextMenuRequested.connect(
-        lambda pos, path=repo_path, combo=branch_combo: _show_repo_context_menu(window, combo.mapToGlobal(pos), path)
+        lambda pos, path=repo_path, combo=branch_combo: _show_branch_context_menu(
+            window,
+            combo.mapToGlobal(pos),
+            path,
+            str(combo.currentData() or "").strip(),
+        )
+    )
+    dropdown = branch_combo.view()
+    dropdown.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    dropdown.customContextMenuRequested.connect(
+        lambda pos, path=repo_path, combo=branch_combo, view=dropdown: _on_workspace_card_branch_dropdown_context_menu(
+            window,
+            path,
+            combo,
+            view,
+            pos,
+        )
     )
     branch_layout.addWidget(branch_combo, stretch=1)
     card_layout.addWidget(branch_row)
@@ -691,6 +970,33 @@ def on_repo_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
     if not repo_path:
         return
     _show_repo_context_menu(window, dropdown.viewport().mapToGlobal(pos), repo_path)
+
+
+def on_branch_combo_context_menu(window: object, pos: QPoint) -> None:
+    if not window.repo_path:
+        return
+    selected = window.branch_combo.currentData()
+    branch_name = str(selected).strip() if selected is not None else ""
+    if not branch_name:
+        return
+    _show_branch_context_menu(window, window.branch_combo.mapToGlobal(pos), window.repo_path, branch_name)
+
+
+def on_branch_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
+    if not window.repo_path:
+        return
+    dropdown = window.branch_combo.view()
+    index = dropdown.indexAt(pos)
+    branch_name = ""
+    if index.isValid():
+        value = index.data(Qt.ItemDataRole.UserRole)
+        branch_name = str(value).strip() if value is not None else ""
+    if not branch_name:
+        selected = window.branch_combo.currentData()
+        branch_name = str(selected).strip() if selected is not None else ""
+    if not branch_name:
+        return
+    _show_branch_context_menu(window, dropdown.viewport().mapToGlobal(pos), window.repo_path, branch_name)
 
 
 def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:

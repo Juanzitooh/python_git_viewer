@@ -35,6 +35,11 @@ def build_top_bar(window: object, root_layout: QVBoxLayout, parent: QWidget) -> 
     window.branch_combo = NoScrollComboBox(bar)
     window.branch_combo.setMinimumWidth(120)
     window.branch_combo.currentIndexChanged.connect(window._on_branch_changed)
+    window.branch_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    window.branch_combo.customContextMenuRequested.connect(window._on_branch_combo_context_menu)
+    branch_dropdown = window.branch_combo.view()
+    branch_dropdown.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    branch_dropdown.customContextMenuRequested.connect(window._on_branch_combo_dropdown_context_menu)
     bar_layout.addWidget(QLabel("Branch:", bar))
     bar_layout.addWidget(window.branch_combo)
 

@@ -80,3 +80,41 @@ def create_branch(repo_path: str, branch_name: str, base_branch: str = "") -> No
     if base_branch.strip():
         args.append(base_branch.strip())
     run_git(repo_path, args)
+
+
+def local_branch_exists(repo_path: str, branch_name: str) -> bool:
+    normalized = branch_name.strip()
+    if not normalized:
+        return False
+    try:
+        run_git(repo_path, ["show-ref", "--verify", "--quiet", f"refs/heads/{normalized}"])
+    except RuntimeError:
+        return False
+    return True
+
+
+def remote_branch_exists(repo_path: str, remote_ref: str) -> bool:
+    normalized = remote_ref.strip()
+    if not normalized:
+        return False
+    try:
+        run_git(repo_path, ["show-ref", "--verify", "--quiet", f"refs/remotes/{normalized}"])
+    except RuntimeError:
+        return False
+    return True
+
+
+def delete_local_branch(repo_path: str, branch_name: str, *, force: bool = False) -> None:
+    normalized = branch_name.strip()
+    if not normalized:
+        raise RuntimeError("Branch local inválida.")
+    flag = "-D" if force else "-d"
+    run_git(repo_path, ["branch", flag, normalized])
+
+
+def delete_remote_branch(repo_path: str, remote_name: str, branch_name: str) -> None:
+    normalized_remote = remote_name.strip()
+    normalized_branch = branch_name.strip()
+    if not normalized_remote or not normalized_branch:
+        raise RuntimeError("Branch remota inválida.")
+    run_git(repo_path, ["push", normalized_remote, "--delete", normalized_branch])

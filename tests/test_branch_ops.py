@@ -4,7 +4,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from viewer.core.branch_ops import checkout_branch
+from viewer.core.branch_ops import (
+    checkout_branch,
+    delete_local_branch,
+    delete_remote_branch,
+    local_branch_exists,
+    remote_branch_exists,
+)
 
 
 class TestBranchOps(unittest.TestCase):
@@ -49,6 +55,38 @@ class TestBranchOps(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 checkout_branch("/tmp/repo", "main")
         mocked_run_git.assert_called_once_with("/tmp/repo", ["checkout", "main"])
+
+    def test_local_branch_exists(self) -> None:
+        with patch("viewer.core.branch_ops.run_git", return_value=""):
+            self.assertTrue(local_branch_exists("/tmp/repo", "main"))
+        with patch("viewer.core.branch_ops.run_git", side_effect=RuntimeError("nao encontrado")):
+            self.assertFalse(local_branch_exists("/tmp/repo", "main"))
+
+    def test_remote_branch_exists(self) -> None:
+        with patch("viewer.core.branch_ops.run_git", return_value=""):
+            self.assertTrue(remote_branch_exists("/tmp/repo", "origin/main"))
+        with patch("viewer.core.branch_ops.run_git", side_effect=RuntimeError("nao encontrado")):
+            self.assertFalse(remote_branch_exists("/tmp/repo", "origin/main"))
+
+    def test_delete_local_branch_default_and_force(self) -> None:
+        with patch("viewer.core.branch_ops.run_git") as mocked_run_git:
+            delete_local_branch("/tmp/repo", "feature/demo")
+            delete_local_branch("/tmp/repo", "feature/demo", force=True)
+        self.assertEqual(
+            mocked_run_git.call_args_list,
+            [
+                unittest.mock.call("/tmp/repo", ["branch", "-d", "feature/demo"]),
+                unittest.mock.call("/tmp/repo", ["branch", "-D", "feature/demo"]),
+            ],
+        )
+
+    def test_delete_remote_branch(self) -> None:
+        with patch("viewer.core.branch_ops.run_git") as mocked_run_git:
+            delete_remote_branch("/tmp/repo", "origin", "feature/demo")
+        mocked_run_git.assert_called_once_with(
+            "/tmp/repo",
+            ["push", "origin", "--delete", "feature/demo"],
+        )
 
 
 if __name__ == "__main__":

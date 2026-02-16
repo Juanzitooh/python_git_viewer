@@ -58,7 +58,7 @@ def create_new_branch(window: object) -> None:
     except RuntimeError as exc:
         QMessageBox.critical(window, "Nova branch", str(exc))
         return
-    window._set_status(f"Branch criada: {normalized}")
+    window._set_status(f"Branch local criada: {normalized} (ainda nao publicada).")
     window._refresh_repo_state_ui()
     window._refresh_stash_tab_visibility()
     window._refresh_workspace_tree()

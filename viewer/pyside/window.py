@@ -77,6 +77,8 @@ from .controllers import (
     on_workspace_selection_changed,
     on_repo_combo_context_menu,
     on_repo_combo_dropdown_context_menu,
+    on_branch_combo_context_menu,
+    on_branch_combo_dropdown_context_menu,
     open_clone_dialog,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
@@ -1468,6 +1470,12 @@ class QtShellWindow(QMainWindow):
 
     def _on_repo_combo_dropdown_context_menu(self, pos: QPoint) -> None:
         on_repo_combo_dropdown_context_menu(self, pos)
+
+    def _on_branch_combo_context_menu(self, pos: QPoint) -> None:
+        on_branch_combo_context_menu(self, pos)
+
+    def _on_branch_combo_dropdown_context_menu(self, pos: QPoint) -> None:
+        on_branch_combo_dropdown_context_menu(self, pos)
 
     def _on_branch_changed(self, _index: int) -> None:
         on_branch_changed(self, _index)
