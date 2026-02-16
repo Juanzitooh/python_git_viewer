@@ -310,6 +310,18 @@ Legenda
   Escopo: tratar em lotes os bugs reportados no checklist manual, priorizando P0/P1 (crash, bloqueios de fluxo e regressao clara de usabilidade) antes dos polimentos.
   Aceite: cada bug tratado deve ser movido para `resolvido` em `bugs.md` com validacao automatizada/local e, apos reteste manual, para `validado`.
   Progresso atual: lote Commit `B007/B008/B010/B011` implementado (linha `(todos)`, agrupamento por pasta, simplificacao de controles, Undo limitado a `soft/mixed`, selecao sincronizada com stage/auto-stage inicial e gerenciador visual de stashes), com evolucao do stash para aba dinamica (somente quando houver stashes, com contexto de repositorio/branch); `B009` em progresso com janela avancada de diff (linha/lado-a-lado/cima-baixo, copiar/reverter linha/bloco) e novo diff principal em grade com marcador clicavel no Commit, aguardando validacao manual; `B004` resolvido com retorno da aba Repositorios para cards com scroll e card de adicionar repositorio; `B019/B021/B024` resolvidos com simplificacao da aba Importar, remocao de limite fixo nas configuracoes e timers de auto status/auto fetch no shell; `B013` resolvido com infinite scroll no Historico; `B014/B020` em ajuste com novo motor de diff em colunas padronizado para abas sem stage.
+- [ ] R7.4.2.4 Inventario e plano de remocao do legado Tkinter
+  Escopo: mapear arquivos, imports e pontos de execucao ainda dependentes do frontend antigo (`main.py`, `viewer/app.py`, `viewer/ui_*` e referencias em docs), com checklist de remocao segura.
+  Aceite: existe lista fechada do que sera removido/migrado, com validacao de que o fluxo PySide6 cobre os mesmos casos de uso.
+- [ ] R7.4.2.5 Remocao do frontend Tkinter e limpeza de codigo legado
+  Escopo: excluir/modularizar artefatos do fluxo antigo que nao sao mais usados, removendo dependencia de Tkinter do caminho principal de execucao.
+  Aceite: projeto sobe sem referencias obrigatorias ao Tkinter e sem arquivos legacy nao utilizados no runtime principal.
+- [ ] R7.4.2.6 Consolidacao da documentacao para PySide6-only
+  Escopo: atualizar `README.md`, `AGENTS.global.md` e demais `.md` para manter somente instrucoes e arquitetura do frontend PySide6.
+  Aceite: nao ha instrucoes ativas apontando para fluxo Tkinter ou `main_pyside6.py` como "alternativo".
+- [ ] R7.4.2.7 Troca de entrypoint oficial para `main.py`
+  Escopo: renomear `main_pyside6.py` para `main.py` como entrada oficial e ajustar chamadas internas, scripts, build e testes.
+  Aceite: comando oficial volta a ser `python3 main.py`, com compatibilidade validada no ambiente de desenvolvimento.
 - [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
   Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
   Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.
@@ -345,9 +357,13 @@ Ordem de execucao sugerida
 - 22) R7.4.3.4
 - 23) R7.4.1
 - 24) R7.4.2
-- 25) R7.5
-- 26) R7.6
-- 27) R7.7
+- 25) R7.4.2.4
+- 26) R7.4.2.5
+- 27) R7.4.2.6
+- 28) R7.4.2.7
+- 29) R7.5
+- 30) R7.6
+- 31) R7.7
 
 ## Regras de Manutencao
 
