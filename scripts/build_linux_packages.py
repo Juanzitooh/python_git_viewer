@@ -88,7 +88,7 @@ def build_deb(
         "Priority: optional\n"
         "Architecture: {arch}\n"
         "Maintainer: Git Viewer Team\n"
-        "Depends: libgl1, libxkbcommon0\n"
+        "Depends: libc6 (>= 2.35), libgl1, libxkbcommon0, libxcb-cursor0\n"
         "Description: Git Viewer (PySide6)\n"
         " GUI Git para Linux com commit, historico, importar e comparar.\n"
     ).format(name=package_name, version=version, arch=arch)
