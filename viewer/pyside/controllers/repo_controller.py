@@ -5,8 +5,10 @@ import shutil
 from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -144,37 +146,105 @@ def format_branch_display_label(
     default_branch: str,
     tracked_local_branches: set[str] | None = None,
 ) -> str:
-    if branch_name == "HEAD":
-        return "HEAD (detached)"
-    display_name = branch_name
-    is_remote_entry = False
-    # `list_branches` retorna remotas no formato `remote/branch` somente quando
-    # não existe equivalente local, então esse sufixo comunica o escopo ao usuário.
-    if branch_name.startswith("origin/"):
-        display_name = branch_name[len("origin/") :]
-        is_remote_entry = True
-    elif "/" in branch_name:
-        remote, _, short_name = branch_name.partition("/")
+    payload = get_branch_display_payload(branch_name, default_branch, tracked_local_branches)
+    return payload["label"]
+
+
+def _branch_scope_kind(branch_name: str, tracked_local_branches: set[str] | None = None) -> str:
+    normalized = str(branch_name).strip()
+    if normalized == "HEAD":
+        return "detached"
+    if normalized.startswith("origin/"):
+        return "remote"
+    if "/" in normalized:
+        remote, _, short_name = normalized.partition("/")
         if remote and short_name and remote in {"origin", "upstream"}:
-            display_name = short_name
-            is_remote_entry = True
+            return "remote"
+    tracked = tracked_local_branches or set()
+    if normalized in tracked:
+        return "tracked"
+    return "local"
+
+
+def _branch_display_name(branch_name: str) -> str:
+    normalized = str(branch_name).strip()
+    if normalized.startswith("origin/"):
+        return normalized[len("origin/") :].strip()
+    if "/" in normalized:
+        remote, _, short_name = normalized.partition("/")
+        if remote and short_name and remote in {"origin", "upstream"}:
+            return short_name.strip()
+    return normalized
+
+
+def get_branch_display_payload(
+    branch_name: str,
+    default_branch: str,
+    tracked_local_branches: set[str] | None = None,
+) -> dict[str, str]:
+    normalized = str(branch_name).strip()
+    scope = _branch_scope_kind(normalized, tracked_local_branches)
     is_default = bool(
         default_branch
         and (
-            branch_name == default_branch
-            or branch_name == f"origin/{default_branch}"
+            normalized == default_branch
+            or normalized == f"origin/{default_branch}"
         )
     )
-    tracked = tracked_local_branches or set()
-    if is_remote_entry:
-        scope_suffix = " (remota)"
-    elif branch_name in tracked:
-        scope_suffix = " (local+remota)"
+    if scope == "detached":
+        return {
+            "label": "HEAD",
+            "scope": scope,
+            "tooltip": "HEAD detached: sem branch ativa. Faça checkout de uma branch para voltar ao fluxo normal.",
+        }
+    display_name = branch_name
+    display_name = _branch_display_name(display_name)
+    if scope == "remote":
+        tooltip = "Branch remota: ainda nao existe branch local equivalente neste repositorio."
+    elif scope == "tracked":
+        tooltip = "Branch local com upstream remoto configurado."
     else:
-        scope_suffix = " (local)"
+        tooltip = "Branch apenas local: ainda nao publicada no remoto."
     if is_default:
-        return f"★ {display_name}{scope_suffix}"
-    return f"{display_name}{scope_suffix}"
+        return {
+            "label": f"★ {display_name}",
+            "scope": scope,
+            "tooltip": f"{tooltip} Branch padrao do repositorio.",
+        }
+    return {"label": display_name, "scope": scope, "tooltip": tooltip}
+
+
+def _branch_scope_foreground_brush(window: object, scope: str) -> QBrush | None:
+    if scope != "local":
+        return None
+    theme = str(getattr(window, "current_theme", "dark")).strip().lower()
+    color_hex = "#b45309" if theme == "light" else "#fbbf24"
+    return QBrush(QColor(color_hex))
+
+
+def add_branch_combo_item(
+    window: object,
+    combo: QComboBox,
+    branch_name: str,
+    default_branch: str,
+    tracked_local_branches: set[str] | None = None,
+) -> None:
+    payload = get_branch_display_payload(branch_name, default_branch, tracked_local_branches)
+    combo.addItem(payload["label"], branch_name)
+    index = combo.count() - 1
+    combo.setItemData(index, payload["tooltip"], Qt.ItemDataRole.ToolTipRole)
+    brush = _branch_scope_foreground_brush(window, payload["scope"])
+    combo.setItemData(index, brush, Qt.ItemDataRole.ForegroundRole)
+
+
+def sync_branch_combo_tooltip(combo: QComboBox, fallback: str = "Selecionar branch") -> None:
+    index = combo.currentIndex()
+    if index < 0:
+        combo.setToolTip(fallback)
+        return
+    tooltip_value = combo.itemData(index, Qt.ItemDataRole.ToolTipRole)
+    tooltip = str(tooltip_value).strip() if tooltip_value is not None else ""
+    combo.setToolTip(tooltip or fallback)
 
 
 def _split_remote_branch_ref(branch_name: str) -> tuple[str, str]:
@@ -666,13 +736,14 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
     if not branches:
         branches = [branch]
     for branch_name in branches:
-        branch_combo.addItem(
-            format_branch_display_label(branch_name, default_branch, tracked_local_branches),
-            branch_name,
-        )
+        add_branch_combo_item(window, branch_combo, branch_name, default_branch, tracked_local_branches)
     current_index = branch_combo.findData(branch)
     if current_index >= 0:
         branch_combo.setCurrentIndex(current_index)
+    sync_branch_combo_tooltip(branch_combo, "Trocar branch deste repositorio")
+    branch_combo.currentIndexChanged.connect(
+        lambda _idx, combo=branch_combo: sync_branch_combo_tooltip(combo, "Trocar branch deste repositorio")
+    )
     branch_combo.activated.connect(
         lambda _idx, path=repo_path, combo=branch_combo: _on_workspace_card_branch_activated(window, path, combo)
     )
@@ -1294,6 +1365,7 @@ def refresh_repo_state_ui(window: object) -> None:
         window.ahead_button.setText("Push: 0")
         window.fetch_button.setText("Fetch")
         window.branch_combo.clear()
+        sync_branch_combo_tooltip(window.branch_combo, "Trocar branch ativa")
         window._sync_import_target_label()
         return
 
@@ -1314,15 +1386,13 @@ def refresh_repo_state_ui(window: object) -> None:
     try:
         window.branch_combo.clear()
         for branch in branches:
-            window.branch_combo.addItem(
-                format_branch_display_label(branch, default_branch, tracked_local_branches),
-                branch,
-            )
+            add_branch_combo_item(window, window.branch_combo, branch, default_branch, tracked_local_branches)
         index = window.branch_combo.findData(current)
         if index >= 0:
             window.branch_combo.setCurrentIndex(index)
     finally:
         window._setting_branch_programmatically = False
+    sync_branch_combo_tooltip(window.branch_combo, "Trocar branch ativa")
 
     upstream = core_get_upstream(window.repo_path)
     if not upstream:

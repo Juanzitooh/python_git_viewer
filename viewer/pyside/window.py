@@ -51,10 +51,10 @@ from .controllers import (
     collect_repo_paths_from_settings,
     create_commit_from_selection,
     format_repo_display_label,
-    format_branch_display_label,
     format_workspace_relative_path,
     build_repo_snapshot,
     build_repo_status_summary,
+    add_branch_combo_item,
     get_compare_branches,
     get_selected_commit_paths,
     get_selected_import_summaries,
@@ -103,6 +103,7 @@ from .controllers import (
     scan_workspace_repos,
     select_repo_combo_item,
     set_repo,
+    sync_branch_combo_tooltip,
     create_new_branch,
     load_settings_into_tab,
     on_settings_update_profile_changed,
@@ -605,13 +606,12 @@ class QtShellWindow(QMainWindow):
                 try:
                     self.branch_combo.clear()
                     for branch_name in branches:
-                        self.branch_combo.addItem(
-                            format_branch_display_label(
-                                branch_name,
-                                default_branch,
-                                tracked_local_branches,
-                            ),
+                        add_branch_combo_item(
+                            self,
+                            self.branch_combo,
                             branch_name,
+                            default_branch,
+                            tracked_local_branches,
                         )
                 finally:
                     self._setting_branch_programmatically = False
@@ -623,6 +623,7 @@ class QtShellWindow(QMainWindow):
                         self.branch_combo.setCurrentIndex(selected_index)
                     finally:
                         self._setting_branch_programmatically = False
+        sync_branch_combo_tooltip(self.branch_combo, "Trocar branch ativa")
 
         if not upstream:
             self.behind_button.setEnabled(False)

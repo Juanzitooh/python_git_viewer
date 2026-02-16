@@ -147,6 +147,9 @@ def refresh_compare_branch_options(window: object) -> None:
         QMessageBox.critical(window, "Comparar", str(exc))
         clear_compare_view(window)
         return
+    branches = [branch for branch in branches if branch and branch != "HEAD"]
+    if current == "HEAD":
+        current = ""
     if current and current not in branches:
         current = ""
 

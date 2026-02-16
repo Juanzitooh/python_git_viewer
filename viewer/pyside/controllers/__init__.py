@@ -101,6 +101,7 @@ from .settings_controller import (
 )
 from .repo_controller import (
     add_recent_repo,
+    add_branch_combo_item,
     build_repo_snapshot,
     build_repo_status_summary,
     collect_known_repos,
@@ -125,6 +126,7 @@ from .repo_controller import (
     scan_workspace_repos,
     select_repo_combo_item,
     set_repo,
+    sync_branch_combo_tooltip,
     sync_workspace_tree_selection,
 )
 from .sync_controller import (
@@ -228,6 +230,8 @@ __all__ = [
     "collect_repo_paths_from_settings",
     "repo_is_favorite",
     "format_workspace_relative_path",
+    "add_branch_combo_item",
+    "sync_branch_combo_tooltip",
     "format_branch_display_label",
     "format_repo_display_label",
     "collect_known_repos",
