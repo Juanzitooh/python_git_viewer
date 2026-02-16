@@ -584,6 +584,8 @@ class QtShellWindow(QMainWindow):
         upstream = str(snapshot.get("upstream", "")).strip()
         behind = _safe_int(snapshot.get("behind"))
         ahead = _safe_int(snapshot.get("ahead"))
+        if current_branch and current_branch not in branches:
+            branches = [current_branch, *branches]
 
         has_repo = bool(self.repo_path)
         self.fetch_button.setEnabled(has_repo)

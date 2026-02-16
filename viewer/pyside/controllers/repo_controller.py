@@ -144,6 +144,8 @@ def format_branch_display_label(
     default_branch: str,
     tracked_local_branches: set[str] | None = None,
 ) -> str:
+    if branch_name == "HEAD":
+        return "HEAD (detached)"
     display_name = branch_name
     is_remote_entry = False
     # `list_branches` retorna remotas no formato `remote/branch` somente quando
@@ -167,7 +169,7 @@ def format_branch_display_label(
     if is_remote_entry:
         scope_suffix = " (remota)"
     elif branch_name in tracked:
-        scope_suffix = " (local+online)"
+        scope_suffix = " (local+remota)"
     else:
         scope_suffix = " (local)"
     if is_default:
@@ -530,7 +532,13 @@ def _delete_branch_with_confirmation(window: object, repo_path: str, branch_name
     window._set_status(f"Branch excluída: {', '.join(performed_actions)}")
 
 
-def _show_branch_context_menu(window: object, global_pos: QPoint, repo_path: str, branch_name: str) -> None:
+def _show_branch_context_menu(
+    window: object,
+    global_pos: QPoint,
+    repo_path: str,
+    branch_name: str,
+    parent_widget: QWidget | None = None,
+) -> None:
     normalized_repo = normalize_repo_path(repo_path)
     normalized_branch = str(branch_name).strip()
     if not normalized_repo or not normalized_branch:
@@ -554,7 +562,7 @@ def _show_branch_context_menu(window: object, global_pos: QPoint, repo_path: str
     can_delete_remote = remote_exists
     branch_scope = "Remota" if normalized_branch.startswith(f"{remote_name}/") and remote_exists else "Local"
 
-    menu = QMenu(window)
+    menu = QMenu(parent_widget if isinstance(parent_widget, QWidget) else window)
     title_action = menu.addAction(f"Branch: {normalized_branch}")
     title_action.setEnabled(False)
     scope_action = menu.addAction(f"Tipo: {branch_scope}")
@@ -602,7 +610,14 @@ def _on_workspace_card_branch_dropdown_context_menu(
         branch_name = str(selected).strip() if selected is not None else ""
     if not branch_name:
         return
-    _show_branch_context_menu(window, dropdown.viewport().mapToGlobal(pos), repo_path, branch_name)
+    branch_combo.hidePopup()
+    _show_branch_context_menu(
+        window,
+        dropdown.viewport().mapToGlobal(pos),
+        repo_path,
+        branch_name,
+        parent_widget=dropdown.viewport(),
+    )
 
 
 def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
@@ -646,6 +661,8 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
         tracked_local_branches = core_list_local_branches_with_upstream(repo_path)
     except RuntimeError:
         branches = [branch]
+    if branch and branch not in branches:
+        branches = [branch, *branches]
     if not branches:
         branches = [branch]
     for branch_name in branches:
@@ -666,6 +683,7 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
             combo.mapToGlobal(pos),
             path,
             str(combo.currentData() or "").strip(),
+            parent_widget=combo,
         )
     )
     dropdown = branch_combo.view()
@@ -700,10 +718,22 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
             window._open_repo_in_vscode(path),
         )
     )
-    card.context_requested.connect(lambda global_pos, path=repo_path: _show_repo_context_menu(window, global_pos, path))
+    card.context_requested.connect(
+        lambda global_pos, path=repo_path, widget=card: _show_repo_context_menu(
+            window,
+            global_pos,
+            path,
+            parent_widget=widget,
+        )
+    )
     card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     card.customContextMenuRequested.connect(
-        lambda pos, path=repo_path, widget=card: _show_repo_context_menu(window, widget.mapToGlobal(pos), path)
+        lambda pos, path=repo_path, widget=card: _show_repo_context_menu(
+            window,
+            widget.mapToGlobal(pos),
+            path,
+            parent_widget=widget,
+        )
     )
 
     normalized_repo = normalize_repo_path(repo_path)
@@ -848,11 +878,16 @@ def on_workspace_item_double_clicked(window: object, item: object, _column: int)
         window._open_repo_in_vscode(target_repo)
 
 
-def _show_repo_context_menu(window: object, global_pos: QPoint, repo_path: str) -> None:
+def _show_repo_context_menu(
+    window: object,
+    global_pos: QPoint,
+    repo_path: str,
+    parent_widget: QWidget | None = None,
+) -> None:
     normalized = normalize_repo_path(repo_path)
     if not normalized or not os.path.isdir(normalized) or not is_git_repo(normalized):
         return
-    menu = QMenu(window)
+    menu = QMenu(parent_widget if isinstance(parent_widget, QWidget) else window)
     action_open_vscode = menu.addAction("Abrir repositório no VS Code")
     action_open_folder = menu.addAction("Abrir na pasta")
     action_copy_path = menu.addAction("Copiar caminho local")
@@ -970,7 +1005,7 @@ def on_repo_combo_context_menu(window: object, pos: QPoint) -> None:
     repo_path = str(selected).strip() if selected is not None else ""
     if not repo_path:
         return
-    _show_repo_context_menu(window, window.repo_combo.mapToGlobal(pos), repo_path)
+    _show_repo_context_menu(window, window.repo_combo.mapToGlobal(pos), repo_path, parent_widget=window.repo_combo)
 
 
 def on_repo_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
@@ -985,7 +1020,8 @@ def on_repo_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
         repo_path = str(selected).strip() if selected is not None else ""
     if not repo_path:
         return
-    _show_repo_context_menu(window, dropdown.viewport().mapToGlobal(pos), repo_path)
+    window.repo_combo.hidePopup()
+    _show_repo_context_menu(window, dropdown.viewport().mapToGlobal(pos), repo_path, parent_widget=dropdown.viewport())
 
 
 def on_branch_combo_context_menu(window: object, pos: QPoint) -> None:
@@ -995,7 +1031,13 @@ def on_branch_combo_context_menu(window: object, pos: QPoint) -> None:
     branch_name = str(selected).strip() if selected is not None else ""
     if not branch_name:
         return
-    _show_branch_context_menu(window, window.branch_combo.mapToGlobal(pos), window.repo_path, branch_name)
+    _show_branch_context_menu(
+        window,
+        window.branch_combo.mapToGlobal(pos),
+        window.repo_path,
+        branch_name,
+        parent_widget=window.branch_combo,
+    )
 
 
 def on_branch_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
@@ -1012,7 +1054,14 @@ def on_branch_combo_dropdown_context_menu(window: object, pos: QPoint) -> None:
         branch_name = str(selected).strip() if selected is not None else ""
     if not branch_name:
         return
-    _show_branch_context_menu(window, dropdown.viewport().mapToGlobal(pos), window.repo_path, branch_name)
+    window.branch_combo.hidePopup()
+    _show_branch_context_menu(
+        window,
+        dropdown.viewport().mapToGlobal(pos),
+        window.repo_path,
+        branch_name,
+        parent_widget=dropdown.viewport(),
+    )
 
 
 def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
@@ -1025,7 +1074,12 @@ def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
     repo_path = str(value).strip() if value is not None else ""
     if not repo_path:
         return
-    _show_repo_context_menu(window, window.workspace_tree.viewport().mapToGlobal(pos), repo_path)
+    _show_repo_context_menu(
+        window,
+        window.workspace_tree.viewport().mapToGlobal(pos),
+        repo_path,
+        parent_widget=window.workspace_tree.viewport(),
+    )
 
 
 def open_clone_dialog(
@@ -1253,6 +1307,8 @@ def refresh_repo_state_ui(window: object) -> None:
         window.repo_path = ""
         refresh_repo_state_ui(window)
         return
+    if current and current not in branches:
+        branches = [current, *branches]
 
     window._setting_branch_programmatically = True
     try:

@@ -147,6 +147,8 @@ def refresh_compare_branch_options(window: object) -> None:
         QMessageBox.critical(window, "Comparar", str(exc))
         clear_compare_view(window)
         return
+    if current and current not in branches:
+        current = ""
 
     origin_value = window.compare_origin_combo.currentData()
     dest_value = window.compare_dest_combo.currentData()
