@@ -1,6 +1,6 @@
 # Git Commits Viewer
 
-Uma GUI simples em Tkinter para visualizar commits, diffs, status e executar ações básicas de Git.
+GUI Git em **PySide6** para visualizar commits, diffs, status e executar fluxos de commit/sync/importacao/comparacao.
 
 ## Como executar (dev)
 
@@ -8,16 +8,12 @@ Uma GUI simples em Tkinter para visualizar commits, diffs, status e executar aç
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 main.py --repo /caminho/do/repo --limit 100
-# Shell inicial PySide6 (R7.2):
-python3 main_pyside6.py --repo /caminho/do/repo
+python3 main.py --repo /caminho/do/repo
 ```
 
 Parâmetros:
 - `--repo`: caminho do repositório (default: diretório atual).
-- `--limit`: quantidade inicial de commits a carregar.
-- `--perf`: habilita indicador de performance na UI e gravações em `performance.log` na raiz.
-- `GIT_VIEWER_TRACE_SELECTION=1`: habilita trace detalhado do fluxo de selecao/stage na aba Commit (PySide6), gravando em `selection_trace.log` (ou caminho definido em `GIT_VIEWER_TRACE_FILE`).
+- `GIT_VIEWER_TRACE_SELECTION=1`: habilita trace detalhado do fluxo de selecao/stage na aba Commit, gravando em `selection_trace.log` (ou caminho definido em `GIT_VIEWER_TRACE_FILE`).
 
 No Windows:
 
@@ -25,9 +21,7 @@ No Windows:
 py -3 -m venv .venv
 .venv\\Scripts\\activate
 pip install -r requirements.txt
-py -3 main.py --repo C:\\caminho\\do\\repo --limit 100
-# Shell inicial PySide6 (R7.2):
-py -3 main_pyside6.py --repo C:\\caminho\\do\\repo
+py -3 main.py --repo C:\\caminho\\do\\repo
 ```
 
 ## Build (PyInstaller)
@@ -56,15 +50,13 @@ Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/versi
 ```text
 .
   compile.py           # build via PyInstaller
-  main.py              # entrypoint
-  main_pyside6.py      # entrypoint shell PySide6
+  main.py              # entrypoint oficial (PySide6)
   requirements.txt     # dependências de runtime
   requirements-dev.txt # dependências de build
   README.md
   viewer/              # pacote principal
-    app.py             # aplicação principal (GUI e lógica)
     core/              # git, models e utilitários
-    ui/                # mixins de UI por aba
+    pyside/            # interface PySide6
 ```
 
 ## Notas
@@ -72,6 +64,5 @@ Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/versi
 - A listagem de commits usa carregamento incremental.
 - Diffs grandes só são carregados quando solicitado.
 - O estado do Git é atualizado automaticamente em intervalo configurável.
-- `main_pyside6.py` é o shell inicial da migração; a UI completa segue em `main.py` (Tkinter) até concluir o R7.
-- No estado atual do PySide6, as abas `Repositorios`, `Commit`, `Historico`, `Importar`, `Comparar` e `Configuracoes` já têm fluxo funcional inicial.
+- As abas `Repositorios`, `Commit`, `Historico`, `Importar`, `Comparar` e `Configuracoes` rodam no frontend PySide6.
 - Trace detalhado de selecao/stage (UI + comandos Git + retorno): `docs/SELECTION_TRACE.md`.

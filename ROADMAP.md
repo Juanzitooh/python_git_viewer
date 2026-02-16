@@ -314,13 +314,13 @@ Legenda
   Escopo: mapear arquivos, imports e pontos de execucao ainda dependentes do frontend antigo (`main.py`, `viewer/app.py`, `viewer/ui_*` e referencias em docs), com checklist de remocao segura.
   Aceite: existe lista fechada do que sera removido/migrado, com validacao de que o fluxo PySide6 cobre os mesmos casos de uso.
   Entrega: `docs/R7_TKINTER_DECOMMISSION.md`.
-- [ ] R7.4.2.5 Remocao do frontend Tkinter e limpeza de codigo legado
+- [x] R7.4.2.5 Remocao do frontend Tkinter e limpeza de codigo legado (2026-02-16)
   Escopo: excluir/modularizar artefatos do fluxo antigo que nao sao mais usados, removendo dependencia de Tkinter do caminho principal de execucao.
   Aceite: projeto sobe sem referencias obrigatorias ao Tkinter e sem arquivos legacy nao utilizados no runtime principal.
-- [ ] R7.4.2.6 Consolidacao da documentacao para PySide6-only
+- [x] R7.4.2.6 Consolidacao da documentacao para PySide6-only (2026-02-16)
   Escopo: atualizar `README.md`, `AGENTS.global.md` e demais `.md` para manter somente instrucoes e arquitetura do frontend PySide6.
   Aceite: nao ha instrucoes ativas apontando para fluxo Tkinter ou `main_pyside6.py` como "alternativo".
-- [ ] R7.4.2.7 Troca de entrypoint oficial para `main.py`
+- [x] R7.4.2.7 Troca de entrypoint oficial para `main.py` (2026-02-16)
   Escopo: renomear `main_pyside6.py` para `main.py` como entrada oficial e ajustar chamadas internas, scripts, build e testes.
   Aceite: comando oficial volta a ser `python3 main.py`, com compatibilidade validada no ambiente de desenvolvimento.
 - [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)

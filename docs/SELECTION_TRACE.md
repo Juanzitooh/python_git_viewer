@@ -19,7 +19,7 @@ Com isso, voce consegue auditar a trilha fim-a-fim: `UI -> pedido -> git -> reto
 ### Habilitar no terminal
 
 ```bash
-GIT_VIEWER_TRACE_SELECTION=1 python3 main_pyside6.py
+GIT_VIEWER_TRACE_SELECTION=1 python3 main.py
 ```
 
 ### Definir arquivo de saida (opcional)
@@ -27,7 +27,7 @@ GIT_VIEWER_TRACE_SELECTION=1 python3 main_pyside6.py
 ```bash
 GIT_VIEWER_TRACE_SELECTION=1 \
 GIT_VIEWER_TRACE_FILE=/home/jp/Documentos/github/viewer/selection_trace.log \
-python3 main_pyside6.py
+python3 main.py
 ```
 
 ## Onde grava
@@ -178,4 +178,3 @@ rg '\"event\": \"git\\.(run|apply_patch)' selection_trace.log
 - O trace e focado no fluxo de selecao/stage da aba Commit.
 - Nao substitui `performance.log`; sao objetivos diferentes.
 - O `patch_preview` e truncado para reduzir ruido no log.
-

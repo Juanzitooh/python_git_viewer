@@ -16,7 +16,7 @@ Como usar:
 - Commit (hash curto):
 - OS:
 - Python usado:
-- Execucao: `python3 main_pyside6.py` ou `.venv/bin/python main_pyside6.py`
+- Execucao: `python3 main.py` ou `.venv/bin/python main.py`
 
 ## 2. Pre-check rapido
 

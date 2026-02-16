@@ -8,8 +8,8 @@ Concluir a migracao para PySide6 e remover o frontend legado Tkinter do caminho 
 
 ## Inventario do Legado Tkinter
 
-- Entrypoint legado:
-  - `main.py` (atual) importa `viewer.app` (Tkinter).
+- Entrypoint legado identificado na abertura desta etapa:
+  - `main.py` importando `viewer.app` (Tkinter).
 - Frontend legado:
   - `viewer/app.py`
   - `viewer/ui/diff_render.py`
@@ -29,7 +29,7 @@ Concluir a migracao para PySide6 e remover o frontend legado Tkinter do caminho 
 
 ## Estado Atual PySide6
 
-- Entrypoint PySide6: `main_pyside6.py`.
+- Entrypoint oficial atual: `main.py`.
 - Shell principal: `viewer/pyside/window.py`.
 - Fluxos principais em uso diario ja estao na UI PySide6 (Repositorios, Commit, Historico, Importar, Comparar, Configuracoes).
 
@@ -37,7 +37,7 @@ Concluir a migracao para PySide6 e remover o frontend legado Tkinter do caminho 
 
 1. Remover arquivos e imports do frontend Tkinter (`viewer/app.py` + `viewer/ui/*`).
 2. Trocar entrypoint oficial:
-   - `main_pyside6.py` -> `main.py`.
+   - manter apenas `main.py` como entrada.
 3. Atualizar docs para PySide6-only:
    - comandos de execucao;
    - arquitetura e estrutura do projeto;
@@ -51,4 +51,10 @@ Concluir a migracao para PySide6 e remover o frontend legado Tkinter do caminho 
 
 - Nenhum caminho de runtime depende de Tkinter.
 - Documentacao oficial nao orienta mais o fluxo antigo.
-- `main.py` passa a ser a entrada oficial PySide6.
+- `main.py` e a entrada oficial PySide6.
+
+## Status Atual
+
+- [x] Frontend Tkinter removido do runtime (`viewer/app.py` e `viewer/ui/*` excluidos).
+- [x] Entrypoint oficial consolidado em `main.py` (PySide6).
+- [x] Documentacao operacional atualizada para `main.py` (PySide6-only).
