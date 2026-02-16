@@ -317,8 +317,10 @@ class QtShellWindow(QMainWindow):
         initial_repo = self.repo_path
         if not initial_repo and self.repo_combo.count() > 0:
             initial_repo = self.repo_combo.currentData() or ""
-        self._set_repo(initial_repo, save=True)
+        # Evita sobrescrever a aba salva antes de restaurar `last_tab_name`.
+        self._set_repo(initial_repo, save=False)
         self._restore_last_tab_from_settings()
+        self._persist_state()
 
         self._setup_background_timers()
 
