@@ -41,12 +41,11 @@ class TestPySideDiffColumns(unittest.TestCase):
         self.assertIsNotNone(second_item)
         self.assertEqual(first_item.text(0), "1")
         self.assertEqual(first_item.text(1), "1")
-        self.assertEqual(first_item.text(2), "@")
+        self.assertTrue(first_item.text(2).startswith("Secao: @@"))
         self.assertEqual(second_item.text(0), "1")
         self.assertEqual(second_item.text(1), "1")
-        self.assertEqual(second_item.text(2), "#")
-        self.assertEqual(second_item.text(3), "after")
-        self.assertEqual(second_item.toolTip(3), "Linha original: before")
+        self.assertEqual(second_item.text(2), "after")
+        self.assertEqual(second_item.toolTip(2), "Linha original: before")
 
     def test_copy_selected_content_uses_only_content_column(self) -> None:
         view = DiffColumnsView(include_marker_column=False)
@@ -106,12 +105,10 @@ class TestPySideDiffColumns(unittest.TestCase):
         self.assertEqual(hunk_item.text(1), "1")
         self.assertEqual(first_line.text(0), "")
         self.assertEqual(first_line.text(1), "1")
-        self.assertEqual(first_line.text(2), "+")
-        self.assertEqual(first_line.text(3), "added-first-in-patch")
+        self.assertEqual(first_line.text(2), "added-first-in-patch")
         self.assertEqual(second_line.text(0), "1")
         self.assertEqual(second_line.text(1), "")
-        self.assertEqual(second_line.text(2), "-")
-        self.assertEqual(second_line.text(3), "removed-second-in-patch")
+        self.assertEqual(second_line.text(2), "removed-second-in-patch")
 
     def test_render_message_when_patch_has_no_hunks(self) -> None:
         view = DiffColumnsView(include_marker_column=False)
@@ -119,7 +116,7 @@ class TestPySideDiffColumns(unittest.TestCase):
         self.assertEqual(view.topLevelItemCount(), 1)
         item = view.topLevelItem(0)
         self.assertIsNotNone(item)
-        self.assertEqual(item.text(3), "(selecione um arquivo)")
+        self.assertEqual(item.text(2), "(selecione um arquivo)")
 
     def test_render_with_marker_column_exposes_hunk_and_line_roles(self) -> None:
         view = DiffColumnsView(include_marker_column=True)

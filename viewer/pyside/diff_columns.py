@@ -48,14 +48,14 @@ class DiffColumnsView(QTreeWidget):
             self._sign_column = -1
             self._content_column = 2
         else:
-            self.setColumnCount(2)
-            self.setHeaderLabels(["Linha", "Conteudo"])
+            self.setColumnCount(3)
+            self.setHeaderLabels(["Ant", "Nov", "Conteudo"])
             self._line_column = 0
             self._old_line_column = 0
-            self._new_line_column = 0
+            self._new_line_column = 1
             self._marker_column = -1
             self._sign_column = -1
-            self._content_column = 1
+            self._content_column = 2
 
         self.setRootIsDecorated(False)
         self.setItemsExpandable(False)
@@ -76,7 +76,9 @@ class DiffColumnsView(QTreeWidget):
             self._content_column,
             QHeaderView.ResizeMode.Stretch if self._content_wrap_enabled else QHeaderView.ResizeMode.Interactive,
         )
-        self.header().setSectionResizeMode(self._line_column, QHeaderView.ResizeMode.Fixed)
+        self.header().setSectionResizeMode(self._old_line_column, QHeaderView.ResizeMode.Fixed)
+        if not self.include_marker_column:
+            self.header().setSectionResizeMode(self._new_line_column, QHeaderView.ResizeMode.Fixed)
         self.header().setSectionsMovable(False)
         self.header().setSectionsClickable(False)
         self.header().setMinimumSectionSize(24)
@@ -104,9 +106,13 @@ class DiffColumnsView(QTreeWidget):
         self._show_context_menu(point)
 
     def _enforce_column_layout(self) -> None:
-        self.setColumnHidden(self._line_column, False)
-        self.setColumnWidth(self._line_column, self._line_column_width)
-        self.header().resizeSection(self._line_column, self._line_column_width)
+        self.setColumnHidden(self._old_line_column, False)
+        self.setColumnWidth(self._old_line_column, self._line_column_width)
+        self.header().resizeSection(self._old_line_column, self._line_column_width)
+        if not self.include_marker_column and self._new_line_column >= 0:
+            self.setColumnHidden(self._new_line_column, False)
+            self.setColumnWidth(self._new_line_column, self._line_column_width)
+            self.header().resizeSection(self._new_line_column, self._line_column_width)
         if self.include_marker_column:
             self.setColumnHidden(self._marker_column, False)
             self.setColumnWidth(self._marker_column, self._marker_column_width)
@@ -254,6 +260,8 @@ class DiffWrapDelegate(QStyledItemDelegate):
         if width <= 32:
             available = int(self._view.viewport().width())
             available -= int(self._view._line_column_width) + 8
+            if not self._view.include_marker_column:
+                available -= int(self._view._line_column_width)
             if self._view.include_marker_column:
                 available -= int(self._view._marker_column_width)
             width = max(160, available)
@@ -303,12 +311,6 @@ def _apply_marker_checkbox(item: QTreeWidgetItem, marker_column: int, marker: st
     item.setCheckState(marker_column, Qt.CheckState.Unchecked)
 
 
-def _line_number_text(line_info: DiffLineInfo) -> str:
-    if line_info.line_type == "removed":
-        return str(line_info.old_line)
-    return str(line_info.new_line)
-
-
 def _is_modified_pair(removed_line: DiffLineInfo, added_line: DiffLineInfo) -> bool:
     if removed_line.line_type != "removed" or added_line.line_type != "added":
         return False
@@ -350,6 +352,28 @@ def _apply_line_color(
         item.setForeground(column, color)
 
 
+def _apply_line_background(
+    item: QTreeWidgetItem,
+    *,
+    line_type: str,
+    is_light: bool,
+    theme_overrides: object | None = None,
+) -> None:
+    if line_type not in {"added", "removed", "modified", "hunk"}:
+        return
+    color_value = get_diff_kind_color(
+        line_type,
+        is_light=is_light,
+        theme_overrides=theme_overrides,
+    )
+    if not color_value:
+        return
+    color = QColor(color_value)
+    color.setAlpha(28 if is_light else 38)
+    for column in range(item.columnCount()):
+        item.setBackground(column, color)
+
+
 class DiffColumnsRenderer:
     def __init__(
         self,
@@ -379,18 +403,38 @@ class DiffColumnsRenderer:
     def _meta_row_values(self, text: str) -> list[str]:
         if self.view.include_marker_column:
             return ["", "", text]
-        return ["", text]
+        return ["", "", text]
+
+    @staticmethod
+    def _format_range(start: int, count: int) -> str:
+        if start <= 0:
+            return ""
+        if count <= 1:
+            return str(start)
+        return f"{start}-{start + count - 1}"
 
     def _hunk_row_values(self, marker: str, hunk: DiffHunk) -> list[str]:
         label = f"Secao: {hunk.header}"
         if self.view.include_marker_column:
             return [marker, "", label]
-        return ["", label]
+        return [
+            self._format_range(int(hunk.old_start), int(hunk.old_count)),
+            self._format_range(int(hunk.new_start), int(hunk.new_count)),
+            label,
+        ]
 
-    def _line_row_values(self, line_no: str, content: str, *, marker: str = "") -> list[str]:
+    def _line_row_values(
+        self,
+        old_line_no: str,
+        new_line_no: str,
+        content: str,
+        *,
+        marker: str = "",
+    ) -> list[str]:
         if self.view.include_marker_column:
+            line_no = new_line_no or old_line_no
             return [marker, line_no, content]
-        return [line_no, content]
+        return [old_line_no, new_line_no, content]
 
     def _add_row(
         self,
@@ -428,6 +472,12 @@ class DiffColumnsRenderer:
                 is_light=self._is_light_theme,
                 theme_overrides=self._theme_overrides,
             )
+            _apply_line_background(
+                item,
+                line_type=line_color_kind,
+                is_light=self._is_light_theme,
+                theme_overrides=self._theme_overrides,
+            )
         if self.view.include_marker_column:
             marker_color = self.view.palette().color(QPalette.ColorRole.Text)
             item.setForeground(self.view._marker_column, marker_color)
@@ -440,9 +490,14 @@ class DiffColumnsRenderer:
         while index < len(hunk_lines):
             line_info = hunk_lines[index]
             if line_info.line_type != "removed":
-                line_no = _line_number_text(line_info)
+                old_no = ""
+                new_no = ""
+                if line_info.line_type in {"removed", "context"}:
+                    old_no = str(int(line_info.old_line))
+                if line_info.line_type in {"added", "context"}:
+                    new_no = str(int(line_info.new_line))
                 self._add_row(
-                    self._line_row_values(line_no, line_info.content),
+                    self._line_row_values(old_no, new_no, line_info.content),
                     kind=line_info.line_type,
                     hunk_index=hunk_index,
                     hunk_header=hunk.header,
@@ -466,7 +521,7 @@ class DiffColumnsRenderer:
             if not added_run:
                 for removed_line in removed_run:
                     self._add_row(
-                        self._line_row_values(str(int(removed_line.old_line)), removed_line.content),
+                        self._line_row_values(str(int(removed_line.old_line)), "", removed_line.content),
                         kind="removed",
                         hunk_index=hunk_index,
                         hunk_header=hunk.header,
@@ -482,7 +537,11 @@ class DiffColumnsRenderer:
                 added_line = added_run[pair_index]
                 if _is_modified_pair(removed_line, added_line):
                     self._add_row(
-                        self._line_row_values(str(int(added_line.new_line)), added_line.content),
+                        self._line_row_values(
+                            str(int(removed_line.old_line)),
+                            str(int(added_line.new_line)),
+                            added_line.content,
+                        ),
                         kind="modified",
                         hunk_index=hunk_index,
                         hunk_header=hunk.header,
@@ -492,7 +551,7 @@ class DiffColumnsRenderer:
                     )
                     continue
                 self._add_row(
-                    self._line_row_values(str(int(removed_line.old_line)), removed_line.content),
+                    self._line_row_values(str(int(removed_line.old_line)), "", removed_line.content),
                     kind="removed",
                     hunk_index=hunk_index,
                     hunk_header=hunk.header,
@@ -500,7 +559,7 @@ class DiffColumnsRenderer:
                     line_color_kind="removed",
                 )
                 self._add_row(
-                    self._line_row_values(str(int(added_line.new_line)), added_line.content),
+                    self._line_row_values("", str(int(added_line.new_line)), added_line.content),
                     kind="added",
                     hunk_index=hunk_index,
                     hunk_header=hunk.header,
@@ -510,7 +569,7 @@ class DiffColumnsRenderer:
 
             for removed_line in removed_run[paired:]:
                 self._add_row(
-                    self._line_row_values(str(int(removed_line.old_line)), removed_line.content),
+                    self._line_row_values(str(int(removed_line.old_line)), "", removed_line.content),
                     kind="removed",
                     hunk_index=hunk_index,
                     line_info=removed_line,
@@ -518,7 +577,7 @@ class DiffColumnsRenderer:
                 )
             for added_line in added_run[paired:]:
                 self._add_row(
-                    self._line_row_values(str(int(added_line.new_line)), added_line.content),
+                    self._line_row_values("", str(int(added_line.new_line)), added_line.content),
                     kind="added",
                     hunk_index=hunk_index,
                     line_info=added_line,
@@ -540,7 +599,10 @@ class DiffColumnsRenderer:
             line_color_kind="hunk",
         )
         if not self.view.include_marker_column and hunk_item.toolTip(self.view._content_column):
-            hunk_item.setToolTip(self.view._line_column, hunk_item.toolTip(self.view._content_column))
+            tip = hunk_item.toolTip(self.view._content_column)
+            hunk_item.setToolTip(self.view._old_line_column, tip)
+            if self.view._new_line_column >= 0:
+                hunk_item.setToolTip(self.view._new_line_column, tip)
 
         if self.view.include_marker_column:
             for line_info in hunk.lines:
@@ -548,7 +610,12 @@ class DiffColumnsRenderer:
                 if self.line_marker_resolver is not None:
                     marker = self.line_marker_resolver(line_info)
                 self._add_row(
-                    self._line_row_values(_line_number_text(line_info), line_info.content, marker=marker),
+                    self._line_row_values(
+                        str(int(line_info.old_line)) if line_info.line_type in {"removed", "context"} else "",
+                        str(int(line_info.new_line)) if line_info.line_type in {"added", "context"} else "",
+                        line_info.content,
+                        marker=marker,
+                    ),
                     kind=line_info.line_type,
                     hunk_index=hunk_index,
                     hunk_header=hunk.header,
