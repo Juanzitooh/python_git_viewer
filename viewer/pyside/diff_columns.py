@@ -432,7 +432,16 @@ class DiffColumnsRenderer:
         marker: str = "",
     ) -> list[str]:
         if self.view.include_marker_column:
-            line_no = new_line_no or old_line_no
+            old_label = old_line_no.strip()
+            new_label = new_line_no.strip()
+            if old_label and not new_label:
+                line_no = f"-{old_label}"
+            elif new_label and not old_label:
+                line_no = f"+{new_label}"
+            elif old_label and new_label and old_label != new_label:
+                line_no = f"~{new_label}"
+            else:
+                line_no = new_label or old_label
             return [marker, line_no, content]
         return [old_line_no, new_line_no, content]
 
