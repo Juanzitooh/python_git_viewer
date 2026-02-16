@@ -5,6 +5,8 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 ## [Unreleased]
 
 - Distribuicao Linux iniciada: adicionado `scripts/build_linux_packages.py` para gerar `.deb` e `AppImage` (com `.desktop` e icone), incluindo base de empacotamento em `packaging/linux/git-viewer.desktop`.
+- Validacao Linux de instalacao/execucao foi documentada em `docs/LINUX_PACKAGING_VALIDATION.md`, cobrindo install/remove do `.deb` em raiz isolada e execucao de AppImage com `APPIMAGE_EXTRACT_AND_RUN=1`.
+- CI de release foi atualizada para gerar e publicar artefatos Linux (`.deb` e `.AppImage`) em job dedicado no workflow.
 - Barra global do PySide6 simplificada: botoes explicitos de Pull/Push foram substituidos por botoes `Behind` e `Ahead` clicaveis, com tooltip contextual e estado desabilitado quando contador = 0.
 - Barra global do PySide6 agora oculta chips `Behind/Ahead` quando o contador esta em zero, exibindo apenas quando ha acao pendente.
 - Aba Commit no PySide6 passou a agrupar arquivos por pasta com cabecalhos checkaveis (`(todos)` + grupo), habilitando selecao em lote direto na lista e removendo botoes redundantes de "Selecionar tudo/Limpar selecao".

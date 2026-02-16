@@ -323,7 +323,7 @@ Legenda
 - [x] R7.4.2.7 Troca de entrypoint oficial para `main.py` (2026-02-16)
   Escopo: renomear `main_pyside6.py` para `main.py` como entrada oficial e ajustar chamadas internas, scripts, build e testes.
   Aceite: comando oficial volta a ser `python3 main.py`, com compatibilidade validada no ambiente de desenvolvimento.
-- [~] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
+- [x] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu) (2026-02-16)
   Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
   Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.
 - [x] R7.5.1 Script de empacotamento .deb com desktop entry (2026-02-16)
@@ -332,12 +332,14 @@ Legenda
 - [x] R7.5.2 Script de empacotamento AppImage (2026-02-16)
   Escopo: adicionar pipeline local para gerar AppImage com `AppDir`, `AppRun`, `.desktop`, icone e binario do app.
   Aceite: `python3 scripts/build_linux_packages.py --appimage-only` gera AppImage em `dist/` (com download automatico de `appimagetool` quando ausente).
-- [ ] R7.5.3 Validacao de instalacao e execucao Linux
+- [x] R7.5.3 Validacao de instalacao e execucao Linux (2026-02-16)
   Escopo: validar install/remove do `.deb` e execucao do AppImage no ambiente alvo, incluindo registro no menu e abertura do app via launcher.
   Aceite: checklist de instalacao concluido sem regressao funcional.
-- [ ] R7.6 Pipeline de release para desktop Linux
+  Entrega: `docs/LINUX_PACKAGING_VALIDATION.md`.
+- [x] R7.6 Pipeline de release para desktop Linux (2026-02-16)
   Escopo: automatizar build e publicacao dos artefatos Linux (AppImage/.deb) na esteira de release.
   Aceite: cada release gera pacotes assinaveis/reproduziveis com checksum e notas.
+  Entrega: workflow CI atualizado em `.github/workflows/ci.yml` com job dedicado de pacotes Linux.
 - [ ] R7.7 Manter `core` em Python como padrao do projeto
   Escopo: formalizar no roadmap que somente a camada de interface muda para PySide6; dominio e automacoes permanecem em Python.
   Aceite: decisoes de arquitetura e PRs de UI seguem regra de nao reescrever o `core` em outra linguagem.

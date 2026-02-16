@@ -69,6 +69,10 @@ Saídas padrão:
 - `dist/git-viewer_<versao>_amd64.deb`
 - `dist/git-viewer-<versao>-x86_64.AppImage`
 
+Observações:
+- Em sistemas sem `libfuse.so.2`, rode AppImage com `APPIMAGE_EXTRACT_AND_RUN=1`.
+- Checklist de validacao Linux: `docs/LINUX_PACKAGING_VALIDATION.md`.
+
 ## Estrutura
 
 ```text
