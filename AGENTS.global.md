@@ -11,6 +11,7 @@ Este diretório contém a ferramenta **Git Commits Viewer** (PySide6).
 - Evitar dependências novas sem justificativa.
 - Preferir funções curtas e focadas.
 - Comentar apenas o “porquê” quando necessário.
+- Preservar o contrato de arquitetura: `viewer/core` sem dependencias de UI (`PySide6`, `tkinter`, `viewer.pyside`).
 
 ## Execução local
 

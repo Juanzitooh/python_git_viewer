@@ -340,9 +340,10 @@ Legenda
   Escopo: automatizar build e publicacao dos artefatos Linux (AppImage/.deb) na esteira de release.
   Aceite: cada release gera pacotes assinaveis/reproduziveis com checksum e notas.
   Entrega: workflow CI atualizado em `.github/workflows/ci.yml` com job dedicado de pacotes Linux.
-- [ ] R7.7 Manter `core` em Python como padrao do projeto
+- [x] R7.7 Manter `core` em Python como padrao do projeto (2026-02-16)
   Escopo: formalizar no roadmap que somente a camada de interface muda para PySide6; dominio e automacoes permanecem em Python.
   Aceite: decisoes de arquitetura e PRs de UI seguem regra de nao reescrever o `core` em outra linguagem.
+  Entrega: `docs/ARCHITECTURE.md` + `tests/test_architecture_contracts.py`.
 
 Ordem de execucao sugerida
 - 1) R6.2
