@@ -45,6 +45,30 @@ Saída:
 Opcional: `python3 compile.py --console` para manter a janela de console (útil para debug).
 Opcional: `python3 compile.py --icon assets/icon.ico --version-file assets/version_info.txt` para personalizar o executável (Windows usa metadata do version file).
 
+## Pacotes Linux (.deb e AppImage)
+
+Script de empacotamento Linux:
+
+```bash
+python3 scripts/build_linux_packages.py --build-binary
+```
+
+Somente `.deb`:
+
+```bash
+python3 scripts/build_linux_packages.py --build-binary --deb-only
+```
+
+Somente AppImage:
+
+```bash
+python3 scripts/build_linux_packages.py --build-binary --appimage-only
+```
+
+Saídas padrão:
+- `dist/git-viewer_<versao>_amd64.deb`
+- `dist/git-viewer-<versao>-x86_64.AppImage`
+
 ## Estrutura
 
 ```text

@@ -323,9 +323,18 @@ Legenda
 - [x] R7.4.2.7 Troca de entrypoint oficial para `main.py` (2026-02-16)
   Escopo: renomear `main_pyside6.py` para `main.py` como entrada oficial e ajustar chamadas internas, scripts, build e testes.
   Aceite: comando oficial volta a ser `python3 main.py`, com compatibilidade validada no ambiente de desenvolvimento.
-- [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
+- [~] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
   Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
   Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.
+- [x] R7.5.1 Script de empacotamento .deb com desktop entry (2026-02-16)
+  Escopo: adicionar pipeline local para gerar pacote `.deb` com binario em `/opt`, launcher em `/usr/bin`, arquivo `.desktop` e icone do app.
+  Aceite: `python3 scripts/build_linux_packages.py --deb-only` gera pacote instalavel em `dist/`.
+- [x] R7.5.2 Script de empacotamento AppImage (2026-02-16)
+  Escopo: adicionar pipeline local para gerar AppImage com `AppDir`, `AppRun`, `.desktop`, icone e binario do app.
+  Aceite: `python3 scripts/build_linux_packages.py --appimage-only` gera AppImage em `dist/` (com download automatico de `appimagetool` quando ausente).
+- [ ] R7.5.3 Validacao de instalacao e execucao Linux
+  Escopo: validar install/remove do `.deb` e execucao do AppImage no ambiente alvo, incluindo registro no menu e abertura do app via launcher.
+  Aceite: checklist de instalacao concluido sem regressao funcional.
 - [ ] R7.6 Pipeline de release para desktop Linux
   Escopo: automatizar build e publicacao dos artefatos Linux (AppImage/.deb) na esteira de release.
   Aceite: cada release gera pacotes assinaveis/reproduziveis com checksum e notas.
