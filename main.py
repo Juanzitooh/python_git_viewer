@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-from viewer import app
+from viewer.pyside import shell
 
 
 def main() -> int:
-    return app.main()
+    return shell.main()
 
 
 if __name__ == "__main__":
