@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from viewer.core.repo_state import get_default_branch, list_branches
+from viewer.core.repo_state import get_default_branch, list_branches, list_local_branches_with_upstream
 
 
 class TestRepoState(unittest.TestCase):
@@ -42,6 +42,18 @@ class TestRepoState(unittest.TestCase):
             with patch("viewer.core.repo_state.list_branches", return_value=["dev", "main"]):
                 default_branch = get_default_branch("/tmp/repo")
         self.assertEqual(default_branch, "main")
+
+    def test_list_local_branches_with_upstream(self) -> None:
+        output = "\n".join(
+            [
+                "main|origin/main",
+                "feature/demo|origin/feature/demo",
+                "hotfix/local-only|",
+            ]
+        )
+        with patch("viewer.core.repo_state.run_git", return_value=output):
+            tracked = list_local_branches_with_upstream("/tmp/repo")
+        self.assertEqual(tracked, {"main", "feature/demo"})
 
 
 if __name__ == "__main__":

@@ -45,6 +45,24 @@ def list_branches(repo_path: str) -> list[str]:
     return branches
 
 
+def list_local_branches_with_upstream(repo_path: str) -> set[str]:
+    output = run_git(
+        repo_path,
+        ["for-each-ref", "--format=%(refname:short)|%(upstream:short)", "refs/heads"],
+    )
+    tracked: set[str] = set()
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        local_name, _, upstream = line.partition("|")
+        normalized_local = local_name.strip()
+        normalized_upstream = upstream.strip()
+        if normalized_local and normalized_upstream:
+            tracked.add(normalized_local)
+    return tracked
+
+
 def get_default_branch(repo_path: str) -> str:
     try:
         output = run_git(repo_path, ["symbolic-ref", "refs/remotes/origin/HEAD"])

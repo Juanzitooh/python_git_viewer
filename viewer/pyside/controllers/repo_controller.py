@@ -37,6 +37,7 @@ from ...core.repo_state import (
     get_default_branch as core_get_default_branch,
     get_upstream as core_get_upstream,
     list_branches as core_list_branches,
+    list_local_branches_with_upstream as core_list_local_branches_with_upstream,
     list_worktree_changed_files as core_list_worktree_changed_files,
 )
 from ...core.repo_workspace import clone_repository, default_repo_scan_root, discover_git_repositories
@@ -138,7 +139,11 @@ def _workspace_repo_sort_key(window: object, repo_path: str) -> tuple[str, str]:
     return base_name, relative_path
 
 
-def format_branch_display_label(branch_name: str, default_branch: str) -> str:
+def format_branch_display_label(
+    branch_name: str,
+    default_branch: str,
+    tracked_local_branches: set[str] | None = None,
+) -> str:
     display_name = branch_name
     is_remote_entry = False
     # `list_branches` retorna remotas no formato `remote/branch` somente quando
@@ -158,7 +163,13 @@ def format_branch_display_label(branch_name: str, default_branch: str) -> str:
             or branch_name == f"origin/{default_branch}"
         )
     )
-    scope_suffix = " (remota)" if is_remote_entry else " (local)"
+    tracked = tracked_local_branches or set()
+    if is_remote_entry:
+        scope_suffix = " (remota)"
+    elif branch_name in tracked:
+        scope_suffix = " (local+online)"
+    else:
+        scope_suffix = " (local)"
     if is_default:
         return f"★ {display_name}{scope_suffix}"
     return f"{display_name}{scope_suffix}"
@@ -628,15 +639,20 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
     branch_combo.setSizeAdjustPolicy(NoScrollComboBox.SizeAdjustPolicy.AdjustToContents)
     branch_combo.setToolTip("Trocar branch deste repositorio")
     default_branch = ""
+    tracked_local_branches: set[str] = set()
     try:
         branches = core_list_branches(repo_path)
         default_branch = core_get_default_branch(repo_path).strip()
+        tracked_local_branches = core_list_local_branches_with_upstream(repo_path)
     except RuntimeError:
         branches = [branch]
     if not branches:
         branches = [branch]
     for branch_name in branches:
-        branch_combo.addItem(format_branch_display_label(branch_name, default_branch), branch_name)
+        branch_combo.addItem(
+            format_branch_display_label(branch_name, default_branch, tracked_local_branches),
+            branch_name,
+        )
     current_index = branch_combo.findData(branch)
     if current_index >= 0:
         branch_combo.setCurrentIndex(current_index)
@@ -1231,6 +1247,7 @@ def refresh_repo_state_ui(window: object) -> None:
         branches = core_list_branches(window.repo_path)
         current = core_get_current_branch(window.repo_path).strip()
         default_branch = core_get_default_branch(window.repo_path).strip()
+        tracked_local_branches = core_list_local_branches_with_upstream(window.repo_path)
     except RuntimeError as exc:
         QMessageBox.critical(window, "Erro", str(exc))
         window.repo_path = ""
@@ -1241,7 +1258,10 @@ def refresh_repo_state_ui(window: object) -> None:
     try:
         window.branch_combo.clear()
         for branch in branches:
-            window.branch_combo.addItem(format_branch_display_label(branch, default_branch), branch)
+            window.branch_combo.addItem(
+                format_branch_display_label(branch, default_branch, tracked_local_branches),
+                branch,
+            )
         index = window.branch_combo.findData(current)
         if index >= 0:
             window.branch_combo.setCurrentIndex(index)

@@ -29,6 +29,7 @@ from ..core.repo_state import (
     get_current_branch as core_get_current_branch,
     get_upstream as core_get_upstream,
     list_branches as core_list_branches,
+    list_local_branches_with_upstream as core_list_local_branches_with_upstream,
 )
 from ..core.remote_ops import fetch_all_prune as core_fetch_all_prune
 from ..core.settings_store import get_settings_path, load_settings, normalize_repo_path, save_settings
@@ -211,6 +212,7 @@ class _AutoUpdateBridge(QObject):
 
 def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
     branches = core_list_branches(repo_path)
+    tracked_local_branches = sorted(core_list_local_branches_with_upstream(repo_path))
     current_branch = core_get_current_branch(repo_path).strip()
     default_branch = core_get_default_branch(repo_path).strip()
     upstream = core_get_upstream(repo_path) or ""
@@ -221,6 +223,7 @@ def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
     head_hash = run_git(repo_path, ["rev-parse", "HEAD"]).strip()
     return {
         "branches": branches,
+        "tracked_local_branches": tracked_local_branches,
         "current_branch": current_branch,
         "default_branch": default_branch,
         "upstream": upstream,
@@ -572,6 +575,12 @@ class QtShellWindow(QMainWindow):
                         branches.append(candidate)
         current_branch = str(snapshot.get("current_branch", "")).strip()
         default_branch = str(snapshot.get("default_branch", "")).strip()
+        tracked_local_branches_raw = snapshot.get("tracked_local_branches", [])
+        tracked_local_branches: set[str] = set()
+        if isinstance(tracked_local_branches_raw, list):
+            for value in tracked_local_branches_raw:
+                if isinstance(value, str) and value.strip():
+                    tracked_local_branches.add(value.strip())
         upstream = str(snapshot.get("upstream", "")).strip()
         behind = _safe_int(snapshot.get("behind"))
         ahead = _safe_int(snapshot.get("ahead"))
@@ -595,7 +604,11 @@ class QtShellWindow(QMainWindow):
                     self.branch_combo.clear()
                     for branch_name in branches:
                         self.branch_combo.addItem(
-                            format_branch_display_label(branch_name, default_branch),
+                            format_branch_display_label(
+                                branch_name,
+                                default_branch,
+                                tracked_local_branches,
+                            ),
                             branch_name,
                         )
                 finally:
