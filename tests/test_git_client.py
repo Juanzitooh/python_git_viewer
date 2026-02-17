@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from viewer.core.models import CommitFilters
 from viewer.core.git_client import FIELD_SEP, RECORD_SEP, build_log_args, load_commit_summaries, parse_numstat
 
 
@@ -39,6 +40,13 @@ class TestCommitSummaries(unittest.TestCase):
         self.assertIn("%an", pretty_values[0])
         self.assertIn("%ad", pretty_values[0])
         self.assertIn("%ct", pretty_values[0])
+
+    def test_build_log_args_search_uses_case_insensitive_grep(self) -> None:
+        args = build_log_args(limit=50, skip=0, filters=CommitFilters(text="Fix UI"))
+
+        self.assertIn("--regexp-ignore-case", args)
+        self.assertIn("--fixed-strings", args)
+        self.assertIn("--grep=Fix UI", args)
 
     @patch("viewer.core.git_client.run_git")
     def test_load_commit_summaries_parses_metadata(self, run_git_mock: unittest.mock.Mock) -> None:

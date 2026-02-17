@@ -1352,6 +1352,9 @@ def refresh_repo_state_ui(window: object) -> None:
     window.fetch_button.setEnabled(has_repo)
     window.new_branch_button.setEnabled(has_repo)
     window.branch_combo.setEnabled(has_repo)
+    if hasattr(window, "publish_button"):
+        window.publish_button.setEnabled(False)
+        window.publish_button.setVisible(False)
     if hasattr(window, "commit_stash_button"):
         window.commit_stash_button.setEnabled(has_repo)
     if hasattr(window, "commit_undo_button"):
@@ -1405,6 +1408,14 @@ def refresh_repo_state_ui(window: object) -> None:
         window.behind_button.setToolTip("Pull indisponivel: branch sem upstream configurado.")
         window.ahead_button.setToolTip("Push indisponivel: branch sem upstream configurado.")
         window.fetch_button.setText("Fetch")
+        can_publish = bool(current and current != "HEAD")
+        if hasattr(window, "publish_button"):
+            window.publish_button.setVisible(can_publish)
+            window.publish_button.setEnabled(can_publish)
+            if can_publish:
+                window.publish_button.setToolTip(
+                    f"Publicar branch local `{current}` no remoto origin e configurar upstream."
+                )
         window._sync_import_target_label()
         return
 

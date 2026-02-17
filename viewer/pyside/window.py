@@ -88,6 +88,7 @@ from .controllers import (
     on_import_file_selected,
     pick_workspace_root,
     pull_repo,
+    publish_repo,
     push_repo,
     refresh_commit_files,
     refresh_commit_diff,
@@ -222,6 +223,7 @@ def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
     if upstream:
         behind, ahead = core_get_ahead_behind(repo_path, upstream)
     head_hash = run_git(repo_path, ["rev-parse", "HEAD"]).strip()
+    worktree_signature = run_git(repo_path, ["status", "--porcelain", "--untracked-files=all"]).strip()
     return {
         "branches": branches,
         "tracked_local_branches": tracked_local_branches,
@@ -231,6 +233,7 @@ def _collect_repo_status_snapshot(repo_path: str) -> dict[str, object]:
         "behind": behind,
         "ahead": ahead,
         "head_hash": head_hash,
+        "worktree_signature": worktree_signature,
     }
 
 
@@ -307,6 +310,8 @@ class QtShellWindow(QMainWindow):
         self._repo_generation = 0
         self._history_refresh_pending = False
         self._history_probe_signature = ""
+        self._commit_refresh_pending = False
+        self._commit_status_signature = ""
         self._auto_task_state: dict[str, tuple[str, int]] = {}
         self._auto_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="gv-auto")
         self._auto_update_bridge = _AutoUpdateBridge(self)
@@ -592,8 +597,18 @@ class QtShellWindow(QMainWindow):
         self.fetch_button.setEnabled(has_repo)
         self.new_branch_button.setEnabled(has_repo)
         self.branch_combo.setEnabled(has_repo)
+        if hasattr(self, "publish_button"):
+            self.publish_button.setEnabled(False)
+            self.publish_button.setVisible(False)
         if not has_repo:
+            self._commit_status_signature = ""
+            self._commit_refresh_pending = False
             return
+
+        worktree_signature = str(snapshot.get("worktree_signature", "")).strip()
+        if worktree_signature != self._commit_status_signature:
+            self._commit_status_signature = worktree_signature
+            self._schedule_commit_auto_refresh()
 
         is_popup_open = bool(self.branch_combo.view().isVisible())
         if not is_popup_open:
@@ -635,9 +650,20 @@ class QtShellWindow(QMainWindow):
             self.behind_button.setToolTip("Pull indisponivel: branch sem upstream configurado.")
             self.ahead_button.setToolTip("Push indisponivel: branch sem upstream configurado.")
             self.fetch_button.setText("Fetch")
+            can_publish = bool(current_branch and current_branch != "HEAD")
+            if hasattr(self, "publish_button"):
+                self.publish_button.setVisible(can_publish)
+                self.publish_button.setEnabled(can_publish)
+                if can_publish:
+                    self.publish_button.setToolTip(
+                        f"Publicar branch local `{current_branch}` no remoto origin e configurar upstream."
+                    )
             self._sync_import_target_label()
             return
 
+        if hasattr(self, "publish_button"):
+            self.publish_button.setVisible(False)
+            self.publish_button.setEnabled(False)
         self.behind_button.setText(f"Pull: {behind}")
         self.ahead_button.setText(f"Push: {ahead}")
         self.behind_button.setEnabled(behind > 0)
@@ -673,10 +699,25 @@ class QtShellWindow(QMainWindow):
             return
         self._history_refresh_pending = True
 
+    def _schedule_commit_auto_refresh(self) -> None:
+        if self._busy_depth > 0:
+            self._commit_refresh_pending = True
+            return
+        if self.tabs.currentWidget() is not self.commit_tab:
+            self._commit_refresh_pending = True
+            return
+        if bool(getattr(self, "commit_syncing_checks", False)) or bool(getattr(self, "commit_diff_rendering", False)):
+            self._commit_refresh_pending = True
+            return
+        self._refresh_commit_files()
+        self._commit_refresh_pending = False
+
     def _invalidate_background_context(self) -> None:
         self._repo_generation += 1
         self._history_refresh_pending = False
         self._history_probe_signature = ""
+        self._commit_refresh_pending = False
+        self._commit_status_signature = ""
         self._auto_task_state.clear()
 
     @staticmethod
@@ -1508,9 +1549,14 @@ class QtShellWindow(QMainWindow):
     def _push_repo(self) -> None:
         push_repo(self)
 
+    def _publish_repo(self) -> None:
+        publish_repo(self)
+
     def _on_tab_changed(self, _index: int) -> None:
         if self.tabs.currentWidget() is self.repositories_tab:
             self._on_auto_workspace_timer()
+        if self.tabs.currentWidget() is self.commit_tab and self._commit_refresh_pending:
+            self._schedule_commit_auto_refresh()
         if self.tabs.currentWidget() is self.history_tab and self._history_refresh_pending:
             self._reload_history_commits()
             self._history_refresh_pending = False

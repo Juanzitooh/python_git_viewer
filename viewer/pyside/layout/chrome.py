@@ -53,6 +53,13 @@ def build_top_bar(window: object, root_layout: QVBoxLayout, parent: QWidget) -> 
     window.fetch_button.clicked.connect(window._fetch_repo)
     bar_layout.addWidget(window.fetch_button)
 
+    window.publish_button = QPushButton("Publish", bar)
+    window.publish_button.clicked.connect(window._publish_repo)
+    window.publish_button.setToolTip("Publicar branch local no remoto (origin) e configurar upstream.")
+    window.publish_button.setVisible(False)
+    window.publish_button.setEnabled(False)
+    bar_layout.addWidget(window.publish_button)
+
     window.behind_button = QPushButton("Pull: 0", bar)
     window.behind_button.setObjectName("SyncChip")
     window.behind_button.clicked.connect(window._pull_repo)

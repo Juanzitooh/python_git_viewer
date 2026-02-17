@@ -4584,7 +4584,10 @@ def create_commit_from_selection(window: object) -> None:
     window.commit_title_input.clear()
     window.commit_description_input.clear()
     window._set_status("Commit concluido.")
-    refresh_commit_files(window)
-    window._refresh_repo_state_ui()
-    window._refresh_workspace_tree()
-    window._reload_history_commits()
+    try:
+        refresh_commit_files(window)
+        window._refresh_repo_state_ui()
+        window._refresh_workspace_tree()
+        window._reload_history_commits()
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Commit", f"Commit criado, mas a interface falhou ao atualizar:\n{exc}")

@@ -133,6 +133,7 @@ from .sync_controller import (
     create_new_branch,
     fetch_repo,
     on_branch_changed,
+    publish_repo,
     pull_repo,
     push_repo,
 )
@@ -258,6 +259,7 @@ __all__ = [
     "on_branch_changed",
     "create_new_branch",
     "fetch_repo",
+    "publish_repo",
     "pull_repo",
     "push_repo",
 ]

@@ -5,10 +5,11 @@ from PySide6.QtWidgets import QInputDialog, QMessageBox
 from ...core.branch_ops import checkout_branch as core_checkout_branch, create_branch as core_create_branch
 from ...core.remote_ops import (
     fetch_all_prune as core_fetch_all_prune,
+    publish_current_branch as core_publish_current_branch,
     pull_ff_only as core_pull_ff_only,
     push_current_branch as core_push_current_branch,
 )
-from ...core.repo_state import get_current_branch as core_get_current_branch
+from ...core.repo_state import get_current_branch as core_get_current_branch, get_upstream as core_get_upstream
 
 
 def on_branch_changed(window: object, _index: int) -> None:
@@ -122,6 +123,36 @@ def push_repo(window: object) -> None:
     finally:
         window._end_busy()
     window._set_status("Push concluido.")
+    window._refresh_repo_state_ui()
+    window._refresh_stash_tab_visibility()
+    window._refresh_workspace_tree()
+    window._reload_history_commits()
+    window._refresh_compare_view()
+    window._persist_state()
+
+
+def publish_repo(window: object) -> None:
+    if not window.repo_path:
+        return
+    upstream = core_get_upstream(window.repo_path)
+    if upstream:
+        window._set_status("Branch atual já possui upstream publicado.")
+        window._refresh_repo_state_ui()
+        return
+    current_branch = core_get_current_branch(window.repo_path).strip()
+    if not current_branch or current_branch == "HEAD":
+        QMessageBox.information(window, "Publish branch", "HEAD destacado. Faça checkout de uma branch antes de publicar.")
+        return
+    window._begin_busy("Publicando branch...")
+    try:
+        try:
+            core_publish_current_branch(window.repo_path, "origin")
+        except RuntimeError as exc:
+            QMessageBox.critical(window, "Publish branch", str(exc))
+            return
+    finally:
+        window._end_busy()
+    window._set_status(f"Branch publicada: {current_branch}")
     window._refresh_repo_state_ui()
     window._refresh_stash_tab_visibility()
     window._refresh_workspace_tree()

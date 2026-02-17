@@ -79,6 +79,7 @@ def build_log_args(limit: int, skip: int, filters: CommitFilters | None) -> list
     if pattern_count > 1:
         args.append("--all-match")
     if filters.text:
+        args.append("--regexp-ignore-case")
         args.append("--fixed-strings")
         args.append(f"--grep={filters.text}")
     if filters.author:
