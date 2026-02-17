@@ -1873,6 +1873,16 @@ def _is_dialog_item_toggleable(item: QTreeWidgetItem) -> bool:
         return False
 
 
+def _is_dialog_item_alive(item: QTreeWidgetItem | None) -> bool:
+    if item is None:
+        return False
+    try:
+        item.data(0, ROLE_DIALOG_KIND)
+    except RuntimeError:
+        return False
+    return True
+
+
 def _dialog_apply_row_color(
     item: QTreeWidgetItem,
     *,
@@ -2057,14 +2067,20 @@ def _dialog_selected_line_info(dialog_state: dict[str, object]) -> DiffLineInfo 
 
 
 def _dialog_item_line_infos(item: QTreeWidgetItem | None) -> tuple[DiffLineInfo | None, DiffLineInfo | None]:
-    if item is None:
+    if not _is_dialog_item_alive(item):
         return (None, None)
-    old_value = item.data(0, ROLE_DIALOG_OLD_LINE_INFO)
-    new_value = item.data(0, ROLE_DIALOG_NEW_LINE_INFO)
+    try:
+        old_value = item.data(0, ROLE_DIALOG_OLD_LINE_INFO)
+        new_value = item.data(0, ROLE_DIALOG_NEW_LINE_INFO)
+    except RuntimeError:
+        return (None, None)
     old_info = old_value if isinstance(old_value, DiffLineInfo) else None
     new_info = new_value if isinstance(new_value, DiffLineInfo) else None
     if old_info is None and new_info is None:
-        legacy_value = item.data(0, ROLE_DIALOG_LINE_INFO)
+        try:
+            legacy_value = item.data(0, ROLE_DIALOG_LINE_INFO)
+        except RuntimeError:
+            return (None, None)
         legacy_info = legacy_value if isinstance(legacy_value, DiffLineInfo) else None
         if legacy_info is not None:
             if legacy_info.line_type == "removed":
@@ -2075,12 +2091,18 @@ def _dialog_item_line_infos(item: QTreeWidgetItem | None) -> tuple[DiffLineInfo 
 
 
 def _dialog_item_scope(item: QTreeWidgetItem | None, dialog_state: dict[str, object]) -> str:
-    if item is not None:
-        effective_scope_value = item.data(0, ROLE_DIALOG_EFFECTIVE_SCOPE)
+    if _is_dialog_item_alive(item):
+        try:
+            effective_scope_value = item.data(0, ROLE_DIALOG_EFFECTIVE_SCOPE)
+        except RuntimeError:
+            effective_scope_value = None
         effective_scope = str(effective_scope_value).strip() if effective_scope_value is not None else ""
         if effective_scope:
             return effective_scope
-        scope_value = item.data(0, ROLE_DIALOG_SCOPE)
+        try:
+            scope_value = item.data(0, ROLE_DIALOG_SCOPE)
+        except RuntimeError:
+            scope_value = None
         scope = str(scope_value).strip() if scope_value is not None else ""
         if scope:
             return scope
@@ -2201,7 +2223,12 @@ def _dialog_expected_check_state_for_scope(scope: str) -> Qt.CheckState:
 
 
 def _set_dialog_item_effective_scope(item: QTreeWidgetItem, scope: str) -> None:
-    item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope.strip())
+    if not _is_dialog_item_alive(item):
+        return
+    try:
+        item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope.strip())
+    except RuntimeError:
+        return
 
 
 def _apply_dialog_scope_after_toggle(
@@ -2273,11 +2300,19 @@ def _apply_dialog_scope_after_toggle(
             return
 
         # Linha individual.
+        if not _is_dialog_item_alive(current_item):
+            return
         _set_dialog_item_effective_scope(current_item, target_scope)
         old_info, new_info = _dialog_item_line_infos(current_item)
-        hunk_header_value = current_item.data(0, ROLE_DIALOG_HUNK_HEADER)
+        try:
+            hunk_header_value = current_item.data(0, ROLE_DIALOG_HUNK_HEADER)
+        except RuntimeError:
+            hunk_header_value = None
         hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
-        current_hunk_value = current_item.data(0, ROLE_DIALOG_HUNK)
+        try:
+            current_hunk_value = current_item.data(0, ROLE_DIALOG_HUNK)
+        except RuntimeError:
+            current_hunk_value = None
         current_hunk_index = int(current_hunk_value) if isinstance(current_hunk_value, int) else hunk_index
         line_hunk_index, resolved_old, resolved_new = _resolve_dialog_line_infos_for_scope(
             dialog_state,
@@ -2288,16 +2323,21 @@ def _apply_dialog_scope_after_toggle(
             fallback_hunk_index=current_hunk_index,
         )
         if isinstance(line_hunk_index, int):
-            current_item.setData(0, ROLE_DIALOG_HUNK, line_hunk_index)
+            if _is_dialog_item_alive(current_item):
+                current_item.setData(0, ROLE_DIALOG_HUNK, line_hunk_index)
         if isinstance(resolved_old, DiffLineInfo):
-            current_item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, resolved_old)
+            if _is_dialog_item_alive(current_item):
+                current_item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, resolved_old)
         if isinstance(resolved_new, DiffLineInfo):
-            current_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, resolved_new)
+            if _is_dialog_item_alive(current_item):
+                current_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, resolved_new)
         if isinstance(resolved_old, DiffLineInfo):
-            current_item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_old)
+            if _is_dialog_item_alive(current_item):
+                current_item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_old)
         elif isinstance(resolved_new, DiffLineInfo):
-            current_item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_new)
-        if old_info is not None or new_info is not None:
+            if _is_dialog_item_alive(current_item):
+                current_item.setData(0, ROLE_DIALOG_LINE_INFO, resolved_new)
+        if (old_info is not None or new_info is not None) and _is_dialog_item_alive(current_item):
             current_item.setCheckState(2, target_state)
     finally:
         dialog_state["rendering_tree"] = previous
@@ -2335,7 +2375,8 @@ def _revert_dialog_item_after_failed_toggle(
                     continue
                 item.setCheckState(2, source_state)
             return
-        current_item.setCheckState(2, source_state)
+        if _is_dialog_item_alive(current_item):
+            current_item.setCheckState(2, source_state)
     finally:
         dialog_state["rendering_tree"] = previous
 
@@ -2951,6 +2992,8 @@ def _on_commit_diff_dialog_item_changed(
     item: QTreeWidgetItem,
     column: int,
 ) -> None:
+    if not _is_dialog_item_alive(item):
+        return
     if bool(dialog_state.get("rendering_tree", False)):
         return
     if column != 2:
