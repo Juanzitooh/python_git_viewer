@@ -100,6 +100,7 @@ Checklist:
 - [x] Nova branch cria e troca para a nova branch.
 - [x] Fetch funciona e atualiza contadores.
 - [x] Pull/Push (chips) obedecem estado da branch/upstream.
+- [prox] Publish aparece para branch local sem upstream e publica com `-u origin HEAD`.
 
 ### 5.2 Aba Repositorios
 - [x] Workspace root carrega/salva.
@@ -118,11 +119,11 @@ Checklist:
 - [x] Commit exige titulo.
 - [x] Stash funciona.
 - [prox] Undo commit (soft/mixed) funciona.
-- [bug] commit funciona
+- [prox] Commit funciona (incluindo cenarios com arquivo deletado).
 
 ### 5.4 Aba Historico
 - [x] Lista de commits carrega.
-- [bug] Busca por texto filtra.
+- [prox] Busca por texto filtra (case-insensitive).
 - [x] Scroll progressivo carrega mais commits.
 - [x] Selecionar commit atualiza metadados + arquivos + diff.
 - [x] Menus de contexto (commit/arquivo) funcionam.
@@ -145,7 +146,7 @@ Checklist:
 ### 5.7 Aba Configuracoes
 - [x] Tema claro/escuro funciona.
 - [x] Overrides de tema salvam e reaplicam.
-- [bug] Perfil de atualizacao salva e reaplica.
+- [prox] Perfil de atualizacao salva e reaplica.
 
 ---
 
@@ -215,8 +216,8 @@ tivemos bugs e discordâncias em coisas descritas no fim do aruqivo como bugs, e
 
 Resumo:
 - Total OK: 42
-- Total BUG: 3
-- Total Prox: 12
+- Total BUG: 0
+- Total Prox: 17
 - Decisao:`MANTER EM AJUSTE`
 
 ---
@@ -226,7 +227,10 @@ Resumo:
 | ID | Area | Severidade | Passos para reproduzir | Resultado esperado | Resultado atual | Evidencia | Status |
 |---|---|---|---|---|---|---|---|
 | BUG-001 | Commit / Diff avancado | Alta | Na aba Commit, abrir diff avancado e marcar/desmarcar linhas/blocos rapidamente. | Stage/unstage sem excecao e sem crash da janela. | Excecao `RuntimeError: QTreeWidgetItem already deleted` durante toggle. | Traceback logo abaixo desta tabela. | Em reteste |
-| BUG-002 | Historico / Busca | Media | Digitar no campo de busca da aba Historico. | Filtrar commits por texto em tempo real. | Filtro nao atualiza corretamente em alguns cenarios. | Marcado em 5.4 `Busca por texto filtra`. | Aberto |
+| BUG-002 | Historico / Busca | Media | Digitar no campo de busca da aba Historico. | Filtrar commits por texto em tempo real, sem distinguir maiuscula/minuscula. | Filtro fazia distinção de caixa e perdia resultados. | Observação logo abaixo da tabela. | Em reteste |
+| BUG-003 | Auto update / Commit | Media | Deixar em perfil Tempo real e aguardar com aba Commit aberta. | Status/worktree atualiza automaticamente no intervalo configurado. | A aba Commit não refletia mudanças automaticamente. | Relato no fim do checklist. | Em reteste |
+| BUG-004 | Barra global / Branch | Media | Criar branch local sem upstream. | Exibir ação direta para publicar branch. | Não havia botão para publish rápido. | Relato no fim do checklist. | Em reteste |
+| BUG-005 | Commit / Estabilidade | Alta | Commit contendo remoção de arquivo (ex.: `README.md`). | Commit concluído sem crash e UI atualizada. | App encerrou durante/apos commit em cenário de remoção. | Relato no fim do checklist. | Em reteste |
 
 
 bug 001 traceback ao usar seleção de stage na janela de diff avançado da aba commit
