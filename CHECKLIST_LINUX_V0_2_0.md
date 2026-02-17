@@ -8,7 +8,9 @@ Como usar:
 - Marque `[x]` quando OK.
 - Marque `[BUG]` quando falhar e descreva no bloco final.
 - Marque `[N/A]` quando nao se aplicar.
+- Marque `[prox]` quando for ser testado somente após ajustes
 
+Detalhe: após cada rodada de ajustes , ou seja zerar os bugs descritos, será testado o proximo e no fim uma rodada final de testes até aprovar
 ---
 
 ## 1) Dados da rodada
@@ -54,10 +56,10 @@ git-viewer --help
 ```
 
 Checklist:
-- [ ] Build do `.deb` conclui sem erro.
-- [ ] Instalacao via `apt` conclui sem erro.
-- [ ] `which git-viewer` retorna `/usr/bin/git-viewer`.
-- [ ] `git-viewer --help` responde.
+- [x] Build do `.deb` conclui sem erro.
+- [x] Instalacao via `apt` conclui sem erro.
+- [x] `which git-viewer` retorna `/usr/bin/git-viewer`.
+- [x] `git-viewer --help` responde.
 
 ---
 
@@ -83,67 +85,71 @@ cat ~/.config/git_commits_viewer/settings.json
 ```
 
 Checklist:
-- [ ] App abre sem traceback.
-- [ ] Janela abre e renderiza tabs corretamente.
-- [ ] `settings.json` e criado no primeiro save/fechamento.
-- [ ] Ultimo repositorio e ultima aba persistem entre reinicios.
+- [x] App abre sem traceback.
+- [x] Janela abre e renderiza tabs corretamente.
+- [x] `settings.json` e criado no primeiro save/fechamento.
+- [x] Ultimo repositorio e ultima aba persistem entre reinicios.
 
 ---
 
 ## 5) Checklist funcional da GUI
 
 ### 5.1 Barra global
-- [ ] Troca de repositorio funciona.
-- [ ] Troca de branch funciona.
-- [ ] Nova branch cria e troca para a nova branch.
-- [ ] Fetch funciona e atualiza contadores.
-- [ ] Pull/Push (chips) obedecem estado da branch/upstream.
+- [x] Troca de repositorio funciona.
+- [x] Troca de branch funciona.
+- [x] Nova branch cria e troca para a nova branch.
+- [x] Fetch funciona e atualiza contadores.
+- [x] Pull/Push (chips) obedecem estado da branch/upstream.
 
 ### 5.2 Aba Repositorios
-- [ ] Workspace root carrega/salva.
-- [ ] Reescanear atualiza cards.
-- [ ] Favoritos aparecem primeiro.
-- [ ] Duplo clique no card abre no VS Code.
-- [ ] Menu de contexto do repo funciona (VS Code, pasta, copiar caminho, links GitHub).
-- [ ] Adicionar repositorio (clone) funciona.
+- [x] Workspace root carrega/salva.
+- [x] Reescanear atualiza cards.
+- [x] Favoritos aparecem primeiro.
+- [x] Duplo clique no card abre no VS Code.
+- [x] Menu de contexto do repo funciona (VS Code, pasta, copiar caminho, links GitHub).
+- [x] Adicionar repositorio (clone) funciona.
 
 ### 5.3 Aba Commit
-- [ ] Lista de arquivos por pasta + `(todos)` funciona.
-- [ ] Selecao de arquivo/pasta/todos reflete estado parcial corretamente.
-- [ ] Diff principal carrega sem reordenar linhas ao marcar/desmarcar.
-- [ ] Stage/unstage por linha e bloco funciona.
-- [ ] Janela de diff avancada abre e permite stage/unstage.
-- [ ] Commit exige titulo.
-- [ ] Stash funciona.
-- [ ] Undo commit (soft/mixed) funciona.
+- [x] Lista de arquivos por pasta + `(todos)` funciona.
+- [x] Selecao de arquivo/pasta/todos reflete estado parcial corretamente.
+- [x] Diff principal carrega sem reordenar linhas ao marcar/desmarcar.
+- [x] Stage/unstage por linha e bloco funciona.
+- [prox] Janela de diff avancada abre e permite stage/unstage (retestar apos fix de item deletado no toggle).
+- [x] Commit exige titulo.
+- [x] Stash funciona.
+- [prox] Undo commit (soft/mixed) funciona.
+- [bug] commit funciona
 
 ### 5.4 Aba Historico
-- [ ] Lista de commits carrega.
-- [ ] Busca por texto filtra.
-- [ ] Scroll progressivo carrega mais commits.
-- [ ] Selecionar commit atualiza metadados + arquivos + diff.
-- [ ] Menus de contexto (commit/arquivo) funcionam.
+- [x] Lista de commits carrega.
+- [bug] Busca por texto filtra.
+- [x] Scroll progressivo carrega mais commits.
+- [x] Selecionar commit atualiza metadados + arquivos + diff.
+- [x] Menus de contexto (commit/arquivo) funcionam.
+- [prox] Exportar commits funciona.
 
 ### 5.5 Aba Importar
-- [ ] Repo/branch de origem carregam.
-- [ ] Lista de commits carrega.
-- [ ] Importar commits funciona.
-- [ ] Em conflito, fluxo de resolucao abre corretamente.
+- [x] Repo/branch de origem carregam.
+- [x] Lista de commits carrega.
+- [prox] Importar commits funciona.
+- [prox] Em conflito, fluxo de resolucao abre corretamente.
 
 ### 5.6 Aba Comparar
-- [ ] Branch origem/destino carregam.
-- [ ] Botao trocar origem/destino funciona.
-- [ ] Commits/arquivos/diff atualizam conforme selecao.
-- [ ] Menus de contexto funcionam.
+- [x] Branch origem/destino carregam.
+- [x] Botao trocar origem/destino funciona.
+- [x] Commits/arquivos/diff atualizam conforme selecao.
+- [x] Menus de contexto funcionam.
+- [prox] merge, rebase e squash sem conflitos funcionam.
+- [prox] merge, rebase e squash em conflitos funcionam, fluxo de resolucao abre corretamente.
 
 ### 5.7 Aba Configuracoes
-- [ ] Tema claro/escuro funciona.
-- [ ] Overrides de tema salvam e reaplicam.
-- [ ] Perfil de atualizacao salva e reaplica.
+- [x] Tema claro/escuro funciona.
+- [x] Overrides de tema salvam e reaplicam.
+- [bug] Perfil de atualizacao salva e reaplica.
 
 ---
 
-## 6) Teste de update do pacote
+## 6) Teste de update do pacote, será feito após a primeira rodada de ajustes
 
 ### 6.1 Update normal (versao maior)
 
@@ -156,10 +162,10 @@ apt policy git-viewer
 ```
 
 Checklist:
-- [ ] `apt` atualiza sem quebrar dependencias.
-- [ ] Versao nova aparece em `apt policy`.
-- [ ] App abre apos update.
-- [ ] `settings.json` do usuario foi preservado.
+- [prox] `apt` atualiza sem quebrar dependencias.
+- [prox] Versao nova aparece em `apt policy`.
+- [prox] App abre apos update.
+- [prox] `settings.json` do usuario foi preservado.
 
 ### 6.2 Reinstalar mesma versao (se precisar)
 
@@ -192,23 +198,26 @@ rm -rf ~/.config/git_commits_viewer
 ```
 
 Checklist:
-- [ ] `apt remove` remove o binario.
-- [ ] `which git-viewer` nao encontra comando.
-- [ ] `purge` conclui sem erro.
-- [ ] Config local removida quando solicitado.
+- [x] `apt remove` remove o binario.
+- [x] `which git-viewer` nao encontra comando.
+- [x] `purge` conclui sem erro.
+- [x] Config local removida quando solicitado.
 
 ---
 
 ## 8) Resultado final
 
-- [ ] Rodada aprovada sem bloqueadores.
-- [ ] Existem bugs registrados (se sim, preencher tabela abaixo).
+- [prox] Rodada aprovada sem bloqueadores.
+- [x] Existem bugs registrados (se sim, preencher tabela abaixo).
+
+tivemos bugs e discordâncias em coisas descritas no fim do aruqivo como bugs, e que também foram marcados que impossibilitaram continuar legal os testes
+
 
 Resumo:
-- Total OK:
-- Total BUG:
-- Total N/A:
-- Decisao: `APROVAR` / `MANTER EM AJUSTE`
+- Total OK: 42
+- Total BUG: 3
+- Total Prox: 12
+- Decisao:`MANTER EM AJUSTE`
 
 ---
 
@@ -216,4 +225,48 @@ Resumo:
 
 | ID | Area | Severidade | Passos para reproduzir | Resultado esperado | Resultado atual | Evidencia | Status |
 |---|---|---|---|---|---|---|---|
-| BUG-001 |  | Alta/Media/Baixa |  |  |  |  | Aberto |
+| BUG-001 | Commit / Diff avancado | Alta | Na aba Commit, abrir diff avancado e marcar/desmarcar linhas/blocos rapidamente. | Stage/unstage sem excecao e sem crash da janela. | Excecao `RuntimeError: QTreeWidgetItem already deleted` durante toggle. | Traceback logo abaixo desta tabela. | Em reteste |
+| BUG-002 | Historico / Busca | Media | Digitar no campo de busca da aba Historico. | Filtrar commits por texto em tempo real. | Filtro nao atualiza corretamente em alguns cenarios. | Marcado em 5.4 `Busca por texto filtra`. | Aberto |
+
+
+bug 001 traceback ao usar seleção de stage na janela de diff avançado da aba commit
+
+Gdk-Message: 17:43:22.050: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:22.051: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:22.051: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:22.051: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:22.052: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:22.052: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:42.853: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:42.854: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:42.854: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:42.854: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:42.855: Unable to load col-resize from the cursor theme
+Gdk-Message: 17:43:42.855: Unable to load col-resize from the cursor theme
+Traceback (most recent call last):
+  File "viewer/pyside/controllers/commit_controller.py", line 3358, in <lambda>
+    lambda item, column: _on_commit_diff_dialog_item_changed(window, dialog_state, item, column)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "viewer/pyside/controllers/commit_controller.py", line 3034, in _on_commit_diff_dialog_item_changed
+    _apply_dialog_scope_after_toggle(
+  File "viewer/pyside/controllers/commit_controller.py", line 2276, in _apply_dialog_scope_after_toggle
+    _set_dialog_item_effective_scope(current_item, target_scope)
+  File "viewer/pyside/controllers/commit_controller.py", line 2204, in _set_dialog_item_effective_scope
+    item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope.strip())
+RuntimeError: Internal C++ object (PySide6.QtWidgets.QTreeWidgetItem) already deleted.
+
+
+
+A busca por textos faz distinção de maiuscula e minuscula, seria melhor não fazer isso, assim fica melhor a busca com mais resultados
+
+bug 003
+
+mesmo no perfil de atualização em tempo real, fiquei esperando e status da brnach atual escolhida, ou seja a aba commit nunca demostrou mudança , como se não fosse mais atualizada automaticamente segundo o tempo
+
+bug 004
+
+Quando abro uma branch nova não existe um botão de facil acesso para publica-la, seria bom ter um publish , botão pra publicar branch ao lado do fetch apenas para as que não tiverem publicadas
+
+bug005
+
+ao simpĺesmente subir um commit onde exclui um redme.md, algo comum, deu crash no aplicativo e precisou reiniciar 2 vezes pra voltar
