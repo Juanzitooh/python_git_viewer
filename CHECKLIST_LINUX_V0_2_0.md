@@ -100,7 +100,7 @@ Checklist:
 - [x] Nova branch cria e troca para a nova branch.
 - [x] Fetch funciona e atualiza contadores.
 - [x] Pull/Push (chips) obedecem estado da branch/upstream.
-- [prox] Publish aparece para branch local sem upstream e publica com `-u origin HEAD`.
+- [x] Publish aparece para branch local sem upstream e publica com `-u origin HEAD`.
 
 ### 5.2 Aba Repositorios
 - [x] Workspace root carrega/salva.
@@ -118,35 +118,35 @@ Checklist:
 - [prox] Janela de diff avancada abre e permite stage/unstage (retestar apos fix de item deletado no toggle).
 - [x] Commit exige titulo.
 - [x] Stash funciona.
-- [prox] Undo commit (soft/mixed) funciona.
+- [x] Undo commit (soft/mixed) funciona.
 - [prox] Commit funciona (incluindo cenarios com arquivo deletado).
 
 ### 5.4 Aba Historico
 - [x] Lista de commits carrega.
-- [prox] Busca por texto filtra (case-insensitive).
+- [x] Busca por texto filtra (case-insensitive).
 - [x] Scroll progressivo carrega mais commits.
 - [x] Selecionar commit atualiza metadados + arquivos + diff.
 - [x] Menus de contexto (commit/arquivo) funcionam.
-- [prox] Exportar commits funciona.
+- [x] Exportar commits funciona.
 
 ### 5.5 Aba Importar
 - [x] Repo/branch de origem carregam.
 - [x] Lista de commits carrega.
-- [prox] Importar commits funciona.
-- [prox] Em conflito, fluxo de resolucao abre corretamente.
+- [x] Importar commits funciona.
+- [prox] Conflito: fluxo de resolucao abre corretamente (sem popup de erro redundante).
 
 ### 5.6 Aba Comparar
 - [x] Branch origem/destino carregam.
 - [x] Botao trocar origem/destino funciona.
 - [x] Commits/arquivos/diff atualizam conforme selecao.
 - [x] Menus de contexto funcionam.
-- [prox] merge, rebase e squash sem conflitos funcionam.
-- [prox] merge, rebase e squash em conflitos funcionam, fluxo de resolucao abre corretamente.
+- [prox] Merge, rebase e squash sem conflitos funcionam.
+- [prox] Merge, rebase e squash em conflitos funcionam com abertura da tela de conflitos.
 
 ### 5.7 Aba Configuracoes
 - [x] Tema claro/escuro funciona.
 - [x] Overrides de tema salvam e reaplicam.
-- [prox] Perfil de atualizacao salva e reaplica.
+- [bug] Perfil de atualizacao salva e reaplica.
 
 ---
 
@@ -208,16 +208,16 @@ Checklist:
 
 ## 8) Resultado final
 
-- [prox] Rodada aprovada sem bloqueadores.
+- [bug] Rodada aprovada sem bloqueadores.
 - [x] Existem bugs registrados (se sim, preencher tabela abaixo).
 
 tivemos bugs e discordâncias em coisas descritas no fim do aruqivo como bugs, e que também foram marcados que impossibilitaram continuar legal os testes
 
 
 Resumo:
-- Total OK: 42
-- Total BUG: 0
-- Total Prox: 17
+- Total OK: 47
+- Total BUG: 2
+- Total Prox: 9
 - Decisao:`MANTER EM AJUSTE`
 
 ---
@@ -226,51 +226,16 @@ Resumo:
 
 | ID | Area | Severidade | Passos para reproduzir | Resultado esperado | Resultado atual | Evidencia | Status |
 |---|---|---|---|---|---|---|---|
-| BUG-001 | Commit / Diff avancado | Alta | Na aba Commit, abrir diff avancado e marcar/desmarcar linhas/blocos rapidamente. | Stage/unstage sem excecao e sem crash da janela. | Excecao `RuntimeError: QTreeWidgetItem already deleted` durante toggle. | Traceback logo abaixo desta tabela. | Em reteste |
-| BUG-002 | Historico / Busca | Media | Digitar no campo de busca da aba Historico. | Filtrar commits por texto em tempo real, sem distinguir maiuscula/minuscula. | Filtro fazia distinção de caixa e perdia resultados. | Observação logo abaixo da tabela. | Em reteste |
-| BUG-003 | Auto update / Commit | Media | Deixar em perfil Tempo real e aguardar com aba Commit aberta. | Status/worktree atualiza automaticamente no intervalo configurado. | A aba Commit não refletia mudanças automaticamente. | Relato no fim do checklist. | Em reteste |
-| BUG-004 | Barra global / Branch | Media | Criar branch local sem upstream. | Exibir ação direta para publicar branch. | Não havia botão para publish rápido. | Relato no fim do checklist. | Em reteste |
-| BUG-005 | Commit / Estabilidade | Alta | Commit contendo remoção de arquivo (ex.: `README.md`). | Commit concluído sem crash e UI atualizada. | App encerrou durante/apos commit em cenário de remoção. | Relato no fim do checklist. | Em reteste |
-
-
-bug 001 traceback ao usar seleção de stage na janela de diff avançado da aba commit
-
-Gdk-Message: 17:43:22.050: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:22.051: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:22.051: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:22.051: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:22.052: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:22.052: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:42.853: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:42.854: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:42.854: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:42.854: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:42.855: Unable to load col-resize from the cursor theme
-Gdk-Message: 17:43:42.855: Unable to load col-resize from the cursor theme
-Traceback (most recent call last):
-  File "viewer/pyside/controllers/commit_controller.py", line 3358, in <lambda>
-    lambda item, column: _on_commit_diff_dialog_item_changed(window, dialog_state, item, column)
-                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "viewer/pyside/controllers/commit_controller.py", line 3034, in _on_commit_diff_dialog_item_changed
-    _apply_dialog_scope_after_toggle(
-  File "viewer/pyside/controllers/commit_controller.py", line 2276, in _apply_dialog_scope_after_toggle
-    _set_dialog_item_effective_scope(current_item, target_scope)
-  File "viewer/pyside/controllers/commit_controller.py", line 2204, in _set_dialog_item_effective_scope
-    item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope.strip())
-RuntimeError: Internal C++ object (PySide6.QtWidgets.QTreeWidgetItem) already deleted.
-
-
-
-A busca por textos faz distinção de maiuscula e minuscula, seria melhor não fazer isso, assim fica melhor a busca com mais resultados
-
-bug 003
-
-mesmo no perfil de atualização em tempo real, fiquei esperando e status da brnach atual escolhida, ou seja a aba commit nunca demostrou mudança , como se não fosse mais atualizada automaticamente segundo o tempo
-
-bug 004
-
-Quando abro uma branch nova não existe um botão de facil acesso para publica-la, seria bom ter um publish , botão pra publicar branch ao lado do fetch apenas para as que não tiverem publicadas
-
-bug005
-
-ao simpĺesmente subir um commit onde exclui um redme.md, algo comum, deu crash no aplicativo e precisou reiniciar 2 vezes pra voltar
+| BUG-001 | Commit / Diff avancado | Alta | Na aba Commit, abrir diff avancado e marcar/desmarcar linhas/blocos rapidamente. | Stage/unstage sem excecao e sem crash da janela. | Excecao `RuntimeError: QTreeWidgetItem already deleted` durante toggle. | Traceback da rodada anterior. | Em reteste (prox) |
+| BUG-002 | Historico / Busca | Media | Digitar no campo de busca da aba Historico. | Filtrar commits por texto sem diferenciar caixa. | Filtro falhava com case-sensitive. | Teste manual anterior. | Em reteste (prox) |
+| BUG-003 | Auto update / Commit | Media | Perfil Tempo real + aba Commit aberta. | Status/worktree atualiza automaticamente. | Aba Commit nao refletia mudancas sem acao manual. | Relato do checklist. | Em reteste (prox) |
+| BUG-004 | Barra global / Branch | Media | Criar branch local sem upstream. | Exibir acao direta para publicar branch. | Nao havia botao para publish rapido. | Relato do checklist. | Em reteste (prox) |
+| BUG-005 | Commit / Estabilidade | Alta | Commit contendo remocao de arquivo (ex.: `README.md`). | Commit conclui e UI atualiza sem crash. | App encerrava durante/apos commit com remocao. | Relato manual. | Em reteste (prox) |
+| BUG-006 | Importar / Conflitos | Alta | Importar commit que gera conflito. | Abrir tela de conflitos direto, sem popup redundante de erro, e permitir resolver arquivos. | Exibia popup de erro do git antes da tela de conflitos e faltavam acoes por arquivo. | Relato manual + screenshot. | Corrigido, validar (prox) |
+| BUG-007 | Commit / Auto-stage | Alta | Editar arquivo no VS Code com aba Commit aberta. | Novas mudancas aparecem e entram no fluxo auto-stage sem quebrar selecao. | Auto-stage fica inconsistente e selecao instavel. | Relato manual recorrente. | Aberto |
+| BUG-008 | Commit / Sincronia diff | Alta | Fazer multiplas edicoes incrementais no mesmo arquivo. | Diff manter secoes incrementais coerentes com estado atual. | Em alguns casos mostra apenas estado final, perdendo incremental esperado. | Relato manual recorrente. | Aberto |
+| BUG-009 | Commit / Menu arquivo | Media | Clique direito em arquivo modificado (aba Commit). | Opcao para reverter alteracoes do arquivo individualmente. | Opcao nao existia. | Relato manual. | Corrigido, validar (prox) |
+| BUG-010 | Repositorios / Menu contexto | Media | Clique direito em card/combo de repositorio. | Acao de favoritar/desfavoritar e abrir terminal no repo. | Acoes nao existiam. | Relato manual. | Corrigido, validar (prox) |
+| BUG-011 | Comparar / Squash conflito | Alta | Executar squash com conflito. | Abrir tela de conflitos corretamente para squash. | Fluxo podia nao abrir dialogo por deteccao incompleta da operacao. | Relato manual. | Corrigido, validar (prox) |
+| BUG-012 | Tela de conflitos | Media | Abrir tela de conflitos e resolver parcialmente. | Mostrar contagem pendente/resolvido, cor por estado e acoes por arquivo; atualizar em tempo real. | Tela anterior era basica e sem opcoes de resolucao guiada. | Relato manual. | Corrigido, validar (prox) |
+| BUG-013 | Fluxo conflito UX | Media | Gerar conflito em merge/rebase/squash/importar/exportar. | Ir direto para tela de conflitos (sem popup extra de erro esperado). | Exibia popup de erro antes do dialogo de conflitos. | Relato manual. | Corrigido, validar (prox) |
