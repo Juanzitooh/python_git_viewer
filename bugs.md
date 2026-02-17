@@ -1,7 +1,8 @@
 # Bugs - R7.4.2 (PySide6)
 
 Fonte:
-- Rodada parcial em `CHECKLIST_R7_4_2.md` (somente itens marcados como `BUG`).
+- Rodada parcial do checklist manual inicial do R7.4.2 (somente itens marcados como `BUG`).
+- Checklist operacional atual: `CHECKLIST_LINUX_V0_2_0.md`.
 
 Convencao:
 - `Status`: `aberto`, `em_progresso`, `resolvido`, `validado`.
@@ -12,7 +13,7 @@ Convencao:
 
 | ID | Status | Prioridade | Area | Tipo | Problema | Evidencia |
 |---|---|---|---|---|---|---|
-| B001 | resolvido | P0 | Commit/PR | bug | Clique em `Abrir PR` gera traceback (`NameError: core_list_branches`). | Traceback no fim de `CHECKLIST_R7_4_2.md` |
+| B001 | resolvido | P0 | Commit/PR | bug | Clique em `Abrir PR` gera traceback (`NameError: core_list_branches`). | Traceback registrado na rodada inicial do checklist R7.4.2 |
 | B002 | resolvido | P1 | Janela/Layout | regressao | Janela/layout em estado maximizado fica mal dimensionada (conteudo estoura/ultrapassa area util), gerando UI quebrada visualmente. | Checklist secao 2 + feedback adicional de maximizacao |
 | B003 | resolvido | P2 | Barra global | ux | Pull/Push em zero deveriam ocultar contador/estado para reduzir ruido. | Checklist secao 3 |
 | B004 | resolvido | P1 | Repositorios | regressao | Tela virou lista; esperado visual de cards (como UI Tk). | Checklist secao 4 + observacao BUG4 |

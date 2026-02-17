@@ -24,7 +24,7 @@ Concluir a migracao para PySide6 e remover o frontend legado Tkinter do caminho 
 - Referencias em documentacao:
   - `README.md`
   - `AGENTS.global.md`
-  - `CHECKLIST_R7_4_2.md`
+  - `CHECKLIST_LINUX_V0_2_0.md`
   - `docs/SELECTION_TRACE.md`
 
 ## Estado Atual PySide6
