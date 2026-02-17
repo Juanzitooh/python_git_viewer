@@ -33,6 +33,7 @@ from ...core.commit_ops import (
     apply_patch_to_worktree as core_apply_patch_to_worktree,
     create_stash as core_create_stash,
     create_commit as core_create_commit,
+    discard_file_changes as core_discard_file_changes,
     drop_stash as core_drop_stash,
     get_file_patch as core_get_file_patch,
     get_last_commit_subject as core_get_last_commit_subject,
@@ -1497,6 +1498,8 @@ def on_commit_file_context_menu(window: object, pos: QPoint) -> None:
     action_open_vscode = menu.addAction("Abrir arquivo no VS Code")
     action_open_folder = menu.addAction("Abrir na pasta")
     action_copy_relative = menu.addAction("Copiar caminho relativo")
+    menu.addSeparator()
+    action_revert_file = menu.addAction("Reverter alteracoes do arquivo")
 
     selected_action = menu.exec(window.commit_files_list.viewport().mapToGlobal(pos))
     if selected_action is None:
@@ -1509,6 +1512,30 @@ def on_commit_file_context_menu(window: object, pos: QPoint) -> None:
         return
     if selected_action == action_copy_relative:
         window._copy_to_clipboard(file_path, status="Caminho relativo copiado.")
+        return
+    if selected_action == action_revert_file:
+        confirm = QMessageBox.question(
+            window,
+            "Commit",
+            (
+                f"Reverter alteracoes locais do arquivo?\n\n"
+                f"{file_path}\n\n"
+                "Esta acao remove alteracoes staged/unstaged deste arquivo."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            core_discard_file_changes(window.repo_path, file_path)
+        except RuntimeError as exc:
+            QMessageBox.critical(window, "Commit", str(exc))
+            return
+        refresh_commit_files(window)
+        window._refresh_repo_state_ui()
+        window._refresh_workspace_tree()
+        window._set_status(f"Arquivo revertido: {file_path}")
 
 
 def _load_commit_patch_for_path(

@@ -25,6 +25,18 @@ def checkout_branch(
         raise RuntimeError("Branch de destino invalida.")
     if stash_before:
         create_stash(repo_path, message=stash_message, include_untracked=True)
+
+    remote_ref = ""
+    if "/" in normalized_target:
+        remote_ref = _resolve_remote_branch_ref(repo_path, normalized_target)
+    if remote_ref:
+        local_branch = _derive_local_branch_name(normalized_target, remote_ref)
+        if local_branch_exists(repo_path, local_branch):
+            run_git(repo_path, ["checkout", local_branch])
+            return
+        run_git(repo_path, ["checkout", "-b", local_branch, "--track", remote_ref])
+        return
+
     checkout_error: RuntimeError | None = None
     try:
         run_git(repo_path, ["checkout", normalized_target])

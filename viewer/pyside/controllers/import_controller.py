@@ -675,11 +675,7 @@ def import_selected_commits(window: object) -> None:
                 except RuntimeError:
                     has_conflicts = False
                 if has_conflicts:
-                    QMessageBox.warning(
-                        window,
-                        "Importar",
-                        f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\nConflitos detectados.",
-                    )
+                    window._set_status(f"Conflitos detectados ao importar {summary.commit_hash[:7]}.")
                     window._show_conflicts_dialog(
                         operation="cherry-pick",
                         source_label="Importar",

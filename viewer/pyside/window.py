@@ -1238,6 +1238,38 @@ class QtShellWindow(QMainWindow):
             return False
         return self._open_local_path_in_explorer(resolved_repo)
 
+    def _open_repo_in_terminal(self, repo_path: str = "") -> bool:
+        resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
+        if not resolved_repo:
+            QMessageBox.warning(self, "Git Viewer", "Repositorio invalido para abrir no terminal.")
+            return False
+        terminal_commands = (
+            ("gnome-terminal", "--working-directory", resolved_repo),
+            ("kgx", "--working-directory", resolved_repo),
+            ("x-terminal-emulator", "--working-directory", resolved_repo),
+            ("konsole", "--workdir", resolved_repo),
+            ("xfce4-terminal", "--working-directory", resolved_repo),
+            ("tilix", "--working-directory", resolved_repo),
+            ("alacritty", "--working-directory", resolved_repo),
+            ("kitty", "--directory", resolved_repo),
+            ("wezterm", "start", "--cwd", resolved_repo),
+        )
+        for command in terminal_commands:
+            binary = command[0]
+            if not shutil.which(binary):
+                continue
+            try:
+                subprocess.Popen(list(command))
+            except OSError:
+                continue
+            return True
+        QMessageBox.warning(
+            self,
+            "Git Viewer",
+            "Nenhum terminal suportado encontrado no PATH (ex.: gnome-terminal, kgx, konsole, kitty).",
+        )
+        return False
+
     def _get_repo_github_base_url(self, repo_path: str = "") -> str:
         resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
         if not resolved_repo:

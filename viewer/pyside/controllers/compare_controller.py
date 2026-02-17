@@ -595,7 +595,7 @@ def run_compare_action(window: object) -> None:
                 operation = "rebase"
             elif action == "squash":
                 operation = "squash_merge"
-            QMessageBox.warning(window, "Comparar", f"{exc}\n\nConflitos detectados.")
+            window._set_status("Conflitos detectados na operacao de comparar.")
             window._show_conflicts_dialog(
                 operation=operation,
                 source_label="Comparar",

@@ -687,14 +687,7 @@ def open_history_export_dialog(window: object) -> None:
                     except RuntimeError:
                         has_conflicts = False
                     if has_conflicts:
-                        QMessageBox.warning(
-                            dialog,
-                            "Exportar",
-                            (
-                                f"Falha ao exportar {summary.commit_hash[:7]}.\n{exc}\n\n"
-                                "Conflitos detectados."
-                            ),
-                        )
+                        window._set_status(f"Conflitos detectados ao exportar {summary.commit_hash[:7]}.")
                         window._show_conflicts_dialog(
                             operation="cherry-pick",
                             source_label="Exportar",

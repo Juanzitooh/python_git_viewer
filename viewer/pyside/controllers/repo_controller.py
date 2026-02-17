@@ -961,7 +961,12 @@ def _show_repo_context_menu(
     menu = QMenu(parent_widget if isinstance(parent_widget, QWidget) else window)
     action_open_vscode = menu.addAction("Abrir repositório no VS Code")
     action_open_folder = menu.addAction("Abrir na pasta")
+    action_open_terminal = menu.addAction("Abrir no terminal")
     action_copy_path = menu.addAction("Copiar caminho local")
+    menu.addSeparator()
+    is_favorite = repo_is_favorite(window, normalized)
+    favorite_label = "Remover dos favoritos" if is_favorite else "Adicionar aos favoritos"
+    action_toggle_favorite = menu.addAction(favorite_label)
     menu.addSeparator()
     github_menu = menu.addMenu("GitHub")
     action_open_repo = github_menu.addAction("Abrir repositório")
@@ -985,8 +990,14 @@ def _show_repo_context_menu(
     if selected_action == action_open_folder:
         window._open_repo_in_explorer(normalized)
         return
+    if selected_action == action_open_terminal:
+        window._open_repo_in_terminal(normalized)
+        return
     if selected_action == action_copy_path:
         window._copy_to_clipboard(normalized, status="Caminho do repositório copiado.")
+        return
+    if selected_action == action_toggle_favorite:
+        _set_repo_favorite(window, normalized, not is_favorite)
         return
     if selected_action == action_open_repo:
         window._open_repo_in_github(normalized)
@@ -1033,6 +1044,33 @@ def _remove_repo_from_settings(window: object, repo_path: str) -> None:
             filtered.append(candidate)
         window.settings_data[key] = filtered
     window.scanned_repos = [path for path in window.scanned_repos if normalize_repo_path(path) != normalized]
+
+
+def _set_repo_favorite(window: object, repo_path: str, favorite: bool) -> None:
+    normalized = normalize_repo_path(repo_path)
+    current = window.settings_data.get("favorite_repos", [])
+    favorites: list[str] = []
+    if isinstance(current, list):
+        for raw in current:
+            if not isinstance(raw, str):
+                continue
+            candidate = normalize_repo_path(raw)
+            if candidate and candidate not in favorites:
+                favorites.append(candidate)
+    if favorite:
+        if normalized not in favorites:
+            favorites.append(normalized)
+    else:
+        favorites = [path for path in favorites if path != normalized]
+    window.settings_data["favorite_repos"] = favorites
+    load_repo_selector_items(window)
+    refresh_workspace_tree(window)
+    window._persist_state()
+    repo_name = os.path.basename(normalized.rstrip(os.sep)) or normalized
+    if favorite:
+        window._set_status(f"Repositorio favoritado: {repo_name}")
+    else:
+        window._set_status(f"Repositorio removido dos favoritos: {repo_name}")
 
 
 def _delete_local_repo(window: object, repo_path: str) -> None:

@@ -8,6 +8,7 @@ from viewer.core.commit_ops import (
     apply_stash,
     apply_patch_to_worktree,
     create_stash,
+    discard_file_changes,
     drop_stash,
     get_stash_patch,
     list_status_entries,
@@ -108,6 +109,31 @@ class TestCommitOps(unittest.TestCase):
         self.assertEqual(entries[0]["path"], "README.md")
         self.assertEqual(entries[0]["path_for_git"], "README.md")
         self.assertEqual(entries[0]["status"], "R ")
+
+    def test_discard_file_changes_uses_restore_for_tracked_files(self) -> None:
+        with patch(
+            "viewer.core.commit_ops.list_status_entries",
+            return_value=[{"path_for_git": "README.md", "status": " M"}],
+        ), patch("viewer.core.commit_ops.run_git") as mocked_run_git:
+            discard_file_changes("/tmp/repo", "README.md")
+        mocked_run_git.assert_called_once_with(
+            "/tmp/repo",
+            ["restore", "--staged", "--worktree", "--", "README.md"],
+        )
+
+    def test_discard_file_changes_removes_untracked_file(self) -> None:
+        with patch(
+            "viewer.core.commit_ops.list_status_entries",
+            return_value=[{"path_for_git": "notes.txt", "status": "??"}],
+        ), patch("viewer.core.commit_ops.os.path.exists", return_value=True), patch(
+            "viewer.core.commit_ops.os.path.isdir",
+            return_value=False,
+        ), patch("viewer.core.commit_ops.os.remove") as mocked_remove, patch(
+            "viewer.core.commit_ops.run_git"
+        ) as mocked_run_git:
+            discard_file_changes("/tmp/repo", "notes.txt")
+        mocked_remove.assert_called_once()
+        mocked_run_git.assert_not_called()
 
 
 if __name__ == "__main__":

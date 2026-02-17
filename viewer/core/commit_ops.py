@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 
@@ -136,6 +138,29 @@ def unstage_paths(repo_path: str, paths: list[str]) -> None:
         _trace_git_call(repo_path, args, error=str(exc), ok=False)
         raise
     _trace_git_call(repo_path, args, output=output, ok=True)
+
+
+def discard_file_changes(repo_path: str, path_for_git: str) -> None:
+    normalized_path = path_for_git.strip()
+    if not normalized_path:
+        raise RuntimeError("Arquivo invalido para reverter.")
+    status_entries = list_status_entries(repo_path)
+    entry = next((item for item in status_entries if str(item.get("path_for_git", "")).strip() == normalized_path), None)
+    if entry is None:
+        return
+    status_code = str(entry.get("status", "")).strip()
+    if status_code == "??":
+        absolute = os.path.abspath(os.path.join(repo_path, normalized_path))
+        if os.path.isdir(absolute):
+            shutil.rmtree(absolute, ignore_errors=True)
+            return
+        if os.path.exists(absolute):
+            try:
+                os.remove(absolute)
+            except OSError as exc:
+                raise RuntimeError(f"Falha ao remover arquivo nao rastreado: {exc}") from exc
+        return
+    run_git(repo_path, ["restore", "--staged", "--worktree", "--", normalized_path])
 
 
 def has_staged_changes(repo_path: str) -> bool:
