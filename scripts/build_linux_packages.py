@@ -100,6 +100,8 @@ def build_deb(
 
     launcher_script = (
         "#!/bin/sh\n"
+        "unset QT_PLUGIN_PATH\n"
+        "unset QT_QPA_PLATFORM_PLUGIN_PATH\n"
         "exec /opt/{app_id}/git_viewer \"$@\"\n"
     ).format(app_id=app_id)
     write_text(install_root / "usr" / "bin" / app_id, launcher_script, executable=True)
@@ -157,6 +159,8 @@ def build_appimage(
     apprun = (
         "#!/bin/sh\n"
         "HERE=\"$(dirname \"$(readlink -f \"$0\")\")\"\n"
+        "unset QT_PLUGIN_PATH\n"
+        "unset QT_QPA_PLATFORM_PLUGIN_PATH\n"
         "exec \"$HERE/usr/bin/git_viewer\" \"$@\"\n"
     )
     write_text(appdir / "AppRun", apprun, executable=True)
