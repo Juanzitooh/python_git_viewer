@@ -37,14 +37,14 @@ Executar na raiz do repo:
 
 ```bash
 python3 scripts/build_linux_packages.py --build-binary --deb-only
-ls -lh dist/git-viewer_0.2.0_amd64.deb
+ls -lh dist/git-viewer_0.2.1_amd64.deb
 ```
 
 Instalar (evita warning de permissao do `_apt`):
 
 ```bash
-cp dist/git-viewer_0.2.0_amd64.deb /tmp/
-sudo apt install /tmp/git-viewer_0.2.0_amd64.deb
+cp dist/git-viewer_0.2.1_amd64.deb /tmp/
+sudo apt install /tmp/git-viewer_0.2.1_amd64.deb
 ```
 
 Validar instalacao:
@@ -163,9 +163,9 @@ apt policy git-viewer
 ```
 
 Checklist:
-- [prox] `apt` atualiza sem quebrar dependencias.
-- [prox] Versao nova aparece em `apt policy`.
-- [prox] App abre apos update.
+- [x] `apt` atualiza sem quebrar dependencias.
+- [x] Versao nova aparece em `apt policy`.
+- [bug] App abre apos update.
 - [prox] `settings.json` do usuario foi preservado.
 
 ### 6.2 Reinstalar mesma versao (se precisar)
@@ -240,3 +240,4 @@ Resumo:
 | BUG-012 | Tela de conflitos | Media | Abrir tela de conflitos e resolver parcialmente. | Mostrar contagem pendente/resolvido, cor por estado e acoes por arquivo; atualizar em tempo real. | Tela anterior era basica e sem opcoes de resolucao guiada. | Relato manual. | Corrigido, validar (prox) |
 | BUG-013 | Fluxo conflito UX | Media | Gerar conflito em merge/rebase/squash/importar/exportar. | Ir direto para tela de conflitos (sem popup extra de erro esperado). | Exibia popup de erro antes do dialogo de conflitos. | Relato manual. | Corrigido, validar (prox) |
 | BUG-014 | Configuracoes / Perfil de atualizacao | Media | Alterar perfil em Configuracoes e validar timers ativos/apos salvar. | Perfil aplicado na hora e persistido apos salvar/reabrir. | Aplicacao imediata do perfil nao estava clara e revalidacao de persistencia ficou pendente. | Relato no checklist 5.7. | Corrigido, validar (prox) |
+| BUG-015 | Pacote Linux (.deb) / Inicializacao Qt | Alta | Atualizar pacote para nova versao e executar `git-viewer`. | Aplicativo inicia normalmente apos update. | Falha no boot com erro de plugin Qt (`wayland`/`xcb`) e aborta antes da UI. | Log do terminal no checklist (rodada v0.2.1). | Corrigido, validar (prox) |
