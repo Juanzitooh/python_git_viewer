@@ -120,6 +120,28 @@ def _check_state_to_int(state: object) -> int:
         return int(Qt.CheckState.Unchecked.value)
 
 
+def _get_commit_auto_stage_opt_out_paths(window: object) -> set[str]:
+    current = getattr(window, "commit_auto_stage_opt_out_paths", None)
+    if isinstance(current, set):
+        return current
+    paths: set[str] = set()
+    setattr(window, "commit_auto_stage_opt_out_paths", paths)
+    return paths
+
+
+def _mark_commit_auto_stage_opt_out(window: object, paths: list[str], *, opted_out: bool) -> None:
+    if not paths:
+        return
+    tracked = _get_commit_auto_stage_opt_out_paths(window)
+    normalized = {str(path).strip() for path in paths if str(path).strip()}
+    if not normalized:
+        return
+    if opted_out:
+        tracked.update(normalized)
+        return
+    tracked.difference_update(normalized)
+
+
 def _summarize_patch_for_trace(patch: str) -> dict[str, object]:
     payload = patch.strip()
     if not payload:
@@ -698,6 +720,11 @@ def _apply_commit_stage_change_ui(
     path: str,
     preserve_diff_rows: bool,
 ) -> None:
+    normalized_status = status_message.strip().lower()
+    if "adicionado ao stage" in normalized_status:
+        _mark_commit_auto_stage_opt_out(window, [path], opted_out=False)
+    elif "removido do stage" in normalized_status:
+        _mark_commit_auto_stage_opt_out(window, [path], opted_out=True)
     _trace_commit_selection_event(
         window,
         "ui.commit.main.stage_change_ui.start",
@@ -1269,7 +1296,6 @@ def _restore_commit_selection(window: object, preferred_path: str) -> None:
 
 
 def refresh_commit_files(window: object) -> None:
-    had_items = window.commit_files_list.count() > 0
     previous_scroll_value = window.commit_files_list.verticalScrollBar().value()
     preferred_path = str(getattr(window, "commit_selected_path", "")).strip()
     if not hasattr(window, "commit_diff_scope_by_path"):
@@ -1290,10 +1316,11 @@ def refresh_commit_files(window: object) -> None:
     previous_repo = str(getattr(window, "commit_auto_stage_repo", "")).strip()
     current_repo = str(getattr(window, "repo_path", "")).strip()
     repo_switched = bool(current_repo and current_repo != previous_repo)
+    auto_stage_opt_out_paths = _get_commit_auto_stage_opt_out_paths(window)
     if repo_switched:
-        window.commit_auto_stage_disabled = False
         window.commit_diff_scope_by_path = {}
         window.commit_last_diff_path = ""
+        auto_stage_opt_out_paths.clear()
     window.commit_auto_stage_repo = current_repo
     if not window.repo_path:
         window.commit_files_list.blockSignals(False)
@@ -1309,7 +1336,7 @@ def refresh_commit_files(window: object) -> None:
         window.commit_diff_selected_line = 0
         _sync_commit_pr_button_state(window, 0)
         _sync_commit_stage_buttons(window)
-        window.commit_auto_stage_disabled = False
+        auto_stage_opt_out_paths.clear()
         update_commit_selection_label(window)
         return
     try:
@@ -1337,22 +1364,27 @@ def refresh_commit_files(window: object) -> None:
         window.commit_status_entries_by_path[path_for_git] = entry
         folder = os.path.dirname(path_for_git) if path_for_git else ""
         grouped_entries.setdefault(folder, []).append(entry)
-
-    should_auto_stage = (
-        bool(window.commit_status_entries_by_path)
-        and not bool(getattr(window, "commit_auto_stage_disabled", False))
-        and (repo_switched or not had_items)
-        and any(not _entry_is_fully_staged(entry) for entry in window.commit_status_entries_by_path.values())
-    )
+    tracked_paths = set(window.commit_status_entries_by_path.keys())
+    auto_stage_opt_out_paths.intersection_update(tracked_paths)
+    auto_stage_targets: list[str] = []
+    for path_for_git, entry in window.commit_status_entries_by_path.items():
+        if path_for_git in auto_stage_opt_out_paths:
+            continue
+        if not _entry_is_fully_staged(entry):
+            auto_stage_targets.append(path_for_git)
+    should_auto_stage = bool(auto_stage_targets)
     if should_auto_stage:
         try:
-            core_stage_paths(window.repo_path, list(window.commit_status_entries_by_path.keys()))
+            core_stage_paths(window.repo_path, auto_stage_targets)
         except RuntimeError as exc:
             window.commit_files_list.blockSignals(False)
             QMessageBox.critical(window, "Commit", str(exc))
             return
         window.commit_files_list.blockSignals(False)
-        window._set_status("Arquivos modificados foram stageados automaticamente.")
+        if len(auto_stage_targets) == 1:
+            window._set_status(f"Arquivo stageado automaticamente: {auto_stage_targets[0]}")
+        else:
+            window._set_status(f"{len(auto_stage_targets)} arquivos stageados automaticamente.")
         refresh_commit_files(window)
         return
 
@@ -1431,7 +1463,6 @@ def update_commit_selection_label(window: object) -> None:
 def on_commit_file_item_changed(window: object, item: QListWidgetItem) -> None:
     if bool(getattr(window, "commit_syncing_checks", False)):
         return
-    window.commit_auto_stage_disabled = True
     kind = _commit_item_kind(item)
     changed = False
     affected_paths: list[str] = []
@@ -1451,6 +1482,12 @@ def on_commit_file_item_changed(window: object, item: QListWidgetItem) -> None:
         file_path = str(path_value).strip() if path_value is not None else ""
         if file_path:
             affected_paths = [file_path]
+    if affected_paths:
+        state = item.checkState()
+        if state == Qt.CheckState.Checked:
+            _mark_commit_auto_stage_opt_out(window, affected_paths, opted_out=False)
+        elif state == Qt.CheckState.Unchecked:
+            _mark_commit_auto_stage_opt_out(window, affected_paths, opted_out=True)
     _trace_commit_selection_event(
         window,
         "ui.commit.files.item_changed",
@@ -4546,7 +4583,7 @@ def select_all_commit_files(window: object) -> None:
     paths = list(window.commit_file_item_by_path.keys())
     _set_commit_paths_checked(window, paths, True)
     _sync_commit_group_check_states(window)
-    window.commit_auto_stage_disabled = True
+    _mark_commit_auto_stage_opt_out(window, paths, opted_out=False)
     changed = _apply_stage_state_from_selection(window, paths)
     update_commit_selection_label(window)
     if not changed:
@@ -4560,7 +4597,7 @@ def clear_commit_file_selection(window: object) -> None:
     paths = list(window.commit_file_item_by_path.keys())
     _set_commit_paths_checked(window, paths, False)
     _sync_commit_group_check_states(window)
-    window.commit_auto_stage_disabled = True
+    _mark_commit_auto_stage_opt_out(window, paths, opted_out=True)
     changed = _apply_stage_state_from_selection(window, paths)
     update_commit_selection_label(window)
     if not changed:
