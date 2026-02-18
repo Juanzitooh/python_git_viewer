@@ -22,7 +22,7 @@ VSVersionInfo(
             StringStruct('InternalName', 'git_viewer'),
             StringStruct('OriginalFilename', 'git_viewer.exe'),
             StringStruct('ProductName', 'Git Commits Viewer'),
-            StringStruct('ProductVersion', '0.2.0')
+            StringStruct('ProductVersion', '0.2.1')
           ]
         )
       ]
