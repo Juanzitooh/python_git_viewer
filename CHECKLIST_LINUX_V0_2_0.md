@@ -146,7 +146,7 @@ Checklist:
 ### 5.7 Aba Configuracoes
 - [x] Tema claro/escuro funciona.
 - [x] Overrides de tema salvam e reaplicam.
-- [bug] Perfil de atualizacao salva e reaplica.
+- [prox] Perfil de atualizacao salva e reaplica.
 
 ---
 
@@ -216,8 +216,8 @@ tivemos bugs e discordâncias em coisas descritas no fim do aruqivo como bugs, e
 
 Resumo:
 - Total OK: 47
-- Total BUG: 2
-- Total Prox: 9
+- Total BUG: 1
+- Total Prox: 10
 - Decisao:`MANTER EM AJUSTE`
 
 ---
@@ -239,3 +239,4 @@ Resumo:
 | BUG-011 | Comparar / Squash conflito | Alta | Executar squash com conflito. | Abrir tela de conflitos corretamente para squash. | Fluxo podia nao abrir dialogo por deteccao incompleta da operacao. | Relato manual. | Corrigido, validar (prox) |
 | BUG-012 | Tela de conflitos | Media | Abrir tela de conflitos e resolver parcialmente. | Mostrar contagem pendente/resolvido, cor por estado e acoes por arquivo; atualizar em tempo real. | Tela anterior era basica e sem opcoes de resolucao guiada. | Relato manual. | Corrigido, validar (prox) |
 | BUG-013 | Fluxo conflito UX | Media | Gerar conflito em merge/rebase/squash/importar/exportar. | Ir direto para tela de conflitos (sem popup extra de erro esperado). | Exibia popup de erro antes do dialogo de conflitos. | Relato manual. | Corrigido, validar (prox) |
+| BUG-014 | Configuracoes / Perfil de atualizacao | Media | Alterar perfil em Configuracoes e validar timers ativos/apos salvar. | Perfil aplicado na hora e persistido apos salvar/reabrir. | Aplicacao imediata do perfil nao estava clara e revalidacao de persistencia ficou pendente. | Relato no checklist 5.7. | Corrigido, validar (prox) |
