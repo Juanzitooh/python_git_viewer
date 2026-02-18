@@ -132,8 +132,13 @@ def on_settings_theme_changed(window: object) -> None:
 
 
 def on_settings_update_profile_changed(window: object) -> None:
+    selected_data = window.settings_update_profile_combo.currentData()
+    selected_profile = str(selected_data).strip().lower() if selected_data is not None else "balanced"
+    if selected_profile not in {"realtime", "balanced", "economic", "custom"}:
+        selected_profile = "balanced"
+    window._apply_background_update_profile(selected_profile)
     _sync_update_profile_summary(window)
-    window.settings_status_label.setText("Perfil de atualizacao alterado (salve para persistir).")
+    window.settings_status_label.setText("Perfil de atualizacao aplicado (salve para persistir).")
 
 
 def on_settings_theme_color_edited(window: object, color_key: str) -> None:

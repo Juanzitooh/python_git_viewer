@@ -453,8 +453,22 @@ class QtShellWindow(QMainWindow):
         self._apply_background_update_profile()
         QTimer.singleShot(350, self._kick_background_refresh)
 
-    def _apply_background_update_profile(self) -> None:
-        self._auto_profile = resolve_update_profile(self.settings_data)
+    def _apply_background_update_profile(self, profile_override: str = "") -> None:
+        effective_settings = dict(self.settings_data)
+        override = profile_override.strip().lower()
+        if override in {"realtime", "balanced", "economic", "custom"}:
+            effective_settings["update_profile"] = override
+        self._auto_profile = resolve_update_profile(effective_settings)
+        if not all(
+            hasattr(self, attr)
+            for attr in (
+                "_auto_status_timer",
+                "_auto_fetch_timer",
+                "_auto_history_timer",
+                "_auto_workspace_timer",
+            )
+        ):
+            return
         status_ms = max(5, int(self._auto_profile.status_interval_sec)) * 1000
         fetch_ms = max(10, int(self._auto_profile.fetch_interval_sec)) * 1000
         history_ms = max(10, int(self._auto_profile.history_interval_sec)) * 1000
