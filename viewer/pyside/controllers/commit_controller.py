@@ -1989,6 +1989,9 @@ def _sync_dialog_hunk_markers(dialog_state: dict[str, object]) -> None:
     side_tree = dialog_state.get("side_tree")
     if not isinstance(side_tree, QTreeWidget):
         return
+    was_blocked = bool(side_tree.signalsBlocked())
+    if not was_blocked:
+        side_tree.blockSignals(True)
     previous = bool(dialog_state.get("rendering_tree", False))
     dialog_state["rendering_tree"] = True
     try:
@@ -2049,6 +2052,8 @@ def _sync_dialog_hunk_markers(dialog_state: dict[str, object]) -> None:
         _flush_current_hunk()
     finally:
         dialog_state["rendering_tree"] = previous
+        if not was_blocked:
+            side_tree.blockSignals(False)
 
 
 def _set_dialog_hunk_line_states(
@@ -2060,6 +2065,9 @@ def _set_dialog_hunk_line_states(
     side_tree = dialog_state.get("side_tree")
     if not isinstance(side_tree, QTreeWidget):
         return
+    was_blocked = bool(side_tree.signalsBlocked())
+    if not was_blocked:
+        side_tree.blockSignals(True)
     previous = bool(dialog_state.get("rendering_tree", False))
     dialog_state["rendering_tree"] = True
     try:
@@ -2087,6 +2095,8 @@ def _set_dialog_hunk_line_states(
             item.setCheckState(2, state)
     finally:
         dialog_state["rendering_tree"] = previous
+        if not was_blocked:
+            side_tree.blockSignals(False)
 
 
 def _dialog_selected_hunk_ref(dialog_state: dict[str, object]) -> tuple[str, int] | None:
@@ -2307,6 +2317,9 @@ def _apply_dialog_scope_after_toggle(
     side_tree = dialog_state.get("side_tree")
     if not isinstance(side_tree, QTreeWidget):
         return
+    was_blocked = bool(side_tree.signalsBlocked())
+    if not was_blocked:
+        side_tree.blockSignals(True)
     previous = bool(dialog_state.get("rendering_tree", False))
     dialog_state["rendering_tree"] = True
     target_state = _dialog_expected_check_state_for_scope(target_scope)
@@ -2405,6 +2418,8 @@ def _apply_dialog_scope_after_toggle(
             current_item.setCheckState(2, target_state)
     finally:
         dialog_state["rendering_tree"] = previous
+        if not was_blocked:
+            side_tree.blockSignals(False)
 
 
 def _revert_dialog_item_after_failed_toggle(
@@ -2418,6 +2433,9 @@ def _revert_dialog_item_after_failed_toggle(
     side_tree = dialog_state.get("side_tree")
     if not isinstance(side_tree, QTreeWidget):
         return
+    was_blocked = bool(side_tree.signalsBlocked())
+    if not was_blocked:
+        side_tree.blockSignals(True)
     previous = bool(dialog_state.get("rendering_tree", False))
     dialog_state["rendering_tree"] = True
     source_state = _dialog_expected_check_state_for_scope(source_scope)
@@ -2443,6 +2461,8 @@ def _revert_dialog_item_after_failed_toggle(
             current_item.setCheckState(2, source_state)
     finally:
         dialog_state["rendering_tree"] = previous
+        if not was_blocked:
+            side_tree.blockSignals(False)
 
 
 def _refresh_commit_diff_dialog_data_cache(window: object, dialog_state: dict[str, object]) -> None:

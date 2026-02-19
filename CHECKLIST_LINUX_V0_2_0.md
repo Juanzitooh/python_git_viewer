@@ -45,6 +45,7 @@ Instalar (evita warning de permissao do `_apt`):
 ```bash
 cp dist/git-viewer_0.2.1_amd64.deb /tmp/
 sudo apt install /tmp/git-viewer_0.2.1_amd64.deb
+sudo apt install --reinstall /tmp/git-viewer_0.2.1_amd64.deb
 ```
 
 Validar instalacao:
