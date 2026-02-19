@@ -1954,13 +1954,6 @@ def _dialog_apply_marker_to_item(item: QTreeWidgetItem, marker: str) -> None:
     item.setCheckState(2, Qt.CheckState.Unchecked)
 
 
-def _dialog_clear_marker_from_item(item: QTreeWidgetItem) -> None:
-    item.setText(2, "")
-    item.setTextAlignment(2, int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
-    flags = item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable
-    item.setFlags(flags)
-
-
 def _is_dialog_item_toggleable(item: QTreeWidgetItem) -> bool:
     try:
         return bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
@@ -2762,11 +2755,8 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                 hunk_row.setData(0, ROLE_DIALOG_LINE_NO, 0)
                 hunk_row.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
                 hunk_row.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                if scope_has_dev_null:
-                    _dialog_clear_marker_from_item(hunk_row)
-                else:
-                    hunk_marker = "[x]" if scope == "staged" else "[ ]"
-                    _dialog_apply_marker_to_item(hunk_row, hunk_marker)
+                hunk_marker = "[x]" if scope == "staged" else "[ ]"
+                _dialog_apply_marker_to_item(hunk_row, hunk_marker)
                 for column in range(5):
                     font = hunk_row.font(column)
                     font.setBold(True)
@@ -2865,13 +2855,10 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                                     row_item.setData(0, ROLE_DIALOG_LINE_INFO, added_line)
                                 _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
                             if removed_line is not None or added_line is not None:
-                                if scope_has_dev_null:
-                                    _dialog_clear_marker_from_item(row_item)
-                                else:
-                                    marker = "[x]" if scope == "staged" else "[ ]"
-                                    _dialog_apply_marker_to_item(row_item, marker)
-                                    if first_selectable_item is None:
-                                        first_selectable_item = row_item
+                                marker = "[x]" if scope == "staged" else "[ ]"
+                                _dialog_apply_marker_to_item(row_item, marker)
+                                if first_selectable_item is None:
+                                    first_selectable_item = row_item
                             side_tree.addTopLevelItem(row_item)
                             row_number = side_tree.topLevelItemCount()
                             line_to_hunk[row_number] = hunk_index
@@ -2913,13 +2900,10 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                             new_real_line=int(added_line.new_line),
                         )
                         _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
-                        if scope_has_dev_null:
-                            _dialog_clear_marker_from_item(row_item)
-                        else:
-                            marker = "[x]" if scope == "staged" else "[ ]"
-                            _dialog_apply_marker_to_item(row_item, marker)
-                            if first_selectable_item is None:
-                                first_selectable_item = row_item
+                        marker = "[x]" if scope == "staged" else "[ ]"
+                        _dialog_apply_marker_to_item(row_item, marker)
+                        if first_selectable_item is None:
+                            first_selectable_item = row_item
                         side_tree.addTopLevelItem(row_item)
                         row_number = side_tree.topLevelItemCount()
                         line_to_hunk[row_number] = hunk_index
@@ -3143,6 +3127,20 @@ def _on_commit_diff_dialog_item_changed(
             return
     scope = _dialog_item_scope(item, dialog_state)
     if _dialog_scope_has_dev_null(dialog_state, scope):
+        expected = _dialog_expected_check_state_for_scope(scope)
+        side_tree = dialog_state.get("side_tree")
+        if isinstance(side_tree, QTreeWidget):
+            blocked = bool(side_tree.signalsBlocked())
+            if not blocked:
+                side_tree.blockSignals(True)
+            previous = bool(dialog_state.get("rendering_tree", False))
+            dialog_state["rendering_tree"] = True
+            try:
+                item.setCheckState(2, expected)
+            finally:
+                dialog_state["rendering_tree"] = previous
+                if not blocked:
+                    side_tree.blockSignals(False)
         return
     state = item.checkState(2)
     should_toggle = (
