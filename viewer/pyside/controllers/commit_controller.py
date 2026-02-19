@@ -1954,11 +1954,25 @@ def _dialog_apply_marker_to_item(item: QTreeWidgetItem, marker: str) -> None:
     item.setCheckState(2, Qt.CheckState.Unchecked)
 
 
+def _dialog_clear_marker_from_item(item: QTreeWidgetItem) -> None:
+    item.setText(2, "")
+    item.setTextAlignment(2, int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+    flags = item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable
+    item.setFlags(flags)
+
+
 def _is_dialog_item_toggleable(item: QTreeWidgetItem) -> bool:
     try:
         return bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
     except RuntimeError:
         return False
+
+
+def _dialog_scope_has_dev_null(dialog_state: dict[str, object], scope: str) -> bool:
+    scopes = dialog_state.get("dev_null_scopes")
+    if not isinstance(scopes, set):
+        return False
+    return scope.strip() in scopes
 
 
 def _is_dialog_item_alive(item: QTreeWidgetItem | None) -> bool:
@@ -2688,9 +2702,7 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
         else:
             scope_label.setText("Escopo: misto (staged + unstaged)")
     if isinstance(info_label, QLabel):
-        info_label.setText(
-            "Use o checkbox central para stage/unstage por linha/bloco. Clique direito para copiar ou reverter."
-        )
+        info_label.setText("Use o checkbox central para stage/unstage por linha/bloco. Clique direito para copiar ou reverter.")
 
     current_item = side_tree.currentItem()
     selected_key = _dialog_tree_item_key(current_item) if current_item is not None else None
@@ -2710,12 +2722,14 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
             dialog_state["scope_preference"] = ""
             dialog_state["operation_diff_data"] = DiffData(header_lines=[], hunks=[])
             dialog_state["operation_diff_data_by_scope"] = {}
+            dialog_state["dev_null_scopes"] = set()
             return
 
         dialog_state["scope"] = "mixed" if len(patches_by_scope) > 1 else patches_by_scope[0][0]
         dialog_state["scope_preference"] = ""
 
         operation_diff_data_by_scope: dict[str, DiffData] = {}
+        dev_null_scopes: set[str] = set()
         line_to_hunk: dict[int, int] = {}
         line_to_info: dict[int, DiffLineInfo] = {}
         first_selectable_item: QTreeWidgetItem | None = None
@@ -2723,6 +2737,9 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
         for scope, patch in patches_by_scope:
             diff_data = parse_diff_data(patch, word_diff_plain=False)
             operation_diff_data_by_scope[scope] = diff_data
+            scope_has_dev_null = _diff_has_dev_null_transition(diff_data)
+            if scope_has_dev_null:
+                dev_null_scopes.add(scope)
 
             scope_row = QTreeWidgetItem([f"Escopo: {scope}", "", "", "", ""])
             scope_row.setData(0, ROLE_DIALOG_KIND, "scope")
@@ -2745,8 +2762,11 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                 hunk_row.setData(0, ROLE_DIALOG_LINE_NO, 0)
                 hunk_row.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
                 hunk_row.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                hunk_marker = "[x]" if scope == "staged" else "[ ]"
-                _dialog_apply_marker_to_item(hunk_row, hunk_marker)
+                if scope_has_dev_null:
+                    _dialog_clear_marker_from_item(hunk_row)
+                else:
+                    hunk_marker = "[x]" if scope == "staged" else "[ ]"
+                    _dialog_apply_marker_to_item(hunk_row, hunk_marker)
                 for column in range(5):
                     font = hunk_row.font(column)
                     font.setBold(True)
@@ -2845,10 +2865,13 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                                     row_item.setData(0, ROLE_DIALOG_LINE_INFO, added_line)
                                 _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
                             if removed_line is not None or added_line is not None:
-                                marker = "[x]" if scope == "staged" else "[ ]"
-                                _dialog_apply_marker_to_item(row_item, marker)
-                                if first_selectable_item is None:
-                                    first_selectable_item = row_item
+                                if scope_has_dev_null:
+                                    _dialog_clear_marker_from_item(row_item)
+                                else:
+                                    marker = "[x]" if scope == "staged" else "[ ]"
+                                    _dialog_apply_marker_to_item(row_item, marker)
+                                    if first_selectable_item is None:
+                                        first_selectable_item = row_item
                             side_tree.addTopLevelItem(row_item)
                             row_number = side_tree.topLevelItemCount()
                             line_to_hunk[row_number] = hunk_index
@@ -2890,10 +2913,13 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                             new_real_line=int(added_line.new_line),
                         )
                         _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
-                        marker = "[x]" if scope == "staged" else "[ ]"
-                        _dialog_apply_marker_to_item(row_item, marker)
-                        if first_selectable_item is None:
-                            first_selectable_item = row_item
+                        if scope_has_dev_null:
+                            _dialog_clear_marker_from_item(row_item)
+                        else:
+                            marker = "[x]" if scope == "staged" else "[ ]"
+                            _dialog_apply_marker_to_item(row_item, marker)
+                            if first_selectable_item is None:
+                                first_selectable_item = row_item
                         side_tree.addTopLevelItem(row_item)
                         row_number = side_tree.topLevelItemCount()
                         line_to_hunk[row_number] = hunk_index
@@ -2902,6 +2928,7 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
         dialog_state["line_to_hunk"] = line_to_hunk
         dialog_state["line_to_info"] = line_to_info
         dialog_state["operation_diff_data_by_scope"] = operation_diff_data_by_scope
+        dialog_state["dev_null_scopes"] = dev_null_scopes
         first_scope_data = operation_diff_data_by_scope.get(patches_by_scope[0][0])
         dialog_state["operation_diff_data"] = (
             first_scope_data if isinstance(first_scope_data, DiffData) else DiffData(header_lines=[], hunks=[])
@@ -2927,6 +2954,10 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
             dialog_state["selected_line"] = 0
 
         _sync_dialog_hunk_markers(dialog_state)
+        if isinstance(info_label, QLabel) and dev_null_scopes:
+            info_label.setText(
+                "Arquivo novo/excluido: stage por linha/bloco indisponivel nesta janela; use a lista de arquivos."
+            )
     finally:
         side_tree.blockSignals(False)
         dialog_state["rendering_tree"] = False
@@ -3034,6 +3065,9 @@ def _on_commit_diff_dialog_marker_clicked(window: object, dialog_state: dict[str
         if current_item is None:
             return
         scope = _dialog_item_scope(current_item, dialog_state)
+        if _dialog_scope_has_dev_null(dialog_state, scope):
+            window._set_status("Arquivo novo/excluido: use selecao por arquivo para stage/unstage.")
+            return
         kind_value = current_item.data(0, ROLE_DIALOG_KIND)
         kind = str(kind_value).strip() if kind_value is not None else ""
         old_line_info, new_line_info = _dialog_item_line_infos(current_item)
@@ -3108,6 +3142,8 @@ def _on_commit_diff_dialog_item_changed(
         if not isinstance(line_no_value, int) or line_no_value <= 0:
             return
     scope = _dialog_item_scope(item, dialog_state)
+    if _dialog_scope_has_dev_null(dialog_state, scope):
+        return
     state = item.checkState(2)
     should_toggle = (
         (scope == "unstaged" and state == Qt.CheckState.Checked)
@@ -3219,6 +3255,7 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
         hunk_header=hunk_header,
     )
     changed_line = bool(old_line_info is not None or new_line_info is not None)
+    scope_has_dev_null = _dialog_scope_has_dev_null(dialog_state, scope)
     old_raw_value = item.data(0, ROLE_DIALOG_OLD_RAW)
     new_raw_value = item.data(0, ROLE_DIALOG_NEW_RAW)
     old_raw = str(old_raw_value).strip() if old_raw_value is not None else ""
@@ -3235,12 +3272,12 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
     action_unstage_line = None
     action_stage_hunk = None
     action_unstage_hunk = None
-    if scope == "staged":
+    if scope == "staged" and not scope_has_dev_null:
         if resolved_hunk_index is not None:
             action_unstage_hunk = menu.addAction("Unstage bloco")
         if changed_line:
             action_unstage_line = menu.addAction("Unstage linha")
-    elif scope == "unstaged":
+    elif scope == "unstaged" and not scope_has_dev_null:
         if resolved_hunk_index is not None:
             action_stage_hunk = menu.addAction("Stage bloco")
         if changed_line:
@@ -3459,6 +3496,7 @@ def open_commit_diff_window(window: object) -> None:
         "scope": "",
         "scope_preference": "",
         "operation_diff_data": DiffData(header_lines=[], hunks=[]),
+        "dev_null_scopes": set(),
         "rendering_tree": False,
         "toggle_inflight": False,
         "action_inflight": False,
