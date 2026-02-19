@@ -3052,7 +3052,6 @@ def _on_commit_diff_dialog_marker_clicked(window: object, dialog_state: dict[str
             old_line=_line_info_to_trace_payload(old_line_info),
             new_line=_line_info_to_trace_payload(new_line_info),
         )
-        target_scope = _dialog_target_scope_for_state(scope, current_item.checkState(2))
         toggled = _apply_commit_diff_dialog_toggle(
             window,
             dialog_state,
@@ -3070,17 +3069,9 @@ def _on_commit_diff_dialog_marker_clicked(window: object, dialog_state: dict[str
                 current_item=current_item,
                 hunk_index=hunk_index,
             )
-            _sync_dialog_hunk_markers(dialog_state)
+            _refresh_commit_diff_dialog_views(window, dialog_state)
             return
-        _apply_dialog_scope_after_toggle(
-            dialog_state,
-            source_scope=scope,
-            target_scope=target_scope,
-            kind=kind,
-            current_item=current_item,
-            hunk_index=hunk_index,
-        )
-        _sync_dialog_hunk_markers(dialog_state)
+        _refresh_commit_diff_dialog_views(window, dialog_state)
     finally:
         _release_commit_diff_dialog_action_lock(dialog_state)
 
@@ -3164,7 +3155,6 @@ def _on_commit_diff_dialog_item_changed(
     if not _acquire_commit_diff_dialog_action_lock(dialog_state):
         return
     dialog_state["toggle_inflight"] = True
-    target_scope = _dialog_target_scope_for_state(scope, state)
 
     def _run_deferred_toggle() -> None:
         current_item = _dialog_find_item_by_key(dialog_state, item_key)
@@ -3188,17 +3178,9 @@ def _on_commit_diff_dialog_item_changed(
                     current_item=current_item,
                     hunk_index=hunk_index,
                 )
-                _sync_dialog_hunk_markers(dialog_state)
+                _refresh_commit_diff_dialog_views(window, dialog_state)
                 return
-            _apply_dialog_scope_after_toggle(
-                dialog_state,
-                source_scope=scope,
-                target_scope=target_scope,
-                kind=kind,
-                current_item=current_item,
-                hunk_index=hunk_index,
-            )
-            _sync_dialog_hunk_markers(dialog_state)
+            _refresh_commit_diff_dialog_views(window, dialog_state)
         finally:
             dialog_state["toggle_inflight"] = False
             _release_commit_diff_dialog_action_lock(dialog_state)
@@ -3319,15 +3301,7 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Linha adicionada ao stage.",
             )
             if applied:
-                _apply_dialog_scope_after_toggle(
-                    dialog_state,
-                    source_scope=scope,
-                    target_scope="staged",
-                    kind="line",
-                    current_item=item,
-                    hunk_index=hunk_index,
-                )
-            _sync_dialog_hunk_markers(dialog_state)
+                _refresh_commit_diff_dialog_views(window, dialog_state)
             return
         if chosen_action == action_unstage_line and changed_line:
             patch = _build_patch_for_dialog_row(
@@ -3343,15 +3317,7 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Linha removida do stage.",
             )
             if applied:
-                _apply_dialog_scope_after_toggle(
-                    dialog_state,
-                    source_scope=scope,
-                    target_scope="unstaged",
-                    kind="line",
-                    current_item=item,
-                    hunk_index=hunk_index,
-                )
-            _sync_dialog_hunk_markers(dialog_state)
+                _refresh_commit_diff_dialog_views(window, dialog_state)
             return
         if chosen_action == action_stage_hunk and resolved_hunk_index is not None:
             patch = build_patch_for_hunk(operation_diff_data, resolved_hunk_index) or ""
@@ -3363,15 +3329,7 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Bloco adicionado ao stage.",
             )
             if applied:
-                _apply_dialog_scope_after_toggle(
-                    dialog_state,
-                    source_scope=scope,
-                    target_scope="staged",
-                    kind="hunk",
-                    current_item=item,
-                    hunk_index=resolved_hunk_index,
-                )
-            _sync_dialog_hunk_markers(dialog_state)
+                _refresh_commit_diff_dialog_views(window, dialog_state)
             return
         if chosen_action == action_unstage_hunk and resolved_hunk_index is not None:
             patch = build_patch_for_hunk(operation_diff_data, resolved_hunk_index) or ""
@@ -3383,15 +3341,7 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Bloco removido do stage.",
             )
             if applied:
-                _apply_dialog_scope_after_toggle(
-                    dialog_state,
-                    source_scope=scope,
-                    target_scope="unstaged",
-                    kind="hunk",
-                    current_item=item,
-                    hunk_index=resolved_hunk_index,
-                )
-            _sync_dialog_hunk_markers(dialog_state)
+                _refresh_commit_diff_dialog_views(window, dialog_state)
             return
         if chosen_action == action_revert_line and changed_line:
             patch = _build_patch_for_dialog_row(
