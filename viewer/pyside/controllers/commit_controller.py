@@ -1908,6 +1908,30 @@ def _dialog_tree_item_key(item: QTreeWidgetItem) -> tuple[str, str, int, int, st
     return (kind, scope, hunk_index, line_no, old_text, new_text)
 
 
+def _dialog_find_item_by_key(
+    dialog_state: dict[str, object],
+    item_key: tuple[str, str, int, int, str, str],
+) -> QTreeWidgetItem | None:
+    tree = dialog_state.get("side_tree")
+    if not isinstance(tree, QTreeWidget):
+        return None
+    try:
+        item_count = tree.topLevelItemCount()
+    except RuntimeError:
+        return None
+    for row_index in range(item_count):
+        item = tree.topLevelItem(row_index)
+        if item is None:
+            continue
+        try:
+            current_key = _dialog_tree_item_key(item)
+        except RuntimeError:
+            continue
+        if current_key == item_key:
+            return item
+    return None
+
+
 def _dialog_apply_marker_to_item(item: QTreeWidgetItem, marker: str) -> None:
     normalized = marker.strip()
     item.setText(2, "")
@@ -3133,43 +3157,54 @@ def _on_commit_diff_dialog_item_changed(
                 scope=scope,
                 state=state,
             )
+    try:
+        item_key = _dialog_tree_item_key(item)
+    except RuntimeError:
+        return
     if not _acquire_commit_diff_dialog_action_lock(dialog_state):
         return
     dialog_state["toggle_inflight"] = True
     target_scope = _dialog_target_scope_for_state(scope, state)
 
-    try:
-        toggled = _apply_commit_diff_dialog_toggle(
-            window,
-            dialog_state,
-            scope=scope,
-            old_line_info=old_line_info,
-            new_line_info=new_line_info,
-            hunk_index=hunk_index,
-            hunk_header=hunk_header,
-        )
-        if not toggled:
-            _revert_dialog_item_after_failed_toggle(
+    def _run_deferred_toggle() -> None:
+        current_item = _dialog_find_item_by_key(dialog_state, item_key)
+        try:
+            if current_item is None:
+                return
+            toggled = _apply_commit_diff_dialog_toggle(
+                window,
+                dialog_state,
+                scope=scope,
+                old_line_info=old_line_info,
+                new_line_info=new_line_info,
+                hunk_index=hunk_index,
+                hunk_header=hunk_header,
+            )
+            if not toggled:
+                _revert_dialog_item_after_failed_toggle(
+                    dialog_state,
+                    source_scope=scope,
+                    kind=kind,
+                    current_item=current_item,
+                    hunk_index=hunk_index,
+                )
+                _sync_dialog_hunk_markers(dialog_state)
+                return
+            _apply_dialog_scope_after_toggle(
                 dialog_state,
                 source_scope=scope,
+                target_scope=target_scope,
                 kind=kind,
-                current_item=item,
+                current_item=current_item,
                 hunk_index=hunk_index,
             )
             _sync_dialog_hunk_markers(dialog_state)
-            return
-        _apply_dialog_scope_after_toggle(
-            dialog_state,
-            source_scope=scope,
-            target_scope=target_scope,
-            kind=kind,
-            current_item=item,
-            hunk_index=hunk_index,
-        )
-        _sync_dialog_hunk_markers(dialog_state)
-    finally:
-        dialog_state["toggle_inflight"] = False
-        _release_commit_diff_dialog_action_lock(dialog_state)
+        finally:
+            dialog_state["toggle_inflight"] = False
+            _release_commit_diff_dialog_action_lock(dialog_state)
+
+    # Evita mutar modelo do QTreeWidget durante o proprio itemChanged.
+    QTimer.singleShot(0, _run_deferred_toggle)
 
 
 def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, object], pos: object) -> None:
