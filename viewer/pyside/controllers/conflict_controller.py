@@ -179,6 +179,15 @@ def show_conflicts_dialog(
             if path:
                 window._open_repo_file_in_vscode(path)
 
+    def open_item(item: QListWidgetItem | None) -> None:
+        if not isinstance(item, QListWidgetItem):
+            open_selected()
+            return
+        value = item.data(Qt.ItemDataRole.UserRole)
+        path = str(value).strip() if value is not None else ""
+        if path:
+            window._open_repo_file_in_vscode(path)
+
     def apply_selected_side(side: str) -> None:
         selected_paths = selected_unresolved_paths()
         if not selected_paths:
@@ -261,7 +270,7 @@ def show_conflicts_dialog(
     conflicts_list.itemSelectionChanged.connect(
         _sync_action_buttons
     )
-    conflicts_list.itemDoubleClicked.connect(lambda _item: open_selected())
+    conflicts_list.itemDoubleClicked.connect(open_item)
     open_button.clicked.connect(open_selected)
     keep_current_button.clicked.connect(lambda: apply_selected_side("ours"))
     keep_incoming_button.clicked.connect(lambda: apply_selected_side("theirs"))
