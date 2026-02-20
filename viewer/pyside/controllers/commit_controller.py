@@ -738,6 +738,7 @@ def _apply_commit_stage_change_ui(
         _sync_commit_path_check_state(window, path)
         # Mantem linhas/ordem do diff visiveis, apenas sincronizando cache e escopo.
         _refresh_commit_diff_data_cache(window, path)
+        _sync_commit_diff_rows_from_cache(window, path)
         _update_commit_diff_scope_after_toggle(window)
         _sync_commit_diff_hunk_markers(window)
         _sync_commit_stage_buttons(window)
@@ -752,6 +753,126 @@ def _apply_commit_stage_change_ui(
         path=path,
         preserve_diff_rows=bool(preserve_diff_rows),
     )
+
+
+def _sync_commit_diff_rows_from_cache(window: object, path: str) -> None:
+    if not hasattr(window, "commit_diff_view"):
+        return
+    normalized_path = str(path).strip()
+    if not normalized_path:
+        return
+    current_path = _current_commit_file_path(window)
+    if str(current_path).strip() != normalized_path:
+        return
+
+    staged_data = _get_commit_diff_data_for_scope(window, "staged")
+    unstaged_data = _get_commit_diff_data_for_scope(window, "unstaged")
+    untracked_data = _get_commit_diff_data_for_scope(window, "untracked")
+    marker_column = int(getattr(window.commit_diff_view, "_marker_column", 0))
+
+    previous = bool(getattr(window, "commit_diff_rendering", False))
+    window.commit_diff_rendering = True
+    try:
+        for row_index in range(window.commit_diff_view.topLevelItemCount()):
+            item = window.commit_diff_view.topLevelItem(row_index)
+            if item is None:
+                continue
+            kind_value = item.data(0, ROW_KIND_ROLE)
+            kind = str(kind_value).strip() if kind_value is not None else ""
+            if kind not in {"added", "removed"}:
+                continue
+            line_info_value = item.data(0, LINE_INFO_ROLE)
+            if not isinstance(line_info_value, DiffLineInfo):
+                continue
+            hunk_value = item.data(0, HUNK_INDEX_ROLE)
+            fallback_hunk_index = int(hunk_value) if isinstance(hunk_value, int) else None
+            hunk_header_value = item.data(0, HUNK_HEADER_ROLE)
+            hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
+
+            in_staged = _line_info_exists_in_diff(
+                staged_data,
+                line_info=line_info_value,
+                hunk_header=hunk_header,
+                fallback_hunk_index=fallback_hunk_index,
+            )
+            in_unstaged = _line_info_exists_in_diff(
+                unstaged_data,
+                line_info=line_info_value,
+                hunk_header=hunk_header,
+                fallback_hunk_index=fallback_hunk_index,
+            )
+            in_untracked = _line_info_exists_in_diff(
+                untracked_data,
+                line_info=line_info_value,
+                hunk_header=hunk_header,
+                fallback_hunk_index=fallback_hunk_index,
+            )
+            current_scope_value = item.data(0, SCOPE_ROLE)
+            current_scope = str(current_scope_value).strip() if current_scope_value is not None else ""
+
+            target_scope = ""
+            if in_staged and not (in_unstaged or in_untracked):
+                target_scope = "staged"
+            elif (in_unstaged or in_untracked) and not in_staged:
+                target_scope = "unstaged" if in_unstaged else "untracked"
+            elif in_staged and (in_unstaged or in_untracked):
+                target_scope = current_scope if current_scope in {"staged", "unstaged", "untracked"} else "staged"
+            if not target_scope:
+                continue
+
+            item.setData(0, SCOPE_ROLE, target_scope)
+
+            target_data = _get_commit_diff_data_for_scope(window, target_scope)
+            resolved_hunk_index = _resolve_hunk_index_by_header(target_data, hunk_header, fallback_hunk_index)
+            if isinstance(resolved_hunk_index, int):
+                item.setData(0, HUNK_INDEX_ROLE, resolved_hunk_index)
+                fallback_hunk_index = resolved_hunk_index
+            resolved_line_info = _resolve_line_info_for_diff_data(
+                target_data,
+                source_line_info=line_info_value,
+                hunk_header=hunk_header,
+                fallback_hunk_index=fallback_hunk_index,
+            )
+            if isinstance(resolved_line_info, DiffLineInfo):
+                item.setData(0, LINE_INFO_ROLE, resolved_line_info)
+
+            if _is_commit_diff_item_toggleable(item, marker_column):
+                expected = Qt.CheckState.Checked if target_scope == "staged" else Qt.CheckState.Unchecked
+                item.setCheckState(marker_column, expected)
+
+        for row_index in range(window.commit_diff_view.topLevelItemCount()):
+            item = window.commit_diff_view.topLevelItem(row_index)
+            if item is None:
+                continue
+            kind_value = item.data(0, ROW_KIND_ROLE)
+            kind = str(kind_value).strip() if kind_value is not None else ""
+            if kind != "hunk":
+                continue
+            scopes_in_hunk: set[str] = set()
+            first_hunk_index: int | None = None
+            for child_index in range(row_index + 1, window.commit_diff_view.topLevelItemCount()):
+                child = window.commit_diff_view.topLevelItem(child_index)
+                if child is None:
+                    continue
+                child_kind_value = child.data(0, ROW_KIND_ROLE)
+                child_kind = str(child_kind_value).strip() if child_kind_value is not None else ""
+                if child_kind == "hunk":
+                    break
+                if child_kind not in {"added", "removed"}:
+                    continue
+                child_scope_value = child.data(0, SCOPE_ROLE)
+                child_scope = str(child_scope_value).strip() if child_scope_value is not None else ""
+                if child_scope:
+                    scopes_in_hunk.add(child_scope)
+                child_hunk_index = child.data(0, HUNK_INDEX_ROLE)
+                if first_hunk_index is None and isinstance(child_hunk_index, int):
+                    first_hunk_index = child_hunk_index
+            if len(scopes_in_hunk) == 1:
+                item.setData(0, SCOPE_ROLE, next(iter(scopes_in_hunk)))
+            if isinstance(first_hunk_index, int):
+                item.setData(0, HUNK_INDEX_ROLE, first_hunk_index)
+    finally:
+        window.commit_diff_rendering = previous
 
 
 def _is_effective_commit_change_line(window: object, scope: str, line_info: DiffLineInfo) -> bool:
@@ -1087,6 +1208,116 @@ def _resolve_hunk_index_for_row_snapshot(
             return exact_matches[0]
 
     return _resolve_hunk_index_by_header(diff_data, hunk_header, fallback_hunk_index)
+
+
+def _collect_hunk_candidate_indices_for_snapshot(
+    window: object,
+    diff_data: DiffData | None,
+    *,
+    resolved_hunk_index: int | None,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+    hunk_row_index: int,
+    row_scope: str,
+) -> list[int]:
+    if not isinstance(diff_data, DiffData):
+        return []
+    candidates: list[int] = []
+
+    def _add(index_value: int | None) -> None:
+        if not isinstance(index_value, int):
+            return
+        if index_value < 0 or index_value >= len(diff_data.hunks):
+            return
+        if index_value not in candidates:
+            candidates.append(index_value)
+
+    _add(resolved_hunk_index)
+    _add(fallback_hunk_index)
+
+    normalized_header = str(hunk_header).strip()
+    if normalized_header:
+        for index, hunk in enumerate(diff_data.hunks):
+            if hunk.header.strip() == normalized_header:
+                _add(index)
+
+    view_signature = _collect_hunk_changed_signature_from_view(window, hunk_row_index, row_scope)
+    if view_signature:
+        for index, hunk in enumerate(diff_data.hunks):
+            if _hunk_changed_signature(hunk.lines) == view_signature:
+                _add(index)
+
+    return candidates
+
+
+def _collect_line_candidates_for_diff_data(
+    diff_data: DiffData | None,
+    *,
+    source_line_info: DiffLineInfo | None,
+    hunk_header: str,
+    fallback_hunk_index: int | None,
+) -> list[DiffLineInfo]:
+    if not isinstance(diff_data, DiffData) or not isinstance(source_line_info, DiffLineInfo):
+        return []
+    candidates: list[DiffLineInfo] = []
+    seen: set[tuple[str, int, int, str]] = set()
+
+    def _add(line_info: DiffLineInfo | None) -> None:
+        if not isinstance(line_info, DiffLineInfo):
+            return
+        key = (
+            line_info.line_type,
+            int(line_info.old_line),
+            int(line_info.new_line),
+            line_info.content,
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(line_info)
+
+    resolved_line = _resolve_line_info_for_diff_data(
+        diff_data,
+        source_line_info=source_line_info,
+        hunk_header=hunk_header,
+        fallback_hunk_index=fallback_hunk_index,
+    )
+    _add(resolved_line)
+    if _line_info_exists_in_diff(
+        diff_data,
+        line_info=source_line_info,
+        hunk_header=hunk_header,
+        fallback_hunk_index=fallback_hunk_index,
+    ):
+        _add(source_line_info)
+
+    target_hunk_index = _resolve_hunk_index_by_header(diff_data, hunk_header, fallback_hunk_index)
+    candidate_hunks: list[DiffHunk]
+    if isinstance(target_hunk_index, int) and 0 <= target_hunk_index < len(diff_data.hunks):
+        candidate_hunks = [diff_data.hunks[target_hunk_index]]
+    else:
+        candidate_hunks = list(diff_data.hunks)
+
+    source_anchor = _diff_line_anchor(source_line_info)
+    same_content_pool: list[DiffLineInfo] = []
+    fallback_pool: list[DiffLineInfo] = []
+    for hunk in candidate_hunks:
+        for line_info in hunk.lines:
+            if line_info.line_type != source_line_info.line_type:
+                continue
+            if line_info.content == source_line_info.content:
+                same_content_pool.append(line_info)
+            else:
+                fallback_pool.append(line_info)
+
+    same_content_pool.sort(key=lambda line_info: abs(_diff_line_anchor(line_info) - source_anchor))
+    fallback_pool.sort(key=lambda line_info: abs(_diff_line_anchor(line_info) - source_anchor))
+    for line_info in same_content_pool:
+        _add(line_info)
+    if not candidates:
+        for line_info in fallback_pool:
+            _add(line_info)
+    return candidates
 
 
 def _resolve_selected_commit_line_for_scope(window: object, target_scope: str) -> DiffLineInfo | None:
@@ -2016,6 +2247,126 @@ def _dialog_apply_real_line_tooltips(
         item.setToolTip(column, row_tooltip)
 
 
+def _dialog_marker_from_check_state(state: Qt.CheckState) -> str:
+    if state == Qt.CheckState.Checked:
+        return "[x]"
+    if state == Qt.CheckState.PartiallyChecked:
+        return "[~]"
+    return "[ ]"
+
+
+def _populate_dialog_rows_from_main_diff(
+    window: object,
+    side_tree: QTreeWidget,
+    *,
+    path: str,
+    line_to_hunk: dict[int, int],
+    line_to_info: dict[int, DiffLineInfo],
+) -> QTreeWidgetItem | None:
+    if not hasattr(window, "commit_diff_view"):
+        return None
+    main_view = window.commit_diff_view
+    if not isinstance(main_view, QTreeWidget):
+        return None
+    if str(_current_commit_file_path(window)).strip() != str(path).strip():
+        return None
+    if main_view.topLevelItemCount() <= 0:
+        return None
+
+    marker_column = int(getattr(main_view, "_marker_column", 0))
+    content_column = int(getattr(main_view, "_content_column", 2))
+    first_selectable_item: QTreeWidgetItem | None = None
+
+    for row_index in range(main_view.topLevelItemCount()):
+        source_item = main_view.topLevelItem(row_index)
+        if source_item is None:
+            continue
+        kind_value = source_item.data(0, ROW_KIND_ROLE)
+        kind = str(kind_value).strip() if kind_value is not None else ""
+        scope_value = source_item.data(0, SCOPE_ROLE)
+        scope = str(scope_value).strip() if scope_value is not None else ""
+        hunk_value = source_item.data(0, HUNK_INDEX_ROLE)
+        hunk_index = int(hunk_value) if isinstance(hunk_value, int) else 0
+        hunk_header_value = source_item.data(0, HUNK_HEADER_ROLE)
+        hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
+        marker = _dialog_marker_from_check_state(source_item.checkState(marker_column))
+
+        if kind == "hunk":
+            if not hunk_header:
+                header_text = str(source_item.text(content_column)).strip()
+                hunk_header = header_text.removeprefix("Secao: ").strip() if header_text else ""
+            row_item = QTreeWidgetItem([f"Secao: {hunk_header}", "", "", "", ""])
+            row_item.setData(0, ROLE_DIALOG_KIND, "hunk")
+            row_item.setData(0, ROLE_DIALOG_SCOPE, scope)
+            row_item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
+            row_item.setData(0, ROLE_DIALOG_HUNK, hunk_index)
+            row_item.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk_header)
+            row_item.setData(0, ROLE_DIALOG_LINE_NO, 0)
+            row_item.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+            row_item.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+            _dialog_apply_marker_to_item(row_item, marker)
+            for column in range(5):
+                font = row_item.font(column)
+                font.setBold(True)
+                row_item.setFont(column, font)
+            _dialog_apply_row_color(row_item, line_type="hunk", target_columns=(0, 4))
+            side_tree.addTopLevelItem(row_item)
+            continue
+
+        if kind not in {"context", "added", "removed"}:
+            continue
+        line_info_value = source_item.data(0, LINE_INFO_ROLE)
+        if not isinstance(line_info_value, DiffLineInfo):
+            continue
+
+        old_no = str(int(line_info_value.old_line)) if int(line_info_value.old_line) > 0 else ""
+        new_no = str(int(line_info_value.new_line)) if int(line_info_value.new_line) > 0 else ""
+        row_line_no = int(line_info_value.new_line) if int(line_info_value.new_line) > 0 else int(line_info_value.old_line)
+
+        if kind == "context":
+            row_item = QTreeWidgetItem([line_info_value.content, old_no, "", new_no, line_info_value.content])
+            row_item.setData(0, ROLE_DIALOG_OLD_RAW, line_info_value.content)
+            row_item.setData(0, ROLE_DIALOG_NEW_RAW, line_info_value.content)
+            _dialog_apply_row_color(row_item, line_type="context", target_columns=(0, 1, 3, 4))
+        elif kind == "removed":
+            row_item = QTreeWidgetItem([line_info_value.content, old_no, "", "", ""])
+            row_item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, line_info_value)
+            row_item.setData(0, ROLE_DIALOG_OLD_RAW, line_info_value.content)
+            row_item.setData(0, ROLE_DIALOG_LINE_INFO, line_info_value)
+            _dialog_apply_row_color(row_item, line_type="removed", target_columns=(0, 1))
+            _dialog_apply_marker_to_item(row_item, marker)
+            if first_selectable_item is None:
+                first_selectable_item = row_item
+        else:
+            row_item = QTreeWidgetItem(["", "", "", new_no, line_info_value.content])
+            row_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, line_info_value)
+            row_item.setData(0, ROLE_DIALOG_NEW_RAW, line_info_value.content)
+            row_item.setData(0, ROLE_DIALOG_LINE_INFO, line_info_value)
+            _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
+            _dialog_apply_marker_to_item(row_item, marker)
+            if first_selectable_item is None:
+                first_selectable_item = row_item
+
+        row_item.setData(0, ROLE_DIALOG_KIND, "line")
+        row_item.setData(0, ROLE_DIALOG_SCOPE, scope)
+        row_item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
+        row_item.setData(0, ROLE_DIALOG_HUNK, hunk_index)
+        row_item.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk_header)
+        row_item.setData(0, ROLE_DIALOG_LINE_NO, row_line_no)
+        row_item.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+        row_item.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+        _dialog_apply_real_line_tooltips(
+            row_item,
+            old_real_line=int(line_info_value.old_line) if int(line_info_value.old_line) > 0 else None,
+            new_real_line=int(line_info_value.new_line) if int(line_info_value.new_line) > 0 else None,
+        )
+        side_tree.addTopLevelItem(row_item)
+        row_number = side_tree.topLevelItemCount()
+        line_to_hunk[row_number] = hunk_index
+        line_to_info[row_number] = line_info_value
+    return first_selectable_item
+
+
 def _sync_dialog_hunk_markers(dialog_state: dict[str, object]) -> None:
     side_tree = dialog_state.get("side_tree")
     if not isinstance(side_tree, QTreeWidget):
@@ -2027,16 +2378,14 @@ def _sync_dialog_hunk_markers(dialog_state: dict[str, object]) -> None:
     dialog_state["rendering_tree"] = True
     try:
         current_hunk_item: QTreeWidgetItem | None = None
-        current_scope = ""
         current_states: list[Qt.CheckState] = []
 
         def _flush_current_hunk() -> None:
-            nonlocal current_hunk_item, current_scope, current_states
+            nonlocal current_hunk_item, current_states
             if current_hunk_item is None:
                 return
             if not _is_dialog_item_toggleable(current_hunk_item):
                 current_hunk_item = None
-                current_scope = ""
                 current_states = []
                 return
             if not current_states:
@@ -2051,28 +2400,22 @@ def _sync_dialog_hunk_markers(dialog_state: dict[str, object]) -> None:
                     target = Qt.CheckState.PartiallyChecked
             current_hunk_item.setCheckState(2, target)
             current_hunk_item = None
-            current_scope = ""
             current_states = []
 
         for row_index in range(side_tree.topLevelItemCount()):
             item = side_tree.topLevelItem(row_index)
             if item is None:
                 continue
-            scope_value = item.data(0, ROLE_DIALOG_SCOPE)
-            scope = str(scope_value).strip() if scope_value is not None else ""
             kind_value = item.data(0, ROLE_DIALOG_KIND)
             kind = str(kind_value).strip() if kind_value is not None else ""
             if kind == "hunk":
                 _flush_current_hunk()
                 current_hunk_item = item
-                current_scope = scope
                 current_states = []
                 continue
             if kind != "line":
                 continue
             if current_hunk_item is None:
-                continue
-            if current_scope and scope and scope != current_scope:
                 continue
             old_info, new_info = _dialog_item_line_infos(item)
             if old_info is None and new_info is None:
@@ -2113,10 +2456,6 @@ def _set_dialog_hunk_line_states(
             if kind in {"hunk", "scope"}:
                 break
             if kind != "line":
-                continue
-            scope_value = item.data(0, ROLE_DIALOG_SCOPE)
-            item_scope = str(scope_value).strip() if scope_value is not None else ""
-            if scope and item_scope and item_scope != scope:
                 continue
             old_info, new_info = _dialog_item_line_infos(item)
             if old_info is None and new_info is None:
@@ -2367,9 +2706,6 @@ def _apply_dialog_scope_after_toggle(
                 item_hunk_value = item.data(0, ROLE_DIALOG_HUNK)
                 if not isinstance(item_hunk_value, int) or item_hunk_value != hunk_index:
                     continue
-                item_scope = _dialog_item_scope(item, dialog_state)
-                if item_scope != source_scope:
-                    continue
                 _set_dialog_item_effective_scope(item, target_scope)
                 hunk_header_value = item.data(0, ROLE_DIALOG_HUNK_HEADER)
                 hunk_header = str(hunk_header_value).strip() if hunk_header_value is not None else ""
@@ -2482,9 +2818,6 @@ def _revert_dialog_item_after_failed_toggle(
                     continue
                 item_hunk_value = item.data(0, ROLE_DIALOG_HUNK)
                 if not isinstance(item_hunk_value, int) or item_hunk_value != hunk_index:
-                    continue
-                item_scope = _dialog_item_scope(item, dialog_state)
-                if item_scope != source_scope:
                     continue
                 item.setCheckState(2, source_state)
             return
@@ -2670,7 +3003,6 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
     path = str(dialog_state.get("path", "")).strip()
     if not path:
         return
-    scope_label = dialog_state.get("scope_label")
     info_label = dialog_state.get("info_label")
     side_tree = dialog_state.get("side_tree")
     if not isinstance(side_tree, QTreeWidget):
@@ -2687,15 +3019,8 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
         QMessageBox.critical(window, "Diff", str(exc))
         return
 
-    if isinstance(scope_label, QLabel):
-        if not patches_by_scope:
-            scope_label.setText("Escopo: sem diff")
-        elif len(patches_by_scope) == 1:
-            scope_label.setText(f"Escopo: {patches_by_scope[0][0]}")
-        else:
-            scope_label.setText("Escopo: misto (staged + unstaged)")
     if isinstance(info_label, QLabel):
-        info_label.setText("Use o checkbox central para stage/unstage por linha/bloco. Clique direito para copiar ou reverter.")
+        info_label.setText("Checkbox marcado = staged. Clique direito para copiar ou reverter.")
 
     current_item = side_tree.currentItem()
     selected_key = _dialog_tree_item_key(current_item) if current_item is not None else None
@@ -2725,189 +3050,121 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
         dev_null_scopes: set[str] = set()
         line_to_hunk: dict[int, int] = {}
         line_to_info: dict[int, DiffLineInfo] = {}
-        first_selectable_item: QTreeWidgetItem | None = None
-
         for scope, patch in patches_by_scope:
             diff_data = parse_diff_data(patch, word_diff_plain=False)
             operation_diff_data_by_scope[scope] = diff_data
-            scope_has_dev_null = _diff_has_dev_null_transition(diff_data)
-            if scope_has_dev_null:
+            if _diff_has_dev_null_transition(diff_data):
                 dev_null_scopes.add(scope)
 
-            scope_row = QTreeWidgetItem([f"Escopo: {scope}", "", "", "", ""])
-            scope_row.setData(0, ROLE_DIALOG_KIND, "scope")
-            scope_row.setData(0, ROLE_DIALOG_SCOPE, scope)
-            scope_row.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
-            for column in range(5):
-                font = scope_row.font(column)
-                font.setBold(True)
-                scope_row.setFont(column, font)
-            _dialog_apply_row_color(scope_row, line_type="hunk", target_columns=(0, 4))
-            side_tree.addTopLevelItem(scope_row)
+        first_selectable_item = _populate_dialog_rows_from_main_diff(
+            window,
+            side_tree,
+            path=path,
+            line_to_hunk=line_to_hunk,
+            line_to_info=line_to_info,
+        )
 
-            for hunk_index, hunk in enumerate(diff_data.hunks):
-                hunk_row = QTreeWidgetItem([f"Secao: {hunk.header}", "", "", "", ""])
-                hunk_row.setData(0, ROLE_DIALOG_KIND, "hunk")
-                hunk_row.setData(0, ROLE_DIALOG_SCOPE, scope)
-                hunk_row.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
-                hunk_row.setData(0, ROLE_DIALOG_HUNK, hunk_index)
-                hunk_row.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk.header)
-                hunk_row.setData(0, ROLE_DIALOG_LINE_NO, 0)
-                hunk_row.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                hunk_row.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                hunk_marker = "[x]" if scope == "staged" else "[ ]"
-                _dialog_apply_marker_to_item(hunk_row, hunk_marker)
-                for column in range(5):
-                    font = hunk_row.font(column)
-                    font.setBold(True)
-                    hunk_row.setFont(column, font)
-                _dialog_apply_row_color(hunk_row, line_type="hunk", target_columns=(0, 4))
-                side_tree.addTopLevelItem(hunk_row)
+        if first_selectable_item is None and side_tree.topLevelItemCount() <= 0:
+            for scope, _patch in patches_by_scope:
+                diff_data = operation_diff_data_by_scope.get(scope)
+                if not isinstance(diff_data, DiffData):
+                    continue
+                for hunk_index, hunk in enumerate(diff_data.hunks):
+                    hunk_row = QTreeWidgetItem([f"Secao: {hunk.header}", "", "", "", ""])
+                    hunk_row.setData(0, ROLE_DIALOG_KIND, "hunk")
+                    hunk_row.setData(0, ROLE_DIALOG_SCOPE, scope)
+                    hunk_row.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
+                    hunk_row.setData(0, ROLE_DIALOG_HUNK, hunk_index)
+                    hunk_row.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk.header)
+                    hunk_row.setData(0, ROLE_DIALOG_LINE_NO, 0)
+                    hunk_row.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+                    hunk_row.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+                    hunk_marker = "[x]" if scope == "staged" else "[ ]"
+                    _dialog_apply_marker_to_item(hunk_row, hunk_marker)
+                    for column in range(5):
+                        font = hunk_row.font(column)
+                        font.setBold(True)
+                        hunk_row.setFont(column, font)
+                    _dialog_apply_row_color(hunk_row, line_type="hunk", target_columns=(0, 4))
+                    side_tree.addTopLevelItem(hunk_row)
 
-                lines = hunk.lines
-                line_index = 0
-                while line_index < len(lines):
-                    current_line = lines[line_index]
-                    if current_line.line_type == "context":
+                    line_marker = "[x]" if scope == "staged" else "[ ]"
+                    for current_line in hunk.lines:
                         old_no = str(int(current_line.old_line)) if int(current_line.old_line) > 0 else ""
                         new_no = str(int(current_line.new_line)) if int(current_line.new_line) > 0 else ""
-                        row_item = QTreeWidgetItem(
-                            [
-                                current_line.content,
-                                old_no,
-                                "",
-                                new_no,
-                                current_line.content,
-                            ]
+                        row_line_no = (
+                            int(current_line.new_line)
+                            if int(current_line.new_line) > 0
+                            else int(current_line.old_line)
                         )
+
+                        if current_line.line_type == "context":
+                            row_item = QTreeWidgetItem(
+                                [
+                                    current_line.content,
+                                    old_no,
+                                    "",
+                                    new_no,
+                                    current_line.content,
+                                ]
+                            )
+                            row_item.setData(0, ROLE_DIALOG_OLD_RAW, current_line.content)
+                            row_item.setData(0, ROLE_DIALOG_NEW_RAW, current_line.content)
+                            _dialog_apply_row_color(row_item, line_type="context", target_columns=(0, 1, 3, 4))
+                        elif current_line.line_type == "removed":
+                            row_item = QTreeWidgetItem(
+                                [
+                                    current_line.content,
+                                    old_no,
+                                    "",
+                                    "",
+                                    "",
+                                ]
+                            )
+                            row_item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, current_line)
+                            row_item.setData(0, ROLE_DIALOG_OLD_RAW, current_line.content)
+                            row_item.setData(0, ROLE_DIALOG_LINE_INFO, current_line)
+                            _dialog_apply_row_color(row_item, line_type="removed", target_columns=(0, 1))
+                            _dialog_apply_marker_to_item(row_item, line_marker)
+                            if first_selectable_item is None:
+                                first_selectable_item = row_item
+                        elif current_line.line_type == "added":
+                            row_item = QTreeWidgetItem(
+                                [
+                                    "",
+                                    "",
+                                    "",
+                                    new_no,
+                                    current_line.content,
+                                ]
+                            )
+                            row_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, current_line)
+                            row_item.setData(0, ROLE_DIALOG_NEW_RAW, current_line.content)
+                            row_item.setData(0, ROLE_DIALOG_LINE_INFO, current_line)
+                            _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
+                            _dialog_apply_marker_to_item(row_item, line_marker)
+                            if first_selectable_item is None:
+                                first_selectable_item = row_item
+                        else:
+                            continue
+
                         row_item.setData(0, ROLE_DIALOG_KIND, "line")
                         row_item.setData(0, ROLE_DIALOG_SCOPE, scope)
                         row_item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
                         row_item.setData(0, ROLE_DIALOG_HUNK, hunk_index)
                         row_item.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk.header)
-                        row_item.setData(0, ROLE_DIALOG_LINE_NO, int(current_line.new_line))
-                        row_item.setData(0, ROLE_DIALOG_OLD_RAW, current_line.content)
-                        row_item.setData(0, ROLE_DIALOG_NEW_RAW, current_line.content)
+                        row_item.setData(0, ROLE_DIALOG_LINE_NO, row_line_no)
                         row_item.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
                         row_item.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
                         _dialog_apply_real_line_tooltips(
                             row_item,
-                            old_real_line=int(current_line.old_line),
-                            new_real_line=int(current_line.new_line),
+                            old_real_line=int(current_line.old_line) if int(current_line.old_line) > 0 else None,
+                            new_real_line=int(current_line.new_line) if int(current_line.new_line) > 0 else None,
                         )
-                        _dialog_apply_row_color(row_item, line_type="context", target_columns=(0, 1, 3, 4))
                         side_tree.addTopLevelItem(row_item)
                         row_number = side_tree.topLevelItemCount()
                         line_to_hunk[row_number] = hunk_index
                         line_to_info[row_number] = current_line
-                        line_index += 1
-                        continue
-
-                    if current_line.line_type == "removed":
-                        removed_lines: list[DiffLineInfo] = []
-                        while line_index < len(lines) and lines[line_index].line_type == "removed":
-                            removed_lines.append(lines[line_index])
-                            line_index += 1
-
-                        added_lines: list[DiffLineInfo] = []
-                        while line_index < len(lines) and lines[line_index].line_type == "added":
-                            added_lines.append(lines[line_index])
-                            line_index += 1
-
-                        pair_count = max(len(removed_lines), len(added_lines))
-                        for pair_index in range(pair_count):
-                            removed_line = removed_lines[pair_index] if pair_index < len(removed_lines) else None
-                            added_line = added_lines[pair_index] if pair_index < len(added_lines) else None
-                            row_line_no = 0
-                            if removed_line is not None:
-                                row_line_no = int(removed_line.old_line)
-                            elif added_line is not None:
-                                row_line_no = int(added_line.new_line)
-
-                            old_content = removed_line.content if removed_line is not None else ""
-                            new_content = added_line.content if added_line is not None else ""
-                            old_no = str(int(removed_line.old_line)) if removed_line is not None else ""
-                            new_no = str(int(added_line.new_line)) if added_line is not None else ""
-
-                            row_item = QTreeWidgetItem([old_content, old_no, "", new_no, new_content])
-                            row_item.setData(0, ROLE_DIALOG_KIND, "line")
-                            row_item.setData(0, ROLE_DIALOG_SCOPE, scope)
-                            row_item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
-                            row_item.setData(0, ROLE_DIALOG_HUNK, hunk_index)
-                            row_item.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk.header)
-                            row_item.setData(0, ROLE_DIALOG_LINE_NO, row_line_no)
-                            row_item.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                            row_item.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                            _dialog_apply_real_line_tooltips(
-                                row_item,
-                                old_real_line=int(removed_line.old_line) if removed_line is not None else None,
-                                new_real_line=int(added_line.new_line) if added_line is not None else None,
-                            )
-                            if removed_line is not None:
-                                row_item.setData(0, ROLE_DIALOG_OLD_LINE_INFO, removed_line)
-                                row_item.setData(0, ROLE_DIALOG_OLD_RAW, old_content)
-                                row_item.setData(0, ROLE_DIALOG_LINE_INFO, removed_line)
-                                _dialog_apply_row_color(row_item, line_type="removed", target_columns=(0, 1))
-                            if added_line is not None:
-                                row_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, added_line)
-                                row_item.setData(0, ROLE_DIALOG_NEW_RAW, new_content)
-                                if removed_line is None:
-                                    row_item.setData(0, ROLE_DIALOG_LINE_INFO, added_line)
-                                _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
-                            if removed_line is not None or added_line is not None:
-                                marker = "[x]" if scope == "staged" else "[ ]"
-                                _dialog_apply_marker_to_item(row_item, marker)
-                                if first_selectable_item is None:
-                                    first_selectable_item = row_item
-                            side_tree.addTopLevelItem(row_item)
-                            row_number = side_tree.topLevelItemCount()
-                            line_to_hunk[row_number] = hunk_index
-                            if removed_line is not None:
-                                line_to_info[row_number] = removed_line
-                            elif added_line is not None:
-                                line_to_info[row_number] = added_line
-                        continue
-
-                    # Sequencias de adicao sem remocoes imediatamente antes.
-                    added_lines: list[DiffLineInfo] = []
-                    while line_index < len(lines) and lines[line_index].line_type == "added":
-                        added_lines.append(lines[line_index])
-                        line_index += 1
-                    for added_line in added_lines:
-                        row_item = QTreeWidgetItem(
-                            [
-                                "",
-                                "",
-                                "",
-                                str(int(added_line.new_line)),
-                                added_line.content,
-                            ]
-                        )
-                        row_item.setData(0, ROLE_DIALOG_KIND, "line")
-                        row_item.setData(0, ROLE_DIALOG_SCOPE, scope)
-                        row_item.setData(0, ROLE_DIALOG_EFFECTIVE_SCOPE, scope)
-                        row_item.setData(0, ROLE_DIALOG_HUNK, hunk_index)
-                        row_item.setData(0, ROLE_DIALOG_HUNK_HEADER, hunk.header)
-                        row_item.setData(0, ROLE_DIALOG_LINE_NO, int(added_line.new_line))
-                        row_item.setData(0, ROLE_DIALOG_NEW_LINE_INFO, added_line)
-                        row_item.setData(0, ROLE_DIALOG_NEW_RAW, added_line.content)
-                        row_item.setData(0, ROLE_DIALOG_LINE_INFO, added_line)
-                        row_item.setTextAlignment(1, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                        row_item.setTextAlignment(3, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
-                        _dialog_apply_real_line_tooltips(
-                            row_item,
-                            old_real_line=None,
-                            new_real_line=int(added_line.new_line),
-                        )
-                        _dialog_apply_row_color(row_item, line_type="added", target_columns=(3, 4))
-                        marker = "[x]" if scope == "staged" else "[ ]"
-                        _dialog_apply_marker_to_item(row_item, marker)
-                        if first_selectable_item is None:
-                            first_selectable_item = row_item
-                        side_tree.addTopLevelItem(row_item)
-                        row_number = side_tree.topLevelItemCount()
-                        line_to_hunk[row_number] = hunk_index
-                        line_to_info[row_number] = added_line
 
         dialog_state["line_to_hunk"] = line_to_hunk
         dialog_state["line_to_info"] = line_to_info
@@ -2994,14 +3251,15 @@ def _apply_commit_diff_dialog_stage_change(
         return False
     path = str(dialog_state.get("path", "")).strip()
     if path:
-        window.commit_selected_path = path
-    window._set_status(success_message)
-    _sync_commit_status_entries_in_place(window)
-    if path:
-        _refresh_commit_diff_data_cache(window, path)
+        _apply_commit_stage_change_ui(
+            window,
+            status_message=success_message,
+            path=path,
+            preserve_diff_rows=True,
+        )
+    else:
+        window._set_status(success_message)
     _refresh_commit_diff_dialog_data_cache(window, dialog_state)
-    window._refresh_repo_state_ui()
-    window._refresh_workspace_tree()
     _trace_commit_selection_event(
         window,
         "ui.commit.dialog.stage_change.done",
@@ -3087,9 +3345,18 @@ def _on_commit_diff_dialog_marker_clicked(window: object, dialog_state: dict[str
                 current_item=current_item,
                 hunk_index=hunk_index,
             )
-            _refresh_commit_diff_dialog_views(window, dialog_state)
+            _sync_dialog_hunk_markers(dialog_state)
             return
-        _refresh_commit_diff_dialog_views(window, dialog_state)
+        target_scope = "unstaged" if scope == "staged" else "staged"
+        _apply_dialog_scope_after_toggle(
+            dialog_state,
+            source_scope=scope,
+            target_scope=target_scope,
+            kind=kind,
+            current_item=current_item,
+            hunk_index=hunk_index,
+        )
+        _sync_dialog_hunk_markers(dialog_state)
     finally:
         _release_commit_diff_dialog_action_lock(dialog_state)
 
@@ -3212,9 +3479,18 @@ def _on_commit_diff_dialog_item_changed(
                     current_item=current_item,
                     hunk_index=hunk_index,
                 )
-                _refresh_commit_diff_dialog_views(window, dialog_state)
+                _sync_dialog_hunk_markers(dialog_state)
                 return
-            _refresh_commit_diff_dialog_views(window, dialog_state)
+            target_scope = _dialog_target_scope_for_state(scope, state)
+            _apply_dialog_scope_after_toggle(
+                dialog_state,
+                source_scope=scope,
+                target_scope=target_scope,
+                kind=kind,
+                current_item=current_item,
+                hunk_index=hunk_index,
+            )
+            _sync_dialog_hunk_markers(dialog_state)
         finally:
             dialog_state["toggle_inflight"] = False
             _release_commit_diff_dialog_action_lock(dialog_state)
@@ -3336,7 +3612,15 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Linha adicionada ao stage.",
             )
             if applied:
-                _refresh_commit_diff_dialog_views(window, dialog_state)
+                _apply_dialog_scope_after_toggle(
+                    dialog_state,
+                    source_scope=scope,
+                    target_scope="staged",
+                    kind="line",
+                    current_item=item,
+                    hunk_index=hunk_index,
+                )
+                _sync_dialog_hunk_markers(dialog_state)
             return
         if chosen_action == action_unstage_line and changed_line:
             patch = _build_patch_for_dialog_row(
@@ -3352,7 +3636,15 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Linha removida do stage.",
             )
             if applied:
-                _refresh_commit_diff_dialog_views(window, dialog_state)
+                _apply_dialog_scope_after_toggle(
+                    dialog_state,
+                    source_scope=scope,
+                    target_scope="unstaged",
+                    kind="line",
+                    current_item=item,
+                    hunk_index=hunk_index,
+                )
+                _sync_dialog_hunk_markers(dialog_state)
             return
         if chosen_action == action_stage_hunk and resolved_hunk_index is not None:
             patch = build_patch_for_hunk(operation_diff_data, resolved_hunk_index) or ""
@@ -3364,7 +3656,15 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Bloco adicionado ao stage.",
             )
             if applied:
-                _refresh_commit_diff_dialog_views(window, dialog_state)
+                _apply_dialog_scope_after_toggle(
+                    dialog_state,
+                    source_scope=scope,
+                    target_scope="staged",
+                    kind="hunk",
+                    current_item=item,
+                    hunk_index=resolved_hunk_index,
+                )
+                _sync_dialog_hunk_markers(dialog_state)
             return
         if chosen_action == action_unstage_hunk and resolved_hunk_index is not None:
             patch = build_patch_for_hunk(operation_diff_data, resolved_hunk_index) or ""
@@ -3376,7 +3676,15 @@ def _on_commit_diff_dialog_context_menu(window: object, dialog_state: dict[str, 
                 success_message="Bloco removido do stage.",
             )
             if applied:
-                _refresh_commit_diff_dialog_views(window, dialog_state)
+                _apply_dialog_scope_after_toggle(
+                    dialog_state,
+                    source_scope=scope,
+                    target_scope="unstaged",
+                    kind="hunk",
+                    current_item=item,
+                    hunk_index=resolved_hunk_index,
+                )
+                _sync_dialog_hunk_markers(dialog_state)
             return
         if chosen_action == action_revert_line and changed_line:
             patch = _build_patch_for_dialog_row(
@@ -3437,8 +3745,6 @@ def open_commit_diff_window(window: object) -> None:
     info_layout = QHBoxLayout(info_row)
     info_layout.setContentsMargins(0, 0, 0, 0)
     info_layout.setSpacing(8)
-    scope_label = QLabel("Escopo: -", info_row)
-    info_layout.addWidget(scope_label)
     info_label = QLabel("", info_row)
     info_layout.addWidget(info_label, stretch=1)
     layout.addWidget(info_row)
@@ -3482,7 +3788,6 @@ def open_commit_diff_window(window: object) -> None:
 
     dialog_state: dict[str, object] = {
         "path": path,
-        "scope_label": scope_label,
         "info_label": info_label,
         "refresh_button": refresh_button,
         "close_button": close_button,
@@ -3625,6 +3930,7 @@ def _toggle_commit_diff_row_from_snapshot(
         return
 
     patch = ""
+    patch_candidates: list[str] = []
     reverse = should_unstage
     status_message = ""
     if row_kind == "hunk":
@@ -3651,7 +3957,23 @@ def _toggle_commit_diff_row_from_snapshot(
         )
         if not isinstance(diff_data, DiffData) or resolved_hunk_index is None:
             return
-        patch = build_patch_for_hunk(diff_data, resolved_hunk_index)
+        candidate_hunk_indices = _collect_hunk_candidate_indices_for_snapshot(
+            window,
+            diff_data,
+            resolved_hunk_index=resolved_hunk_index,
+            hunk_header=hunk_header,
+            fallback_hunk_index=hunk_index,
+            hunk_row_index=row_index,
+            row_scope=row_scope,
+        )
+        for candidate_index in candidate_hunk_indices:
+            candidate_patch = build_patch_for_hunk(diff_data, candidate_index) or ""
+            if not candidate_patch.strip():
+                continue
+            if candidate_patch in patch_candidates:
+                continue
+            patch_candidates.append(candidate_patch)
+        patch = patch_candidates[0] if patch_candidates else ""
         status_message = "Bloco removido do stage." if reverse else "Bloco adicionado ao stage."
     elif row_kind in {"added", "removed"} and isinstance(line_info, DiffLineInfo):
         source_scope = "staged" if reverse else "unstaged"
@@ -3675,7 +3997,20 @@ def _toggle_commit_diff_row_from_snapshot(
         )
         if not isinstance(diff_data, DiffData) or not isinstance(resolved_line_info, DiffLineInfo):
             return
-        patch = build_patch_for_line(diff_data, resolved_line_info)
+        line_candidates = _collect_line_candidates_for_diff_data(
+            diff_data,
+            source_line_info=line_info,
+            hunk_header=hunk_header,
+            fallback_hunk_index=hunk_index,
+        )
+        for candidate_line in line_candidates:
+            candidate_patch = build_patch_for_line(diff_data, candidate_line) or ""
+            if not candidate_patch.strip():
+                continue
+            if candidate_patch in patch_candidates:
+                continue
+            patch_candidates.append(candidate_patch)
+        patch = patch_candidates[0] if patch_candidates else ""
         status_message = "Linha removida do stage." if reverse else "Linha adicionada ao stage."
     else:
         return
@@ -3695,9 +4030,20 @@ def _toggle_commit_diff_row_from_snapshot(
         hunk_header=hunk_header,
         **_line_info_to_trace_payload(line_info),
     )
-    try:
-        core_apply_patch_to_index(window.repo_path, patch, reverse=reverse)
-    except RuntimeError as exc:
+    last_error: RuntimeError | None = None
+    applied = False
+    candidates = patch_candidates or [patch]
+    for candidate_patch in candidates:
+        try:
+            core_apply_patch_to_index(window.repo_path, candidate_patch, reverse=reverse)
+            patch = candidate_patch
+            applied = True
+            break
+        except RuntimeError as exc:
+            last_error = exc
+            continue
+    if not applied:
+        exc = last_error if isinstance(last_error, RuntimeError) else RuntimeError("Falha ao aplicar patch.")
         _trace_commit_selection_event(
             window,
             "ui.commit.main.snapshot_toggle.error",
