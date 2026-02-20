@@ -348,6 +348,10 @@ Legenda
   Escopo: refinar a aba Configuracoes para ficar mais enxuta, mover a edicao detalhada de tema para janela dedicada com preview em tempo real e remover configuracoes redundantes dessa aba (ex.: workspace root, mantido na aba Repositorios).
   Aceite: aba Configuracoes fica menor/mais clara, com persistencia correta das opcoes e aplicacao imediata de tema.
   Nota: execucao planejada somente apos estabilizar bugs criticos da rodada atual; sem rodada de testes dedicada nesta etapa inicial.
+- [ ] R7.9 Diff com deteccao de "linha modificada" (post-bugs)
+  Escopo: identificar automaticamente o padrao `-` seguido de `+` no mesmo trecho/hunk como alteracao de linha (estado "modified"), mantendo os casos puros de adicao e remocao.
+  Aceite: diff principal e janela de diff avancada passam a exibir 3 estados visuais consistentes (adicionado, removido, modificado), com destaque especifico para "modified" e sem quebrar stage/unstage por linha/bloco.
+  Nota: executar somente apos estabilizacao dos bugs atuais de selecao/stage; validar primeiro no fluxo da aba Commit e depois replicar nas demais abas de diff.
 
 Ordem de execucao sugerida
 - 1) R6.2
@@ -382,6 +386,7 @@ Ordem de execucao sugerida
 - 30) R7.6
 - 31) R7.7
 - 32) R7.8
+- 33) R7.9
 
 ## Regras de Manutencao
 
