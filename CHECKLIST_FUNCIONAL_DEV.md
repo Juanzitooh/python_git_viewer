@@ -21,6 +21,15 @@ Como usar:
 
 ## 2) Preparacao do ambiente dev
 
+Script recomendado (idempotente):
+
+```bash
+./setup.sh --no-run
+./setup.sh
+```
+
+Opcional (manual):
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
