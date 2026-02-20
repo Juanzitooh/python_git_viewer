@@ -36,8 +36,10 @@ def build_compare_tab(window: object) -> None:
 
     top_layout.addWidget(QLabel("Origem:", top_row))
     window.compare_origin_combo = NoScrollComboBox(top_row)
+    window.compare_origin_combo.setMinimumWidth(260)
+    window.compare_origin_combo.setSizeAdjustPolicy(NoScrollComboBox.SizeAdjustPolicy.AdjustToContents)
     window.compare_origin_combo.currentIndexChanged.connect(window._on_compare_branches_changed)
-    top_layout.addWidget(window.compare_origin_combo)
+    top_layout.addWidget(window.compare_origin_combo, stretch=1)
 
     window.compare_swap_button = QPushButton("Trocar", top_row)
     window.compare_swap_button.clicked.connect(window._swap_compare_branches)
@@ -45,8 +47,10 @@ def build_compare_tab(window: object) -> None:
 
     top_layout.addWidget(QLabel("Destino:", top_row))
     window.compare_dest_combo = NoScrollComboBox(top_row)
+    window.compare_dest_combo.setMinimumWidth(260)
+    window.compare_dest_combo.setSizeAdjustPolicy(NoScrollComboBox.SizeAdjustPolicy.AdjustToContents)
     window.compare_dest_combo.currentIndexChanged.connect(window._on_compare_branches_changed)
-    top_layout.addWidget(window.compare_dest_combo)
+    top_layout.addWidget(window.compare_dest_combo, stretch=1)
 
     window.compare_refresh_button = QPushButton("Atualizar", top_row)
     window.compare_refresh_button.clicked.connect(window._refresh_compare_view)
@@ -57,7 +61,6 @@ def build_compare_tab(window: object) -> None:
     window.compare_word_diff_check.setChecked(False)
     top_layout.addWidget(window.compare_word_diff_check)
 
-    top_layout.addStretch(1)
     layout.addWidget(top_row)
 
     window.compare_status_label = QLabel("Selecione origem e destino para comparar.", window.compare_tab)
