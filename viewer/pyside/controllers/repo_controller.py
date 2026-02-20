@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt, Signal
@@ -45,6 +46,21 @@ from ...core.repo_state import (
 from ...core.repo_workspace import clone_repository, default_repo_scan_root, discover_git_repositories
 from ...core.settings_store import normalize_repo_path
 from ..widgets import NoScrollComboBox
+
+
+CONTEXT_MENU_GUARD_SECONDS = 0.35
+
+
+def _is_context_menu_guard_active(window: object) -> bool:
+    guard_until = getattr(window, "_context_menu_guard_until", 0.0)
+    try:
+        return float(guard_until) > time.monotonic()
+    except (TypeError, ValueError):
+        return False
+
+
+def _arm_context_menu_guard(window: object, seconds: float = CONTEXT_MENU_GUARD_SECONDS) -> None:
+    setattr(window, "_context_menu_guard_until", time.monotonic() + max(0.05, float(seconds)))
 
 
 class WorkspaceCardFrame(QFrame):
@@ -609,6 +625,8 @@ def _show_branch_context_menu(
     branch_name: str,
     parent_widget: QWidget | None = None,
 ) -> None:
+    if _is_context_menu_guard_active(window):
+        return
     normalized_repo = normalize_repo_path(repo_path)
     normalized_branch = str(branch_name).strip()
     if not normalized_repo or not normalized_branch:
@@ -797,15 +815,6 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
             parent_widget=widget,
         )
     )
-    card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-    card.customContextMenuRequested.connect(
-        lambda pos, path=repo_path, widget=card: _show_repo_context_menu(
-            window,
-            widget.mapToGlobal(pos),
-            path,
-            parent_widget=widget,
-        )
-    )
 
     normalized_repo = normalize_repo_path(repo_path)
     window.workspace_card_widgets[normalized_repo] = card
@@ -955,6 +964,8 @@ def _show_repo_context_menu(
     repo_path: str,
     parent_widget: QWidget | None = None,
 ) -> None:
+    # Evita abrir menu de branch em cascata logo apos fechar este menu.
+    _arm_context_menu_guard(window)
     normalized = normalize_repo_path(repo_path)
     if not normalized or not os.path.isdir(normalized) or not is_git_repo(normalized):
         return
@@ -982,6 +993,7 @@ def _show_repo_context_menu(
     action_delete_repo = menu.addAction("Excluir repositório local...")
 
     selected_action = menu.exec(global_pos)
+    _arm_context_menu_guard(window)
     if selected_action is None:
         return
     if selected_action == action_open_vscode:

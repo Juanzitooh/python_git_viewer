@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -1257,26 +1259,103 @@ class QtShellWindow(QMainWindow):
         if not resolved_repo:
             QMessageBox.warning(self, "Git Viewer", "Repositorio invalido para abrir no terminal.")
             return False
+        launch_env = os.environ.copy()
+        # Evita herdar variaveis de runtime (snap/flatpak) que quebram terminais
+        # do sistema com erro de symbol lookup.
+        strip_keys = (
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "LD_AUDIT",
+            "LIBRARY_PATH",
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "GIO_MODULE_DIR",
+            "GIO_EXTRA_MODULES",
+            "GI_TYPELIB_PATH",
+            "GTK_PATH",
+            "GDK_PIXBUF_MODULE_FILE",
+            "GDK_PIXBUF_MODULEDIR",
+            "QT_PLUGIN_PATH",
+            "QML2_IMPORT_PATH",
+        )
+        for key in strip_keys:
+            launch_env.pop(key, None)
+
+        minimal_env: dict[str, str] = {}
+        for key in (
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "SHELL",
+            "PATH",
+            "DISPLAY",
+            "WAYLAND_DISPLAY",
+            "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS",
+            "XAUTHORITY",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "TERM",
+        ):
+            value = str(os.environ.get(key, "")).strip()
+            if value:
+                minimal_env[key] = value
+        if "PATH" not in minimal_env:
+            minimal_env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        if "SHELL" not in minimal_env:
+            minimal_env["SHELL"] = "/bin/bash"
+
+        shell_launch = f"cd {shlex.quote(resolved_repo)} && exec $SHELL"
         terminal_commands = (
             ("gnome-terminal", "--working-directory", resolved_repo),
             ("kgx", "--working-directory", resolved_repo),
-            ("x-terminal-emulator", "--working-directory", resolved_repo),
             ("konsole", "--workdir", resolved_repo),
             ("xfce4-terminal", "--working-directory", resolved_repo),
             ("tilix", "--working-directory", resolved_repo),
             ("alacritty", "--working-directory", resolved_repo),
             ("kitty", "--directory", resolved_repo),
             ("wezterm", "start", "--cwd", resolved_repo),
+            ("x-terminal-emulator", "-e", "bash", "-lc", shell_launch),
         )
-        for command in terminal_commands:
-            binary = command[0]
-            if not shutil.which(binary):
-                continue
-            try:
-                subprocess.Popen(list(command))
-            except OSError:
-                continue
-            return True
+        env_profiles: tuple[tuple[str, dict[str, str]], ...] = (
+            ("normal", launch_env),
+            ("minimal", minimal_env),
+        )
+        launch_errors: list[str] = []
+        for profile_name, profile_env in env_profiles:
+            for command in terminal_commands:
+                binary = command[0]
+                if not shutil.which(binary):
+                    continue
+                try:
+                    process = subprocess.Popen(
+                        list(command),
+                        env=profile_env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    # Se o processo morrer logo no inicio, tentamos fallback.
+                    time.sleep(0.2)
+                    if process.poll() not in (None, 0):
+                        launch_errors.append(
+                            f"{binary} ({profile_name}) retornou codigo {process.returncode}."
+                        )
+                        continue
+                except OSError as exc:
+                    launch_errors.append(f"{binary} ({profile_name}): {exc}")
+                    continue
+                return True
+        if launch_errors:
+            details = "\n".join(launch_errors[:3])
+            QMessageBox.warning(
+                self,
+                "Git Viewer",
+                "Nao foi possivel abrir terminal neste repositorio.\n"
+                "Tentativas falharam:\n"
+                f"{details}",
+            )
+            return False
         QMessageBox.warning(
             self,
             "Git Viewer",
