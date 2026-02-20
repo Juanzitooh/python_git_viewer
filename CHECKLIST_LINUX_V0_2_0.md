@@ -1,4 +1,8 @@
-# Checklist Linux - v0.2.0 (PySide6)
+# Checklist Linux - v0.2.0 (PySide6) [LEGADO]
+
+Este arquivo foi dividido em:
+- `CHECKLIST_FUNCIONAL_DEV.md` (fluxo dev via `python3 main.py`)
+- `CHECKLIST_DISTRIBUICAO_LINUX.md` (fluxo de empacotamento e teste `.deb`/AppImage)
 
 Objetivo:
 - Validar instalacao, execucao, update e desinstalacao no Ubuntu 24.04.
