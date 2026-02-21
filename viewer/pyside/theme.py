@@ -310,13 +310,20 @@ def build_theme_stylesheet(theme: str, theme_overrides: object | None = None) ->
       color: {p["fg"]};
       border-color: {p["accent"]};
     }}
-    QLineEdit, QComboBox, QPlainTextEdit, QListWidget, QTreeWidget {{
+    QLineEdit, QComboBox, QPlainTextEdit {{
       background-color: {p["field"]};
       border: 1px solid {p["border"]};
       border-radius: 8px;
       padding: 6px;
       selection-background-color: {p["selection_bg"]};
       selection-color: {p["selection_fg"]};
+    }}
+    QListWidget, QTreeWidget {{
+      background-color: {p["field"]};
+      border: 1px solid {p["border"]};
+      border-radius: 8px;
+      padding: 6px;
+      selection-background-color: {p["selection_bg"]};
     }}
     QScrollArea#SettingsScrollArea {{
       background-color: {p["panel"]};
@@ -368,9 +375,11 @@ def build_theme_stylesheet(theme: str, theme_overrides: object | None = None) ->
     QTreeWidget#DiffColumnsView::item {{
       padding: 1px 2px;
     }}
-    QListWidget::item:selected, QTreeWidget::item:selected {{
+    QListWidget::item:selected {{
       background-color: {p["selection_bg"]};
-      color: {p["selection_fg"]};
+    }}
+    QTreeWidget::item:selected {{
+      background-color: {p["selection_bg"]};
     }}
     QFrame#WorkspaceCard {{
       background-color: {p["field"]};

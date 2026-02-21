@@ -149,7 +149,6 @@ class DiffColumnsView(QTreeWidget):
             }
             QTreeView::item:selected {
                 background-color: palette(highlight);
-                color: palette(highlighted-text);
             }
             QTreeView::indicator {
                 width: 14px;
@@ -218,17 +217,13 @@ class DiffColumnsView(QTreeWidget):
 
     def _apply_selection_colors(self) -> None:
         default_color = self.palette().color(QPalette.ColorRole.Text)
-        selected_color = self.palette().color(QPalette.ColorRole.HighlightedText)
         for row_index in range(self.topLevelItemCount()):
             item = self.topLevelItem(row_index)
             if item is None:
                 continue
-            if item.isSelected():
-                color = selected_color
-            else:
-                kind_value = item.data(0, ROW_KIND_ROLE)
-                kind = str(kind_value).strip() if kind_value is not None else ""
-                color = self._row_color_for_kind(kind) or default_color
+            kind_value = item.data(0, ROW_KIND_ROLE)
+            kind = str(kind_value).strip() if kind_value is not None else ""
+            color = self._row_color_for_kind(kind) or default_color
             for column in range(item.columnCount()):
                 # Mantem o indicador de checkbox nativo visivel na coluna de marcador.
                 if self.include_marker_column and column == self._marker_column:
