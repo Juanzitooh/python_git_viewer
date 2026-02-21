@@ -1251,7 +1251,7 @@ class QtShellWindow(QMainWindow):
         if int(line_no) > 0:
             goto_target = f"{absolute_path}:{int(line_no)}:1"
         try:
-            subprocess.Popen([code_bin, "--reuse-window", repo_root, "--goto", goto_target])
+            subprocess.Popen([code_bin, "--new-window", repo_root, "--goto", goto_target])
         except OSError as exc:
             QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
             return False
@@ -1285,7 +1285,7 @@ class QtShellWindow(QMainWindow):
             QMessageBox.warning(self, "VS Code", "Comando 'code' nao encontrado no PATH.")
             return False
         try:
-            subprocess.Popen([code_bin, resolved_repo])
+            subprocess.Popen([code_bin, "--new-window", resolved_repo])
         except OSError as exc:
             QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
             return False
