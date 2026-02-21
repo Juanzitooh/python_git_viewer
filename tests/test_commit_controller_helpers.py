@@ -13,7 +13,7 @@ try:
         _diff_has_dev_null_transition,
         _load_commit_status_entries,
     )
-except ModuleNotFoundError as exc:  # pragma: no cover - ambiente sem PySide6
+except Exception as exc:  # pragma: no cover - ambiente sem runtime Qt/PySide6
     _IMPORT_ERROR = exc
     _diff_has_dev_null_transition = None
     _load_commit_status_entries = None
