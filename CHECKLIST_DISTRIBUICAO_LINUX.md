@@ -3,9 +3,11 @@
 Objetivo:
 - Validar empacotamento, instalacao, update e desinstalacao em Ubuntu 24.04.
 - Confirmar que build distribuivel se comporta igual ao dev nos fluxos essenciais.
+- Priorizar o fluxo automatico (`dist.sh`) e usar o fluxo manual apenas como fallback/debug.
 
 Pre-condicao:
 - Execute este checklist somente apos aprovacao do `CHECKLIST_FUNCIONAL_DEV.md`.
+- Tenha `sudo` disponivel para instalacao/reinstalacao do `.deb`.
 
 Como usar:
 - Marque `[x]` quando OK.
@@ -16,12 +18,12 @@ Como usar:
 
 ## 1) Dados da rodada
 
-- Data:
-- Testador:
-- Branch/commit:
-- Distro/kernel:
-- Versao alvo:
-- Pacote alvo: `dist/git-viewer_<versao>_amd64.deb`
+- Data: 21/02/2026
+- Testador: Juan Pablo
+- Branch/commit: feature/r7-pyside6-linux
+- Distro/kernel: linux desktop 24.04 lts
+- Versao alvo: 0.3.x
+- Pacote alvo: `dist/git-viewer_0.3.0_amd64.deb`
 
 ## 2) Caminhos importantes
 
@@ -38,7 +40,7 @@ Como usar:
 Fluxo rapido (recomendado):
 
 ```bash
-./dist.sh --version <versao>
+./dist.sh --version 0.3.0
 ```
 
 Isso faz:
@@ -54,31 +56,40 @@ Onde mudar versao base do projeto:
   - `StringStruct('FileVersion', 'X.Y.Z')`
   - `StringStruct('ProductVersion', 'X.Y.Z')`
 
-Fluxo manual:
+Checklist (fluxo automatico):
+- [x] `dist.sh` conclui sem erro.
+- [x] `.deb` foi gerado em `dist/`.
+- [x] AppImage foi gerado em `dist/` (quando aplicavel).
+- [x] Instalacao/reinstalacao do `.deb` foi executada.
+- [x] App abriu ao final do script.
+
+Fluxo manual (fallback/debug):
 
 ```bash
 python3 scripts/build_linux_packages.py --build-binary --deb-only
-ls -lh dist/git-viewer_<versao>_amd64.deb
+ls -lh dist/git-viewer_0.3.0_amd64.deb
 ```
 
 Opcional AppImage:
 
 ```bash
 python3 scripts/build_linux_packages.py --build-binary --appimage-only
-ls -lh dist/git-viewer-<versao>-x86_64.AppImage
+ls -lh dist/git-viewer-0.3.0-x86_64.AppImage
 ```
 
 Checklist:
-- [ ] Build `.deb` conclui sem erro.
-- [ ] Build AppImage conclui sem erro (quando aplicavel).
+- [ ] Build manual `.deb` conclui sem erro.
+- [ ] Build manual AppImage conclui sem erro (quando aplicavel).
 
 ---
 
 ## 4) Instalacao `.deb`
 
+Se voce usou `dist.sh`, este passo ja foi executado automaticamente.
+
 ```bash
-cp dist/git-viewer_<versao>_amd64.deb /tmp/
-sudo apt install /tmp/git-viewer_<versao>_amd64.deb
+cp dist/git-viewer_0.3.0_amd64.deb /tmp/
+sudo apt install /tmp/git-viewer_0.3.0_amd64.deb
 ```
 
 Validar:
@@ -101,19 +112,27 @@ Checklist:
 ## 5) Smoke funcional no pacote instalado
 
 Teste rapido no app instalado (nao repetir checklist funcional completo):
-- [ ] Troca de repositorio/branch.
-- [ ] Commit diff carrega.
-- [ ] Historico carrega.
-- [ ] Importar/Comparar abrem sem erro.
-- [ ] Configuracoes salvam e reaplicam.
+- [x] Troca de repositorio/branch.
+- [x] Commit diff carrega.
+- [x] Historico carrega.
+- [x] Importar/Comparar abrem sem erro.
+- [x] Configuracoes salvam e reaplicam.
 
 ---
 
 ## 6) Update de versao
 
+Fluxo recomendado:
+
 ```bash
-cp dist/git-viewer_<nova_versao>_amd64.deb /tmp/
-sudo apt install /tmp/git-viewer_<nova_versao>_amd64.deb
+./dist.sh --version 0.3.0
+```
+
+Fluxo manual:
+
+```bash
+cp dist/git-viewer_0.3.0_amd64.deb /tmp/
+sudo apt install /tmp/git-viewer_0.3.0_amd64.deb
 apt policy git-viewer
 git-viewer
 ```
@@ -128,8 +147,16 @@ Checklist:
 
 ## 7) Reinstall da mesma versao
 
+Fluxo recomendado:
+
 ```bash
-sudo apt install --reinstall /tmp/git-viewer_<versao>_amd64.deb
+./dist.sh --version 0.3.0
+```
+
+Fluxo manual:
+
+```bash
+sudo apt install --reinstall /tmp/git-viewer_0.3.0_amd64.deb
 ```
 
 Checklist:

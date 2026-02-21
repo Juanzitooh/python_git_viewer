@@ -4,6 +4,10 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 
 ## [Unreleased]
 
+- Nenhuma mudanca registrada ainda.
+
+## [0.3.0] - 2026-02-21
+
 - Distribuicao Linux iniciada: adicionado `scripts/build_linux_packages.py` para gerar `.deb` e `AppImage` (com `.desktop` e icone), incluindo base de empacotamento em `packaging/linux/git-viewer.desktop`.
 - Validacao Linux de instalacao/execucao foi documentada em `docs/LINUX_PACKAGING_VALIDATION.md`, cobrindo install/remove do `.deb` em raiz isolada e execucao de AppImage com `APPIMAGE_EXTRACT_AND_RUN=1`.
 - CI de release foi atualizada para gerar e publicar artefatos Linux (`.deb` e `.AppImage`) em job dedicado no workflow.

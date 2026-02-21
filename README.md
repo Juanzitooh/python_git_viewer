@@ -2,7 +2,36 @@
 
 GUI Git em **PySide6** para visualizar commits, diffs, status e executar fluxos de commit/sync/importacao/comparacao.
 
+## Inicio rapido
+
+Clonar o projeto:
+
+```bash
+git clone <url-do-repositorio> viewer
+cd viewer
+```
+
+Rodar em modo dev (prepara ambiente automaticamente):
+
+```bash
+./setup.sh
+```
+
+Instalar no Linux Desktop (.deb + AppImage + abrir app):
+
+```bash
+./dist.sh
+```
+
 ## Como executar (dev)
+
+Forma recomendada (idempotente):
+
+```bash
+./setup.sh
+```
+
+Forma manual:
 
 ```bash
 python3 -m venv .venv

@@ -350,8 +350,17 @@ Legenda
   Nota: execucao planejada somente apos estabilizar bugs criticos da rodada atual; sem rodada de testes dedicada nesta etapa inicial.
 - [ ] R7.9 Diff com deteccao de "linha modificada" (post-bugs)
   Escopo: identificar automaticamente o padrao `-` seguido de `+` no mesmo trecho/hunk como alteracao de linha (estado "modified"), mantendo os casos puros de adicao e remocao.
-  Aceite: diff principal e janela de diff avancada passam a exibir 3 estados visuais consistentes (adicionado, removido, modificado), com destaque especifico para "modified" e sem quebrar stage/unstage por linha/bloco.
+  Aceite: diff da aba Commit e das abas de leitura (Historico/Comparar/Importar/Stash) passam a exibir 3 estados visuais consistentes (adicionado, removido, modificado), com destaque especifico para "modified" e sem quebrar stage/unstage por linha/bloco.
   Nota: executar somente apos estabilizacao dos bugs atuais de selecao/stage; validar primeiro no fluxo da aba Commit e depois replicar nas demais abas de diff.
+
+## Fechamento de Versao
+
+- [x] V0.3.0 fechada (2026-02-21)
+  Escopo: consolidar a migracao para PySide6-only, fechar a rodada de distribuicao Linux e preparar documentacao de release.
+  Aceite: `CHANGELOG.md` com secao `0.3.0` publicada, comando oficial mantido em `python3 main.py` e fluxo Linux padronizado com `setup.sh` (dev) e `dist.sh` (distribuicao).
+- [ ] V0.4.0 (proximo ciclo)
+  Escopo: concluir pendencias pos-release (bugs restantes, rework da aba Configuracoes e evolucao do diff com linha modificada).
+  Aceite: backlog pos-0.3.0 priorizado e validado em nova rodada de checklist.
 
 Ordem de execucao sugerida
 - 1) R6.2
