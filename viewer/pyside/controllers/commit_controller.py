@@ -2247,6 +2247,18 @@ def _dialog_apply_real_line_tooltips(
         item.setToolTip(column, row_tooltip)
 
 
+def _dialog_add_separator_row(side_tree: QTreeWidget) -> None:
+    separator = "-" * 36
+    row_item = QTreeWidgetItem([separator, "", "", "", separator])
+    row_item.setData(0, ROLE_DIALOG_KIND, "separator")
+    flags = row_item.flags()
+    flags &= ~Qt.ItemFlag.ItemIsSelectable
+    flags &= ~Qt.ItemFlag.ItemIsUserCheckable
+    row_item.setFlags(flags)
+    _dialog_apply_row_color(row_item, line_type="hunk", target_columns=(0, 4))
+    side_tree.addTopLevelItem(row_item)
+
+
 def _dialog_marker_from_check_state(state: Qt.CheckState) -> str:
     if state == Qt.CheckState.Checked:
         return "[x]"
@@ -2276,6 +2288,7 @@ def _populate_dialog_rows_from_main_diff(
     marker_column = int(getattr(main_view, "_marker_column", 0))
     content_column = int(getattr(main_view, "_content_column", 2))
     first_selectable_item: QTreeWidgetItem | None = None
+    has_hunk_row = False
 
     for row_index in range(main_view.topLevelItemCount()):
         source_item = main_view.topLevelItem(row_index)
@@ -2292,6 +2305,8 @@ def _populate_dialog_rows_from_main_diff(
         marker = _dialog_marker_from_check_state(source_item.checkState(marker_column))
 
         if kind == "hunk":
+            if has_hunk_row:
+                _dialog_add_separator_row(side_tree)
             if not hunk_header:
                 header_text = str(source_item.text(content_column)).strip()
                 hunk_header = header_text.removeprefix("Secao: ").strip() if header_text else ""
@@ -2311,6 +2326,8 @@ def _populate_dialog_rows_from_main_diff(
                 row_item.setFont(column, font)
             _dialog_apply_row_color(row_item, line_type="hunk", target_columns=(0, 4))
             side_tree.addTopLevelItem(row_item)
+            _dialog_add_separator_row(side_tree)
+            has_hunk_row = True
             continue
 
         if kind not in {"context", "added", "removed"}:
@@ -3065,11 +3082,14 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
         )
 
         if first_selectable_item is None and side_tree.topLevelItemCount() <= 0:
+            has_hunk_row = False
             for scope, _patch in patches_by_scope:
                 diff_data = operation_diff_data_by_scope.get(scope)
                 if not isinstance(diff_data, DiffData):
                     continue
                 for hunk_index, hunk in enumerate(diff_data.hunks):
+                    if has_hunk_row:
+                        _dialog_add_separator_row(side_tree)
                     hunk_row = QTreeWidgetItem([f"Secao: {hunk.header}", "", "", "", ""])
                     hunk_row.setData(0, ROLE_DIALOG_KIND, "hunk")
                     hunk_row.setData(0, ROLE_DIALOG_SCOPE, scope)
@@ -3087,6 +3107,8 @@ def _refresh_commit_diff_dialog_views(window: object, dialog_state: dict[str, ob
                         hunk_row.setFont(column, font)
                     _dialog_apply_row_color(hunk_row, line_type="hunk", target_columns=(0, 4))
                     side_tree.addTopLevelItem(hunk_row)
+                    _dialog_add_separator_row(side_tree)
+                    has_hunk_row = True
 
                     line_marker = "[x]" if scope == "staged" else "[ ]"
                     for current_line in hunk.lines:
@@ -3765,6 +3787,7 @@ def open_commit_diff_window(window: object) -> None:
     side_tree.setWordWrap(True)
     side_tree.setColumnCount(5)
     side_tree.setHeaderLabels(["Conteudo removido", "N-", "Check", "N+", "Conteudo adicionado"])
+    side_tree.setHeaderHidden(True)
     side_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     side_tree.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
     side_tree.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)

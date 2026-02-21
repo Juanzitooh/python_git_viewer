@@ -399,6 +399,7 @@ class DiffColumnsRenderer:
         self._is_light_theme = int(base.lightness()) >= 128
         app = QApplication.instance()
         self._theme_overrides = app.property("gv_theme_overrides") if app is not None else None
+        self._has_rendered_hunk = False
 
     def _meta_row_values(self, text: str) -> list[str]:
         if self.view.include_marker_column:
@@ -422,6 +423,12 @@ class DiffColumnsRenderer:
             self._format_range(int(hunk.new_start), int(hunk.new_count)),
             label,
         ]
+
+    def _separator_row_values(self) -> list[str]:
+        separator = "-" * 36
+        if self.view.include_marker_column:
+            return ["", "", separator]
+        return ["", "", separator]
 
     def _line_row_values(
         self,
@@ -487,6 +494,11 @@ class DiffColumnsRenderer:
                 is_light=self._is_light_theme,
                 theme_overrides=self._theme_overrides,
             )
+        if kind == "separator":
+            flags = item.flags()
+            flags &= ~Qt.ItemFlag.ItemIsSelectable
+            flags &= ~Qt.ItemFlag.ItemIsUserCheckable
+            item.setFlags(flags)
         if self.view.include_marker_column:
             marker_color = self.view.palette().color(QPalette.ColorRole.Text)
             item.setForeground(self.view._marker_column, marker_color)
@@ -594,6 +606,14 @@ class DiffColumnsRenderer:
                 )
 
     def _render_hunk(self, hunk: DiffHunk, *, hunk_index: int) -> None:
+        if self.view.include_marker_column and self._has_rendered_hunk:
+            self._add_row(
+                self._separator_row_values(),
+                kind="separator",
+                hunk_index=hunk_index,
+                hunk_header=hunk.header,
+                line_color_kind="hunk",
+            )
         hunk_marker = ""
         if self.view.include_marker_column and self.hunk_marker_resolver is not None:
             hunk_marker = self.hunk_marker_resolver(hunk_index, hunk)
@@ -614,6 +634,14 @@ class DiffColumnsRenderer:
                 hunk_item.setToolTip(self.view._new_line_column, tip)
 
         if self.view.include_marker_column:
+            # Linha separadora logo abaixo do cabecalho da secao.
+            self._add_row(
+                self._separator_row_values(),
+                kind="separator",
+                hunk_index=hunk_index,
+                hunk_header=hunk.header,
+                line_color_kind="hunk",
+            )
             for line_info in hunk.lines:
                 marker = ""
                 if self.line_marker_resolver is not None:
@@ -632,8 +660,10 @@ class DiffColumnsRenderer:
                     marker=marker,
                     line_color_kind=line_info.line_type,
                 )
+            self._has_rendered_hunk = True
             return
         self._render_non_marker_hunk_lines(hunk, hunk_index=hunk_index)
+        self._has_rendered_hunk = True
 
     def render(self, patch: str) -> None:
         self.view._enforce_column_layout()
