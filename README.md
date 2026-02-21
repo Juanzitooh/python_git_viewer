@@ -88,6 +88,15 @@ Atalho completo (build + install/reinstall + abrir app):
 ./dist.sh
 ```
 
+O `dist.sh` tambem:
+- executa testes unitarios (`python3 -m unittest discover -s tests -p "test_*.py"`);
+- gera checklists de release em `checklists/` sem sobrescrever arquivos ja existentes.
+
+Importante:
+- o `dist.sh` e voltado para build local em modo beta/iteracao;
+- para versoes estaveis publicadas, use os artefatos em:
+  - `https://github.com/Juanzitooh/python_git_viewer/releases`
+
 Exemplo para gerar versão `0.3.0`:
 
 ```bash
