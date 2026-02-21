@@ -149,7 +149,6 @@ from .controllers import (
     on_stash_entry_context_menu,
     on_stash_file_selected,
     on_commit_diff_context_menu,
-    open_commit_diff_window,
     on_commit_file_context_menu,
     on_history_file_selected,
     on_commit_diff_item_changed,
@@ -1040,9 +1039,6 @@ class QtShellWindow(QMainWindow):
 
     def _on_commit_diff_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         on_commit_diff_item_changed(self, item, column)
-
-    def _open_commit_diff_window(self) -> None:
-        open_commit_diff_window(self)
 
     def _on_commit_file_selected(self) -> None:
         on_commit_file_selected(self)
