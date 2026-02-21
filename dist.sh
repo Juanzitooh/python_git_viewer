@@ -95,11 +95,11 @@ import sys
 
 path = pathlib.Path(sys.argv[1])
 if not path.exists():
-    print("0.2.0")
+    print("0.3.0")
     raise SystemExit(0)
 content = path.read_text(encoding="utf-8", errors="ignore")
 match = re.search(r"StringStruct\('ProductVersion',\s*'([^']+)'\)", content)
-print(match.group(1).strip() if match else "0.2.0")
+print(match.group(1).strip() if match else "0.3.0")
 PY
 }
 

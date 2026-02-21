@@ -199,7 +199,7 @@ def main() -> int:
     if args.deb_only and args.appimage_only:
         raise SystemExit("Use apenas uma entre --deb-only e --appimage-only.")
 
-    version = args.version.strip() or read_version(DEFAULT_VERSION_FILE, "0.2.0")
+    version = args.version.strip() or read_version(DEFAULT_VERSION_FILE, "0.3.0")
     binary_path = ensure_binary(Path(args.binary).resolve(), args.python, args.build_binary)
     icon_path = Path(args.icon).resolve()
     desktop_path = Path(args.desktop).resolve()
