@@ -25,7 +25,7 @@ from ...core.commit_ops import (
     discard_file_changes as core_discard_file_changes,
     drop_stash as core_drop_stash,
     get_file_patch as core_get_file_patch,
-    get_last_commit_subject as core_get_last_commit_subject,
+    get_last_commit_message as core_get_last_commit_message,
     get_stash_patch as core_get_stash_patch,
     has_staged_changes as core_has_staged_changes,
     list_stash_files_from_patch as core_list_stash_files_from_patch,
@@ -3290,7 +3290,7 @@ def undo_last_commit_from_commit_tab(window: object) -> None:
         QMessageBox.information(window, "Undo commit", "Selecione um repositório válido primeiro.")
         return
     try:
-        subject = core_get_last_commit_subject(window.repo_path)
+        subject, description = core_get_last_commit_message(window.repo_path)
     except RuntimeError as exc:
         QMessageBox.warning(window, "Undo commit", str(exc))
         return
@@ -3316,6 +3316,10 @@ def undo_last_commit_from_commit_tab(window: object) -> None:
         return
     window._set_status(f"Último commit desfeito ({mode}).")
     refresh_commit_files(window)
+    window.commit_title_input.setText(subject)
+    window.commit_description_input.setPlainText(description)
+    window.commit_title_input.setFocus()
+    window.commit_title_input.selectAll()
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
     window._reload_history_commits()

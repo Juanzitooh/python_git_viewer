@@ -317,6 +317,14 @@ def get_last_commit_subject(repo_path: str) -> str:
     return output.strip()
 
 
+def get_last_commit_message(repo_path: str) -> tuple[str, str]:
+    output = run_git(repo_path, ["log", "-1", "--pretty=%s%x1f%b"])
+    subject, separator, body = output.partition("\x1f")
+    if not separator:
+        return output.strip(), ""
+    return subject.strip(), body.rstrip("\n")
+
+
 def list_status_entries(repo_path: str) -> list[dict[str, str | bool]]:
     output = run_git(repo_path, ["status", "--porcelain", "-z"])
     entries: list[dict[str, str | bool]] = []

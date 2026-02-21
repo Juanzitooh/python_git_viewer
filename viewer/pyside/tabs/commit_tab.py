@@ -127,11 +127,11 @@ def build_commit_tab(window: object) -> None:
     window.commit_stash_button.clicked.connect(window._create_stash_from_commit_tab)
     action_layout.addWidget(window.commit_stash_button)
 
-    window.commit_undo_button = QPushButton("Undo commit", action_row)
+    window.commit_undo_button = QPushButton("Undo", action_row)
     window.commit_undo_button.clicked.connect(window._undo_last_commit_from_commit_tab)
     action_layout.addWidget(window.commit_undo_button)
 
-    window.commit_open_pr_button = QPushButton("Abrir PR", action_row)
+    window.commit_open_pr_button = QPushButton("Pull Request", action_row)
     window.commit_open_pr_button.clicked.connect(window._open_commit_pr_in_github)
     action_layout.addWidget(window.commit_open_pr_button)
 
@@ -201,11 +201,11 @@ def build_commit_tab(window: object) -> None:
     window.commit_open_readme_button.clicked.connect(window._open_commit_repo_readme_in_vscode)
     empty_actions_layout.addWidget(window.commit_open_readme_button)
 
-    window.commit_empty_undo_button = QPushButton("Undo commit", window.commit_empty_page)
+    window.commit_empty_undo_button = QPushButton("Undo", window.commit_empty_page)
     window.commit_empty_undo_button.clicked.connect(window._undo_last_commit_from_commit_tab)
     empty_actions_layout.addWidget(window.commit_empty_undo_button)
 
-    window.commit_empty_open_pr_button = QPushButton("Abrir PR", window.commit_empty_page)
+    window.commit_empty_open_pr_button = QPushButton("Pull Request", window.commit_empty_page)
     window.commit_empty_open_pr_button.clicked.connect(window._open_commit_pr_in_github)
     empty_actions_layout.addWidget(window.commit_empty_open_pr_button)
 

@@ -10,6 +10,7 @@ from viewer.core.commit_ops import (
     create_stash,
     discard_file_changes,
     drop_stash,
+    get_last_commit_message,
     get_stash_patch,
     list_status_entries,
     list_stash_files_from_patch,
@@ -161,6 +162,18 @@ class TestCommitOps(unittest.TestCase):
             discard_file_changes("/tmp/repo", "notes.txt")
         mocked_remove.assert_called_once()
         mocked_run_git.assert_not_called()
+
+    def test_get_last_commit_message_parses_subject_and_body(self) -> None:
+        with patch("viewer.core.commit_ops.run_git", return_value="feat: titulo\x1flinha 1\nlinha 2\n"):
+            subject, body = get_last_commit_message("/tmp/repo")
+        self.assertEqual(subject, "feat: titulo")
+        self.assertEqual(body, "linha 1\nlinha 2")
+
+    def test_get_last_commit_message_without_separator_returns_subject_only(self) -> None:
+        with patch("viewer.core.commit_ops.run_git", return_value="fix: apenas assunto\n"):
+            subject, body = get_last_commit_message("/tmp/repo")
+        self.assertEqual(subject, "fix: apenas assunto")
+        self.assertEqual(body, "")
 
 
 if __name__ == "__main__":
