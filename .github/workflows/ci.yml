@@ -9,8 +9,18 @@ on:
   workflow_dispatch:
 
 jobs:
+  setup-smoke:
+    name: Setup Script Smoke (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run setup.sh (no-run)
+        run: ./setup.sh --no-run
+
   tests:
     name: Tests (Python 3.12)
+    needs: [setup-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,6 +35,17 @@ jobs:
           python -m pip install -r requirements-dev.txt
       - name: Run tests
         run: python -m unittest discover -s tests
+
+  dist-smoke:
+    name: Dist Script Smoke (.deb only)
+    needs: [tests]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run dist.sh smoke
+        run: ./dist.sh --deb-only --no-install --no-open --skip-tests
 
   build-linux-packages:
     name: Build Linux Packages (.deb/AppImage)
