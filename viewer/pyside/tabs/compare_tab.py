@@ -79,11 +79,11 @@ def build_compare_tab(window: object) -> None:
     window.compare_action_combo.currentIndexChanged.connect(window._on_compare_action_changed)
     action_layout.addWidget(window.compare_action_combo)
 
-    window.compare_squash_message_label = QLabel("Mensagem (squash):", action_row)
+    window.compare_squash_message_label = QLabel("Titulo de squash merge:", action_row)
     action_layout.addWidget(window.compare_squash_message_label)
 
     window.compare_squash_message_input = QLineEdit(action_row)
-    window.compare_squash_message_input.setPlaceholderText("Mensagem do commit squash")
+    window.compare_squash_message_input.setPlaceholderText("Titulo do commit de squash merge")
     window.compare_squash_message_input.textChanged.connect(window._on_compare_action_changed)
     action_layout.addWidget(window.compare_squash_message_input, stretch=1)
 

@@ -28,6 +28,7 @@ from ..diff_columns import render_diff_into_columns
 
 
 _COMMIT_TOKEN_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+_SQUASH_PREFIX_RE = re.compile(r"^(fix|imp|feat|docs)(?:\([^)]+\))?(?:!)?:\s*(.*)$", re.IGNORECASE)
 
 
 def clear_compare_view(window: object) -> None:
@@ -58,6 +59,72 @@ def _extract_compare_commit_token(commit_line: str) -> str:
     if not token or not _COMMIT_TOKEN_RE.fullmatch(token):
         return ""
     return token
+
+
+def _extract_compare_commit_subject(commit_line: str) -> str:
+    line = commit_line.strip()
+    if not line:
+        return ""
+    token = _extract_compare_commit_token(line)
+    if not token:
+        return line
+    if len(line) <= len(token):
+        return ""
+    return line[len(token) :].strip()
+
+
+def _build_compare_squash_description(repo_path: str, origin: str, dest: str) -> str:
+    summary_lines: list[str] = []
+    try:
+        commit_lines = core_load_compare_commits(repo_path, origin, dest)
+    except RuntimeError:
+        commit_lines = []
+    for raw_line in commit_lines:
+        subject = _extract_compare_commit_subject(raw_line)
+        if not subject:
+            continue
+        match = _SQUASH_PREFIX_RE.match(subject)
+        if not match:
+            continue
+        prefix = match.group(1).lower()
+        if prefix == "docs":
+            continue
+        if prefix not in {"fix", "imp", "feat"}:
+            continue
+        detail = (match.group(2) or "").strip()
+        if detail:
+            summary_lines.append(f"- {prefix}: {detail}")
+        else:
+            summary_lines.append(f"- {prefix}: {subject}")
+    body_lines = [f"branch origem: {origin}", "", "modificações:"]
+    if summary_lines:
+        body_lines.extend(summary_lines)
+    else:
+        body_lines.append("- (sem commits fix/imp/feat no intervalo)")
+    return "\n".join(body_lines).strip()
+
+
+def _build_compare_squash_commit_message(repo_path: str, origin: str, dest: str, title: str) -> str:
+    normalized_title = title.strip()
+    if not normalized_title:
+        return ""
+    body = _build_compare_squash_description(repo_path, origin, dest)
+    if not body:
+        return normalized_title
+    return f"{normalized_title}\n\n{body}"
+
+
+def _commit_with_message(repo_path: str, message: str) -> None:
+    normalized_message = message.replace("\r\n", "\n").strip()
+    if not normalized_message:
+        raise RuntimeError("Mensagem de commit vazia.")
+    chunks = [chunk.strip() for chunk in normalized_message.split("\n\n") if chunk.strip()]
+    if not chunks:
+        raise RuntimeError("Mensagem de commit vazia.")
+    args = ["commit"]
+    for chunk in chunks:
+        args.extend(["-m", chunk])
+    run_git(repo_path, args)
 
 
 def _resolve_compare_commit_hash(repo_path: str, commit_token: str) -> str:
@@ -504,9 +571,9 @@ def _update_compare_action_state(window: object) -> None:
             action_code = window.compare_action_combo.currentData()
             action = str(action_code).strip() if action_code is not None else "merge"
             if action == "squash":
-                message = window.compare_squash_message_input.text().strip()
-                if not message:
-                    status_text = "Informe a mensagem do commit squash."
+                title = window.compare_squash_message_input.text().strip()
+                if not title:
+                    status_text = "Informe o titulo do squash merge."
                 else:
                     can_run = True
                     status_text = "Pronto para executar a ação de branch."
@@ -526,6 +593,7 @@ def on_compare_action_changed(window: object, _index: int) -> None:
 
 
 def _refresh_after_compare_action(window: object) -> None:
+    window._refresh_stash_tab_visibility()
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
     window._refresh_commit_files()
@@ -555,9 +623,14 @@ def run_compare_action(window: object) -> None:
     action_label = window.compare_action_combo.currentText().strip() or "Merge"
     squash_message = ""
     if action == "squash":
-        squash_message = window.compare_squash_message_input.text().strip()
+        squash_title = window.compare_squash_message_input.text().strip()
+        if not squash_title:
+            QMessageBox.warning(window, "Comparar", "Titulo obrigatório para squash merge.")
+            _update_compare_action_state(window)
+            return
+        squash_message = _build_compare_squash_commit_message(window.repo_path, origin, dest, squash_title)
         if not squash_message:
-            QMessageBox.warning(window, "Comparar", "Mensagem obrigatória para squash merge.")
+            QMessageBox.warning(window, "Comparar", "Nao foi possivel montar a mensagem do squash merge.")
             _update_compare_action_state(window)
             return
 
@@ -595,7 +668,7 @@ def run_compare_action(window: object) -> None:
             run_git(window.repo_path, ["rebase", origin])
         else:
             run_git(window.repo_path, ["merge", "--squash", origin])
-            run_git(window.repo_path, ["commit", "-m", squash_message])
+            _commit_with_message(window.repo_path, squash_message)
     except RuntimeError as exc:
         has_conflicts = False
         try:
