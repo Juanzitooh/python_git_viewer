@@ -368,9 +368,10 @@ def scan_workspace_repos(window: object) -> None:
         window.workspace_root_edit.setText(root)
         discovered = discover_git_repositories(root, max_depth=4)
         window.scanned_repos = [normalize_repo_path(path) for path in discovered]
-        window.workspace_scan_status_label.setText(
-            f"Scan inicial: {len(window.scanned_repos)} encontrados em {root}"
-        )
+        scan_message = f"Scan inicial: {len(window.scanned_repos)} encontrados em {root}"
+        if hasattr(window, "workspace_scan_status_label"):
+            window.workspace_scan_status_label.setText(scan_message)
+        window._set_status(scan_message)
         load_repo_selector_items(window)
         refresh_workspace_tree(window)
         window._refresh_import_source_repos()
@@ -800,7 +801,12 @@ def _build_workspace_repo_card(window: object, repo_path: str) -> QWidget:
     status_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
     card_layout.addWidget(status_label, stretch=1)
 
-    card.clicked.connect(lambda path=repo_path: set_repo(window, path, save=True))
+    card.clicked.connect(
+        lambda path=repo_path: (
+            set_repo(window, path, save=True),
+            window._open_commit_tab(),
+        )
+    )
     card.double_clicked.connect(
         lambda path=repo_path: (
             set_repo(window, path, save=True),

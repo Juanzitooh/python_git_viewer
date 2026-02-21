@@ -396,6 +396,7 @@ class QtShellWindow(QMainWindow):
         self._build_compare_tab()
         self._build_settings_tab()
         self.tabs.currentChanged.connect(self._on_tab_changed)
+        self._sync_top_bar_for_current_tab()
         root_layout.addWidget(self.tabs, stretch=1)
 
         build_status_bar(self, root)
@@ -927,13 +928,16 @@ class QtShellWindow(QMainWindow):
     def _run_compare_action(self) -> None:
         run_compare_action(self)
 
-    def _open_commit_tab_from_compare(self) -> None:
+    def _open_commit_tab(self) -> None:
         if not hasattr(self, "tabs"):
             return
         for index in range(self.tabs.count()):
             if self.tabs.tabText(index) == "Commit":
                 self.tabs.setCurrentIndex(index)
                 return
+
+    def _open_commit_tab_from_compare(self) -> None:
+        self._open_commit_tab()
 
     def _show_conflicts_dialog(
         self,
@@ -1736,6 +1740,7 @@ class QtShellWindow(QMainWindow):
     def _on_tab_changed(self, _index: int) -> None:
         if self._is_closing:
             return
+        self._sync_top_bar_for_current_tab()
         self._sync_dynamic_status_timer_interval()
         if self.tabs.currentWidget() is self.commit_tab:
             self._schedule_background_status_probe(force=True)
@@ -1747,6 +1752,16 @@ class QtShellWindow(QMainWindow):
             self._reload_history_commits()
             self._history_refresh_pending = False
         self._persist_state()
+
+    def _sync_top_bar_for_current_tab(self) -> None:
+        normal_controls = getattr(self, "top_bar_normal_controls", None)
+        workspace_controls = getattr(self, "top_bar_workspace_controls", None)
+        if normal_controls is None or workspace_controls is None:
+            return
+        current = self.tabs.currentWidget() if hasattr(self, "tabs") else None
+        is_repositories = current is self.repositories_tab if hasattr(self, "repositories_tab") else False
+        normal_controls.setVisible(not is_repositories)
+        workspace_controls.setVisible(is_repositories)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
         super().changeEvent(event)
