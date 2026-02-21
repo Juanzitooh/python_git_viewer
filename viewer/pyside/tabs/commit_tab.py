@@ -80,10 +80,6 @@ def build_commit_tab(window: object) -> None:
     top_layout.setContentsMargins(0, 0, 0, 0)
     top_layout.setSpacing(6)
 
-    window.commit_refresh_button = QPushButton("Atualizar status", top_row)
-    window.commit_refresh_button.clicked.connect(window._refresh_commit_files)
-    top_layout.addWidget(window.commit_refresh_button)
-
     top_layout.addStretch(1)
     window.commit_selection_label = QLabel("Selecionados: 0/0", top_row)
     top_layout.addWidget(window.commit_selection_label)

@@ -176,7 +176,7 @@ from .tabs import (
 )
 
 try:
-    from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Signal
+    from PySide6.QtCore import QObject, QPoint, Qt, QEvent, QTimer, QUrl, Signal
     from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont
     from PySide6.QtWidgets import (
         QApplication,
@@ -482,6 +482,7 @@ class QtShellWindow(QMainWindow):
         self._auto_fetch_timer.start()
         self._auto_history_timer.start()
         self._auto_workspace_timer.start()
+        self._sync_dynamic_status_timer_interval()
 
     def _kick_background_refresh(self) -> None:
         self._schedule_background_status_probe(force=True)
@@ -489,6 +490,7 @@ class QtShellWindow(QMainWindow):
         self._on_auto_workspace_timer()
 
     def _on_auto_status_timer(self) -> None:
+        self._sync_dynamic_status_timer_interval()
         self._schedule_background_status_probe(force=False)
 
     def _on_auto_history_timer(self) -> None:
@@ -519,6 +521,26 @@ class QtShellWindow(QMainWindow):
         if not repo_path:
             return
         self._submit_background_task("status", repo_path, _collect_repo_status_snapshot)
+
+    def _desired_status_poll_interval_ms(self) -> int:
+        base_sec = max(5, int(self._auto_profile.status_interval_sec))
+        is_commit_tab = hasattr(self, "tabs") and self.tabs.currentWidget() is self.commit_tab
+        is_window_active = self.isVisible() and self.isActiveWindow() and not self.isMinimized()
+        if is_commit_tab and is_window_active:
+            fast_sec = max(2, min(5, base_sec // 2))
+            return fast_sec * 1000
+        if not is_window_active:
+            return max(base_sec, 25) * 1000
+        return base_sec * 1000
+
+    def _sync_dynamic_status_timer_interval(self) -> None:
+        timer = getattr(self, "_auto_status_timer", None)
+        if not isinstance(timer, QTimer):
+            return
+        desired = self._desired_status_poll_interval_ms()
+        if timer.interval() == desired:
+            return
+        timer.setInterval(desired)
 
     def _schedule_history_head_probe(self, *, force: bool) -> None:
         if self._busy_depth > 0 and not force:
@@ -1674,6 +1696,9 @@ class QtShellWindow(QMainWindow):
         publish_repo(self)
 
     def _on_tab_changed(self, _index: int) -> None:
+        self._sync_dynamic_status_timer_interval()
+        if self.tabs.currentWidget() is self.commit_tab:
+            self._schedule_background_status_probe(force=True)
         if self.tabs.currentWidget() is self.repositories_tab:
             self._on_auto_workspace_timer()
         if self.tabs.currentWidget() is self.commit_tab and self._commit_refresh_pending:
@@ -1682,6 +1707,17 @@ class QtShellWindow(QMainWindow):
             self._reload_history_commits()
             self._history_refresh_pending = False
         self._persist_state()
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+        super().changeEvent(event)
+        event_type = event.type()
+        if event_type not in {QEvent.Type.ActivationChange, QEvent.Type.WindowStateChange}:
+            return
+        self._sync_dynamic_status_timer_interval()
+        if self.isActiveWindow() and not self.isMinimized():
+            self._schedule_background_status_probe(force=True)
+            if hasattr(self, "tabs") and self.tabs.currentWidget() is self.commit_tab:
+                self._schedule_commit_auto_refresh()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API
         self._is_closing = True
