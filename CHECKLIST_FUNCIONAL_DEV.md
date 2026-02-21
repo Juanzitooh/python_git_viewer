@@ -99,23 +99,23 @@ Checklist:
 - [x] Fluxo de conflito abre sem popup redundante.
 
 ### 3.6 Aba Comparar
-- [bug] Branch origem/destino carregam.
+- [x] Branch origem/destino carregam.
 - [x] Botao trocar origem/destino funciona.
 - [x] Commits/arquivos/diff atualizam conforme selecao.
 - [x] Menus de contexto funcionam.
 - [x] Merge sem conflito funciona.
-- [bug] Merge com conflito abre tela de conflitos.
+- [x] Merge com conflito abre tela de conflitos.
 - [x] Rebase sem conflito funciona.
-- [bug] Rebase com conflito abre tela de conflitos.
+- [x] Rebase com conflito abre tela de conflitos.
 - [x] Squash sem conflito funciona.
-- [bug] Squash com conflito abre tela de conflitos.
+- [x] Squash com conflito abre tela de conflitos.
 
 ### 3.7 Aba Configuracoes
 - sofrerá rework, testes adiados.
 
 ### 3.8 Aba Conflitos (situacional)
-- [bug] Menu com clique direito com as opções relevantes.
-- [bug] conflito sicronizado em tempo real sem impossibilitar usar a ui
+- [x] Menu com clique direito com as opções relevantes.
+- [x] conflito sicronizado em tempo real sem impossibilitar usar a ui
 - [x] abortar ação seja import, export ou merges.
 
 ---
@@ -124,27 +124,13 @@ Checklist:
 
 Use esta secao para controle dos bugs que NAO dependem de `.deb`.
 
-
-# 4.3 Janela de Conflitos
-
-- gostaria que o menu ao invés de tanto botão ali referente ao arquivo selecionado... fosse um menu de clique direito, onde teriam as opções relativas ao arquivo 
-
-- as opções devem levar em conta qual é o conflito ou seja de acorod com a diff ou algo assim, se é um arquivo sendo adicionado e não existia ou mudança estrutural nele
-
-- duplo clique abre no vscode
-
-- melhorar nomenclatura tipo pra eu entender se vou manter alterações que veio da origem ou como era no destino, e nisso dar pronto automático.
-
-- o mesmo ao eu selecionar no vscode o head lá, atualizar e mostrar na janela de conflito que foi resolvido mesmo, já marcando pra continuar ser normal no fluxo
-
-- ao apertar continuar memso tendo resolvido para tudo, travamento total só dando kill no processo pra continuar
 ---
 
 ## 5) Resultado da rodada dev
 
-- [ ] Rodada dev aprovada sem bloqueadores.
-- [ ] Bugs abertos atualizados.
-- [ ] Pronto para checklist de distribuicao.
+- [x] Rodada dev aprovada sem bloqueadores.
+- [x] Bugs abertos atualizados.
+- [x] Pronto para checklist de distribuicao.
 
 ## 6) melhorias planejadas (brainstorm) -> Roadmap
 
