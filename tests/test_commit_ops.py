@@ -50,17 +50,32 @@ class TestCommitOps(unittest.TestCase):
         self.assertEqual(entries[1].description, "On dev: mensagem")
 
     def test_get_stash_patch_with_word_diff_and_file(self) -> None:
-        with patch("viewer.core.commit_ops.run_git", return_value="patch") as mocked_run_git:
+        full_patch = (
+            "diff --git a/viewer/app.py b/viewer/app.py\n"
+            "--- a/viewer/app.py\n"
+            "+++ b/viewer/app.py\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+new\n"
+            "diff --git a/README.md b/README.md\n"
+            "--- a/README.md\n"
+            "+++ b/README.md\n"
+            "@@ -1 +1 @@\n"
+            "-a\n"
+            "+b\n"
+        )
+        with patch("viewer.core.commit_ops.run_git", return_value=full_patch) as mocked_run_git:
             patch_value = get_stash_patch(
                 "/tmp/repo",
                 "stash@{0}",
                 word_diff=True,
                 path_for_git="viewer/app.py",
             )
-        self.assertEqual(patch_value, "patch")
+        self.assertIn("diff --git a/viewer/app.py b/viewer/app.py", patch_value)
+        self.assertNotIn("diff --git a/README.md b/README.md", patch_value)
         mocked_run_git.assert_called_once_with(
             "/tmp/repo",
-            ["show", "--pretty=format:", "-p", "stash@{0}", "--word-diff=plain", "--", "viewer/app.py"],
+            ["stash", "show", "-p", "stash@{0}", "--word-diff=plain"],
         )
 
     def test_list_stash_files_from_patch(self) -> None:
@@ -74,6 +89,18 @@ class TestCommitOps(unittest.TestCase):
         )
         files = list_stash_files_from_patch(patch)
         self.assertEqual(files, ["viewer/a.py", "README.md"])
+
+    def test_list_stash_files_from_patch_handles_quoted_and_dev_null(self) -> None:
+        patch = (
+            "diff --git \"a/path with space.txt\" \"b/path with space.txt\"\n"
+            "--- \"a/path with space.txt\"\n"
+            "+++ \"b/path with space.txt\"\n"
+            "diff --git a/legacy.txt b/dev/null\n"
+            "--- a/legacy.txt\n"
+            "+++ /dev/null\n"
+        )
+        files = list_stash_files_from_patch(patch)
+        self.assertEqual(files, ["path with space.txt", "legacy.txt"])
 
     def test_apply_and_drop_stash_commands(self) -> None:
         with patch("viewer.core.commit_ops.run_git") as mocked_run_git:

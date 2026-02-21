@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -29,6 +30,40 @@ def _format_rename_display_path(old_path: str, new_path: str) -> str:
     if _is_dev_null_path(new_path) and not _is_dev_null_path(old_path):
         return old_path
     return f"{old_path} -> {new_path}"
+
+
+def _parse_diff_git_header_paths(header_line: str) -> tuple[str, str]:
+    try:
+        parts = shlex.split(header_line)
+    except ValueError:
+        parts = header_line.split()
+    if len(parts) < 4:
+        return "", ""
+    old_path = _normalize_porcelain_path(parts[2])
+    new_path = _normalize_porcelain_path(parts[3])
+    return old_path, new_path
+
+
+def _extract_patch_for_file_path(patch: str, path_for_git: str) -> str:
+    target = path_for_git.strip()
+    if not target:
+        return patch
+    selected_lines: list[str] = []
+    current_block: list[str] = []
+    current_matches = False
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            if current_block and current_matches:
+                selected_lines.extend(current_block)
+            current_block = [line]
+            old_path, new_path = _parse_diff_git_header_paths(line)
+            current_matches = target in {old_path, new_path}
+            continue
+        if current_block:
+            current_block.append(line)
+    if current_block and current_matches:
+        selected_lines.extend(current_block)
+    return "".join(selected_lines)
 
 
 def _summarize_patch(payload: str) -> dict[str, object]:
@@ -230,17 +265,11 @@ def get_stash_patch(
     selected_ref = ref.strip()
     if not selected_ref:
         return ""
-    selected_path = path_for_git.strip()
-    if selected_path:
-        args = ["show", "--pretty=format:", "-p", selected_ref]
-        if word_diff:
-            args.append("--word-diff=plain")
-        args.extend(["--", selected_path])
-        return run_git(repo_path, args)
     args = ["stash", "show", "-p", selected_ref]
     if word_diff:
         args.append("--word-diff=plain")
-    return run_git(repo_path, args)
+    patch = run_git(repo_path, args)
+    return _extract_patch_for_file_path(patch, path_for_git)
 
 
 def list_stash_files_from_patch(patch: str) -> list[str]:
@@ -248,13 +277,13 @@ def list_stash_files_from_patch(patch: str) -> list[str]:
     for line in patch.splitlines():
         if not line.startswith("diff --git "):
             continue
-        parts = line.split()
-        if len(parts) < 4:
+        old_path, new_path = _parse_diff_git_header_paths(line)
+        if not old_path and not new_path:
             continue
-        old_path = parts[2].strip()
-        new_path = parts[3].strip()
-        candidate = new_path if new_path.startswith("b/") else old_path
-        normalized = candidate[2:] if candidate.startswith(("a/", "b/")) else candidate
+        candidate = new_path
+        if _is_dev_null_path(candidate):
+            candidate = old_path
+        normalized = candidate.strip()
         normalized = normalized.strip()
         if normalized and normalized not in files:
             files.append(normalized)
