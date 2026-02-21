@@ -494,13 +494,18 @@ def on_history_commit_context_menu(window: object, pos: QPoint) -> None:
     if not commit_hash:
         return
 
+    is_local_only = _history_commit_presence(window, commit_hash) == "local"
+
     menu = QMenu(window.history_commits_list)
     action_copy_hash = menu.addAction("Copiar hash")
     action_copy_patch = menu.addAction("Copiar patch completo")
     action_copy_files = menu.addAction("Copiar lista de arquivos")
-    menu.addSeparator()
-    action_open_github = menu.addAction("Abrir commit no GitHub")
-    action_copy_github = menu.addAction("Copiar URL do commit")
+    action_open_github = None
+    action_copy_github = None
+    if not is_local_only:
+        menu.addSeparator()
+        action_open_github = menu.addAction("Abrir commit no GitHub")
+        action_copy_github = menu.addAction("Copiar URL do commit")
 
     selected_action = menu.exec(window.history_commits_list.viewport().mapToGlobal(pos))
     _restore_history_commit_selection(window, previous_rows)
@@ -515,10 +520,10 @@ def on_history_commit_context_menu(window: object, pos: QPoint) -> None:
     if selected_action == action_copy_files:
         _copy_commit_files_list(window, commit_hash)
         return
-    if selected_action == action_open_github:
+    if action_open_github is not None and selected_action == action_open_github:
         window._open_commit_in_github(commit_hash)
         return
-    if selected_action == action_copy_github:
+    if action_copy_github is not None and selected_action == action_copy_github:
         window._copy_commit_github_url(commit_hash)
 
 
