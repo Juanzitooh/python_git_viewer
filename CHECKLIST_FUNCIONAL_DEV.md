@@ -73,15 +73,15 @@ Checklist:
 - [x] reverter alterações no arquivo
 - [x] Commit exige titulo.
 - [x] Commit funciona normalmente.
-- [bug] Stash funciona.
+- [x] Stash funciona.
 - [x] Undo commit (soft/mixed) funciona.
-- [bug] Status Sicronizado: Arquivos e Diffs em tempo real
+- [x] Status Sicronizado: Arquivos e Diffs em tempo real
 
 ### 3.3.1 Aba Commit(stash)
-- [bug] aplicar stash funciona
+- [x] aplicar stash funciona
 - [x] aplicar e remover stash funciona
 - [x] remover stash funciona
-- [bug] ao fazer uma ação a janela é ocultada ou aparece
+- [x] ao fazer uma ação a janela é ocultada ou aparece
 
 ### 3.4 Aba Historico
 - [x] Lista de commits carrega.
@@ -90,7 +90,7 @@ Checklist:
 - [x] Selecionar commit atualiza metadados + arquivos + diff.
 - [x] Menus de contexto (commit/arquivo) funcionam.
 - [x] Exportar commits para outras branchs funciona.
-- [bug] reordenar commits locais quando tem conflito, cria o backup reorder com a mudança correta pra publicar, mas dá erro na branch atual.
+- [x] reordenar commits locais quando tem conflito, cria o backup reorder com a mudança correta pra publicar, mas dá erro na branch atual.
 
 ### 3.5 Aba Importar
 - [x] Repo/branch de origem carregam.
@@ -124,34 +124,8 @@ Checklist:
 
 Use esta secao para controle dos bugs que NAO dependem de `.deb`.
 
-# Aba Commit
 
-- Duplo clique abre no VS Code: Dá crash e diz que tem ponteiro nulo.(resolvido)
-- Menu de contexto do repo funciona: a opção abrir no terminal não abre.(resolvido)
-
-- aba commit/ Stage/unstage por linha e bloco funciona: quando tem mais de uma seção, ao desmarcar a segunda seção pra baixo dá erro de apply patch (resolvido)
-
-- Ao apertar stash dá crash, mas ocorre ele sim
-
-- status quero que seja em tempo real, ou seja editei um arquivo no vscode , só de mudar a tela pra cá quero já ver os arquivos e linhas como se eu apertasse atualizar ali, atualmente preciso apertar toda vez (resolvido)
-
-- na janela de stash, após aplicar a primeira vez, mesmo apertando no arquivo deixa de exibir a diff dele
-
-# Janela de diff avancada: marcar/desmarcar linha NAO afeta arquivo inteiro: 
-- agora quando tiro a seleção, é criada uma nova secção com a linha no final reordena no fim, queria que mantivesse na mesma seção original apenas desmarcada e marcasse o parcial certinho
-- por alguma razão memso sendo linha adicionada ou excluida continua ficando na cor branca, vê se tme algum bug
-- o mesmo erro de não funcionar seleção quando tem mais de uma secção ocorre aqui
-
-# Histórico
-
-- ao reordenar commits locais, aparece erro que teve conflito, o backup funciona normal e fica local... é assim mesmo?
-
-# Comparar
-
-- as combox com o nome das branchs estão pequenas, não fica facil ler (resolvido)
-- quando é uma comparação grande o vscode até dá uma travada e preciso apertar pra aguardar no vscode... isso travaria no pc da pessoa?
-
-# Janela de Conflitos
+# 4.3 Janela de Conflitos
 
 - gostaria que o menu ao invés de tanto botão ali referente ao arquivo selecionado... fosse um menu de clique direito, onde teriam as opções relativas ao arquivo 
 
@@ -174,6 +148,3 @@ Use esta secao para controle dos bugs que NAO dependem de `.deb`.
 
 ## 6) melhorias planejadas (brainstorm) -> Roadmap
 
-- simplificar o undo commit, apertar ele é o mesmo que selecionar soft undo commit, assim fica mais simples de interagir, se não tiver nenhum local não seria possivel clicavel
-
--
