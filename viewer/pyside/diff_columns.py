@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import QPoint, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
     QHeaderView,
     QMenu,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTreeWidget,
@@ -238,6 +239,10 @@ class DiffWrapDelegate(QStyledItemDelegate):
 
     def initStyleOption(self, option: QStyleOptionViewItem, index) -> None:  # type: ignore[override]
         super().initStyleOption(option, index)
+        if option.state & QStyle.StateFlag.State_Selected:
+            brush_data = index.data(Qt.ItemDataRole.ForegroundRole)
+            if isinstance(brush_data, QBrush) and brush_data.color().isValid():
+                option.palette.setBrush(QPalette.ColorRole.HighlightedText, brush_data)
         option.textElideMode = Qt.TextElideMode.ElideNone
         if index.column() == self._view._content_column:
             option.features |= QStyleOptionViewItem.ViewItemFeature.WrapText
