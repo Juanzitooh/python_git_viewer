@@ -1766,6 +1766,18 @@ def on_commit_file_selected(window: object) -> None:
     _sync_commit_stage_buttons(window)
 
 
+def on_commit_file_double_clicked(window: object, item: QListWidgetItem) -> None:
+    if not window.repo_path or item is None:
+        return
+    if _commit_item_kind(item) != KIND_FILE:
+        return
+    path_value = item.data(ROLE_PATH)
+    file_path = str(path_value).strip() if path_value is not None else ""
+    if not file_path:
+        return
+    window._open_repo_file_in_vscode(file_path)
+
+
 def on_commit_file_context_menu(window: object, pos: QPoint) -> None:
     if not hasattr(window, "commit_files_list"):
         return
@@ -2211,6 +2223,28 @@ def on_commit_diff_item_clicked(window: object, item: object, column: int) -> No
         return
     window.commit_diff_selected_line = row_index + 1
     _sync_commit_stage_buttons(window)
+
+
+def on_commit_diff_item_double_clicked(window: object, item: object, column: int) -> None:
+    if not window.repo_path or item is None:
+        return
+    try:
+        row_index = window.commit_diff_view.indexOfTopLevelItem(item)
+    except RuntimeError:
+        return
+    if row_index < 0:
+        return
+    window.commit_diff_selected_line = row_index + 1
+    line_info_value = item.data(0, LINE_INFO_ROLE)
+    if not isinstance(line_info_value, DiffLineInfo):
+        return
+    line_no = int(line_info_value.new_line) if int(line_info_value.new_line) > 0 else int(line_info_value.old_line)
+    if line_no <= 0:
+        return
+    path = _current_commit_file_path(window)
+    if not path:
+        return
+    window._open_repo_file_in_vscode(path, line_no=line_no)
 
 
 def _toggle_commit_diff_row_from_snapshot(

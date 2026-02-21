@@ -150,8 +150,10 @@ from .controllers import (
     on_stash_file_selected,
     on_commit_diff_context_menu,
     on_commit_file_context_menu,
+    on_commit_file_double_clicked,
     on_history_file_selected,
     on_commit_diff_item_changed,
+    on_commit_diff_item_double_clicked,
     on_commit_diff_marker_clicked,
     on_commit_diff_item_clicked,
     open_history_export_dialog,
@@ -1061,6 +1063,9 @@ class QtShellWindow(QMainWindow):
     def _on_commit_file_context_menu(self, pos: QPoint) -> None:
         on_commit_file_context_menu(self, pos)
 
+    def _on_commit_file_double_clicked(self, item: QListWidgetItem) -> None:
+        on_commit_file_double_clicked(self, item)
+
     def _on_commit_diff_cursor_changed(self) -> None:
         on_commit_diff_cursor_changed(self)
 
@@ -1072,6 +1077,9 @@ class QtShellWindow(QMainWindow):
 
     def _on_commit_diff_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         on_commit_diff_item_clicked(self, item, column)
+
+    def _on_commit_diff_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
+        on_commit_diff_item_double_clicked(self, item, column)
 
     def _on_commit_diff_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         on_commit_diff_item_changed(self, item, column)
@@ -1227,9 +1235,13 @@ class QtShellWindow(QMainWindow):
         repo_path: str = "",
         line_no: int = 0,
     ) -> bool:
-        absolute_path = self._resolve_repo_file_path(repo_relative_path, repo_path)
+        repo_root = self._get_resolved_repo_path(repo_path or self.repo_path)
+        absolute_path = self._resolve_repo_file_path(repo_relative_path, repo_root)
         if not absolute_path:
             QMessageBox.warning(self, "VS Code", "Arquivo invalido para abrir no VS Code.")
+            return False
+        if not repo_root:
+            QMessageBox.warning(self, "VS Code", "Repositorio invalido para abrir no VS Code.")
             return False
         code_bin = shutil.which("code")
         if not code_bin:
@@ -1239,7 +1251,7 @@ class QtShellWindow(QMainWindow):
         if int(line_no) > 0:
             goto_target = f"{absolute_path}:{int(line_no)}:1"
         try:
-            subprocess.Popen([code_bin, "--goto", goto_target])
+            subprocess.Popen([code_bin, "--reuse-window", repo_root, "--goto", goto_target])
         except OSError as exc:
             QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
             return False
