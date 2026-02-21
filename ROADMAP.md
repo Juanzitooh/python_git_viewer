@@ -144,33 +144,223 @@ Legenda
 
 ## M7 - UI Moderna (PySide6) e Distribuicao Linux
 
-- [ ] R7.1 Core Python estabilizado e desacoplado da UI
+- [~] R7.1 Core Python estabilizado e desacoplado da UI
   Escopo: consolidar contratos entre `viewer/core` e camada de interface para que a logica Git permaneca 100% reutilizavel em qualquer frontend.
   Aceite: operacoes Git, parse de diff, estado de repositorio e persistencia funcionam sem dependencia direta de widgets Tk.
-- [ ] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
+- [x] R7.1.1 Extrair renderizacao de diff para camada de UI (2026-02-10)
+  Escopo: mover `render_patch_to_widget` e utilitarios de render para `viewer/ui`, removendo dependencia de `tkinter` em `viewer/core/diff_utils.py`.
+  Aceite: `viewer/core` permanece apenas com parse/build de dados; renderizacao visual fica isolada na camada de interface.
+- [x] R7.1.2 Extrair construcao de links GitHub para o core (2026-02-10)
+  Escopo: mover normalizacao de `origin`, descoberta de branch base/head e montagem de URLs (repo/branch/commits/issues/actions/releases/PR/commit) para `viewer/core`.
+  Aceite: `ui_global` passa a apenas orquestrar UI (mensagens/clipboard/navegador) usando helpers puros de dominio.
+- [x] R7.1.3 Extrair comparacao de branches para o core (2026-02-10)
+  Escopo: mover carga de commits/diff numstat e calculos de ahead/behind/conflito da aba Comparar para `viewer/core`.
+  Aceite: `ui_branches` apenas apresenta dados e trata feedback visual, com regras Git centralizadas na camada core.
+- [x] R7.1.4 Extrair estado de repositorio para o core (2026-02-10)
+  Escopo: mover leitura de branches, branch atual, estado dirty e calculo upstream/ahead-behind para `viewer/core`.
+  Aceite: `ui_global` passa a consumir helpers de estado de repo sem comandos Git inline para essas regras.
+- [x] R7.1.5 Extrair operacoes de branch para o core (2026-02-10)
+  Escopo: mover checkout/criacao de branch e stash previo para checkout em modulo de dominio reutilizavel no `viewer/core`.
+  Aceite: `ui_global` delega operacoes Git de branch ao core e mantem apenas validacao/interacao visual.
+- [x] R7.1.6 Extrair leitura de conteudo de commit para o core (2026-02-10)
+  Escopo: mover resolucao de hash, lista de arquivos e leitura de patch de commit para modulo compartilhado em `viewer/core`.
+  Aceite: abas Historico/Importar/Comparar reutilizam helpers do core para conteudo de commit, reduzindo duplicacao de `run_git`.
+- [x] R7.1.7 Extrair operacoes de cherry-pick/conflito para o core (2026-02-10)
+  Escopo: mover fetch de commit para importacao, cherry-pick unitario e leitura de arquivos em conflito para modulo `viewer/core`.
+  Aceite: Historico e Importar reutilizam operacoes de cherry-pick/conflito sem comandos Git inline nessas rotas principais.
+- [x] R7.1.8 Extrair controle de continuidade/abort de conflito para o core (2026-02-10)
+  Escopo: mover deteccao de operacao em conflito e comandos de continuar/abortar (cherry-pick, rebase, merge/squash) para modulo central em `viewer/core`.
+  Aceite: aba Historico delega o ciclo de conflito ao core e mantém somente validação de UX/feedback.
+- [x] R7.1.9 Extrair reordenacao de commits locais para o core (2026-02-10)
+  Escopo: mover carregamento de commits locais e pipeline de reordenacao (backup/reset/replay/restore) para modulo `viewer/core`.
+  Aceite: Historico continua com o mesmo fluxo visual, mas delega logica de reordenacao local ao core.
+- [x] R7.1.10 Extrair operacoes remotas e tags para o core (2026-02-10)
+  Escopo: mover fetch/pull/push e listagem de commits de push para `viewer/core`, alem da listagem de tags usada no filtro do Historico.
+  Aceite: `ui_global` e `ui_history` deixam de executar `run_git` inline nesses fluxos, mantendo comportamento funcional inalterado.
+- [x] R7.1.11 Extrair estado dos cards de workspace para o core (2026-02-10)
+  Escopo: mover leitura de branch, upstream, ahead/behind e arquivos alterados dos cards da aba Repositorios para helpers do `viewer/core`, reaproveitando operacao de checkout de branch no core.
+  Aceite: fluxo de cards/workspace em `ui_repos` deixa de executar `run_git` inline para status e checkout.
+- [~] R7.2 Shell principal em PySide6 (janela, barra global, tabs e status)
   Escopo: criar estrutura base da nova GUI em PySide6 com layout equivalente ao app atual e suporte a tema claro/escuro.
   Aceite: app abre em PySide6 com navegacao entre abas, barra global funcional e estado basico do repositorio.
-- [ ] R7.3 Migracao incremental das abas criticas (Repositorios, Commit, Historico)
+- [x] R7.2.1 Bootstrap do shell PySide6 com barra global e tabs (2026-02-10)
+  Escopo: criar entrypoint dedicado (`main_pyside6.py`) e janela inicial com seletor de repositorio, branch, fetch/pull/push, status ahead/behind e abas principais.
+  Aceite: shell abre em PySide6, aplica tema claro/escuro via settings e persiste ultimo repo/aba.
+- [~] R7.3 Migracao incremental das abas criticas (Repositorios, Commit, Historico)
   Escopo: portar as abas de maior uso para PySide6 sem perder funcionalidades atuais.
   Aceite: fluxos centrais (scan/selecionar repo, stage/commit/push, historico e filtros) operam no frontend PySide6.
-- [ ] R7.4 Polimento visual e UX "desktop grade"
+- [x] R7.3.1 Portar aba Repositorios para o shell PySide6 (2026-02-10)
+  Escopo: implementar no PySide6 o fluxo de workspace com raiz configuravel, reescanear repositorios, listar repos encontrados com branch/ahead/behind/status e selecao direta do repositorio ativo.
+  Aceite: aba Repositorios no `main_pyside6.py` permite alternar repositorio e refletir estado no seletor global sem depender da UI Tk.
+- [x] R7.3.2 Portar fluxo basico de commit para PySide6 (2026-02-10)
+  Escopo: implementar na aba Commit do shell PySide6 a listagem de arquivos modificados com selecao, titulo/descricao e acao de commit via core.
+  Aceite: usuario consegue selecionar arquivos modificados, criar commit (titulo obrigatorio) e atualizar estado de repositorio/workspace sem sair do PySide6.
+- [x] R7.3.3 Portar fluxo basico de historico para PySide6 (2026-02-10)
+  Escopo: implementar na aba Historico do shell PySide6 a lista de commits com filtro por texto, painel de detalhes, arquivos do commit e visualizacao de patch com opcao de diff por palavra.
+  Aceite: usuario consegue navegar commits, filtrar por texto e inspecionar patch por commit/arquivo no PySide6.
+- [x] R7.3.4 Portar fluxo basico de comparacao para PySide6 (2026-02-10)
+  Escopo: implementar na aba Comparar do shell PySide6 selecao de origem/destino, resumo de diferencas, lista de commits, lista de arquivos e patch por arquivo com opcao de diff por palavra.
+  Aceite: usuario consegue comparar branches no PySide6 com visao de commits/arquivos/patch e indicadores basicos de ahead-behind e possivel conflito.
+- [x] R7.3.5 Portar fluxo basico de importacao para PySide6 (2026-02-10)
+  Escopo: implementar na aba Importar do shell PySide6 selecao de repositorio/branch de origem, lista de commits e acao de importacao por cherry-pick no repositorio atual.
+  Aceite: usuario consegue importar commits selecionados no PySide6 com feedback de progresso/erro e atualizacao das abas relacionadas.
+- [x] R7.3.6 Portar configuracoes basicas para PySide6 (2026-02-10)
+  Escopo: implementar na aba Configuracoes do shell PySide6 controles para tema, limite de commits e raiz do workspace com persistencia em settings.
+  Aceite: usuario consegue salvar configuracoes no PySide6 e ver efeito imediato no tema e no workspace.
+- [~] R7.4 Polimento visual e UX "desktop grade"
   Escopo: aplicar identidade visual mais moderna (tipografia, espacamento, componentes, feedback visual e estados de carregamento).
   Aceite: interface final fica consistente, legivel e visualmente superior ao Tkinter, mantendo performance.
-- [ ] R7.4.1 Paridade funcional obrigatoria com a UI atual
+- [x] R7.4.0 Polimento inicial do shell PySide6 (2026-02-10)
+  Escopo: evoluir layout visual (top bar, tabs, splitters nas abas criticas) e adicionar estado global de carregamento com badge/progresso para operacoes mais pesadas.
+  Aceite: interface PySide6 fica mais consistente visualmente e apresenta feedback claro durante scan/fetch/pull/push/carga de historico/importar/comparar.
+- [x] R7.4.3 Modularizacao da UI PySide6 por modulos (2026-02-10)
+  Escopo: reduzir acoplamento de `shell.py` separando montagem visual, componentes compartilhados e controladores por fluxo, mantendo paridade funcional no meio da migracao.
+  Aceite: arquitetura em modulos permite evoluir cada aba/fluxo com menor risco, com `shell.py` atuando como orquestrador leve.
+- [x] R7.4.3.1 Extrair builders das abas para `viewer/pyside/tabs/` (2026-02-10)
+  Escopo: mover a construcao das abas Repositorios, Commit, Historico, Importar, Comparar e Configuracoes para modulos dedicados em `viewer/pyside/tabs`.
+  Aceite: `shell.py` deixa de carregar blocos extensos de layout das abas e passa a delegar para builders modulares sem regressao funcional.
+- [x] R7.4.3.2 Extrair barra global e status para modulo dedicado (2026-02-10)
+  Escopo: mover criacao e wiring da barra superior (repo/branch/sync) e status bar (mensagens/busy) para modulo de composicao reutilizavel.
+  Aceite: `shell.py` passa a apenas conectar callbacks e estado; montagem visual da barra fica isolada.
+- [x] R7.4.3.3 Extrair controladores de estado por fluxo (2026-02-10)
+  Escopo: separar em controladores os fluxos de repositorio, historico, importacao e comparacao para reduzir metodos longos na janela principal.
+  Aceite: handlers de evento ficam por dominio, com responsabilidades claras e menor acoplamento entre abas.
+- [x] R7.4.3.3.1 Extrair controlador do Historico em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/history_controller.py` o fluxo de carga/selecionar commit/selecionar arquivo/patch da aba Historico.
+  Aceite: callbacks do Historico continuam funcionais via wrappers no `shell.py`, reduzindo tamanho do arquivo principal.
+- [x] R7.4.3.3.2 Extrair controlador da aba Comparar em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/compare_controller.py` o fluxo de origem/destino, refresh de comparacao, selecao de arquivo e leitura de patch.
+  Aceite: callbacks da aba Comparar seguem funcionais via wrappers no `shell.py`, com logica de dominio UI isolada em controlador.
+- [x] R7.4.3.3.3 Extrair controlador da aba Importar em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/import_controller.py` o fluxo de origem/branch, carga de commits, copia de hashes e importacao por cherry-pick.
+  Aceite: callbacks da aba Importar seguem funcionais via wrappers no `shell.py`, mantendo o fluxo completo com atualizacao das abas relacionadas.
+- [x] R7.4.3.4 Reduzir `shell.py` para bootstrap/orquestracao (2026-02-10)
+  Escopo: consolidar a janela principal como ponto de inicializacao, roteamento de eventos e persistencia, removendo logica de montagem/fluxo espalhada.
+  Aceite: arquivo principal do PySide6 fica significativamente menor e com manutencao simplificada.
+- [x] R7.4.3.4.1 Extrair controlador da aba Commit em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/commit_controller.py` o fluxo de listagem de arquivos modificados, selecao e criacao de commit.
+  Aceite: callbacks da aba Commit seguem funcionais via wrappers no `shell.py`, reduzindo metodos de manipulacao direta no arquivo principal.
+- [x] R7.4.3.4.2 Extrair controlador da aba Configuracoes em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/settings_controller.py` os fluxos de carregar configuracoes, selecionar pasta e salvar configuracoes.
+  Aceite: aba Configuracoes permanece funcional via wrappers no `shell.py`, com persistencia e aplicacao imediata mantidas.
+- [x] R7.4.3.4.3 Extrair controlador de workspace/repositorio em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/repo_controller.py` os fluxos de scan do workspace, lista/selecao de repositorio, snapshot dos cards e sincronizacao do estado de repositorio ativo.
+  Aceite: fluxos de repositorio/workspace seguem funcionais via wrappers no `shell.py`, reduzindo significativamente o acoplamento da janela principal.
+- [x] R7.4.3.4.4 Extrair controlador de branch/sincronizacao em PySide6 (2026-02-10)
+  Escopo: mover para `viewer/pyside/controllers/sync_controller.py` os fluxos de checkout de branch, criacao de branch e acoes remotas fetch/pull/push.
+  Aceite: operacoes de branch/sincronizacao seguem funcionais via wrappers no `shell.py`, mantendo feedback de erro/estado e atualizacoes de UI.
+- [x] R7.4.3.4.5 Limpeza final do shell para bootstrap (2026-02-10)
+  Escopo: remover wrappers redundantes e consolidar no `shell.py` apenas inicializacao da janela, wiring principal de sinais e persistencia minima.
+  Aceite: `shell.py` vira ponto de entrada enxuto e previsivel, com baixa responsabilidade de dominio.
+- [~] R7.4.1 Paridade funcional obrigatoria com a UI atual
   Escopo: validar que a GUI em PySide6 cobre 100% dos fluxos existentes hoje no Tkinter antes de considerar encerrada a migracao.
   Aceite: nenhum fluxo principal fica faltando (repositorios, commit, historico, importar, comparar e configuracoes), sem regressao funcional conhecida.
-- [ ] R7.4.2 Rodada final de testes de regressao e usabilidade
+- [x] R7.4.1.1 Menus de contexto do Historico em PySide6 (2026-02-11)
+  Escopo: adicionar menu de contexto em commits e arquivos da aba Historico com acoes de abrir commit no GitHub, copiar hash/URL/patch/lista de arquivos e abrir arquivo no VS Code/pasta.
+  Aceite: clique direito na lista de commits e arquivos abre menu com acoes funcionais sem alterar selecao automaticamente.
+- [x] R7.4.1.2 Menus de contexto de Importar e Comparar em PySide6 (2026-02-11)
+  Escopo: aplicar menu de contexto nos commits da aba Importar e nos arquivos da aba Comparar com as mesmas acoes-chave da UI Tk (GitHub, copia de dados e abertura local).
+  Aceite: clique direito em commit de Importar e arquivo de Comparar abre menu funcional e consistente com os fluxos equivalentes da UI Tk.
+- [x] R7.4.1.3 Menus de contexto de repositorio no PySide6 (2026-02-11)
+  Escopo: aplicar menu de contexto de repositorio no seletor global e na lista da aba Repositorios com acoes locais e atalhos GitHub.
+  Aceite: clique direito no combo/lista de repositorios abre menu com abrir VS Code/pasta, copiar caminho e atalhos GitHub (repo/branch/commits/issues/actions/releases e copias de URL).
+- [x] R7.4.1.4 Fluxo de abrir PR na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar botao "Abrir PR" na aba Commit, habilitado quando o worktree estiver limpo, abrindo compare URL do GitHub para branch atual vs branch base padrao.
+  Aceite: com worktree limpo, usuario abre a pagina de criacao de PR no navegador sem montar URL manualmente.
+- [x] R7.4.1.5 Acoes de Merge/Rebase/Squash na aba Comparar em PySide6 (2026-02-11)
+  Escopo: adicionar na aba Comparar controles de acao de branch com validacoes de dirty state, confirmacao e execucao de merge/rebase/squash (com mensagem obrigatoria no squash).
+  Aceite: usuario executa acao direto no PySide6 com feedback de erro/sucesso e atualizacao automatica de status/historico/commit/comparacao.
+- [x] R7.4.1.6 Menu de contexto de commits na aba Comparar em PySide6 (2026-02-11)
+  Escopo: aplicar na lista de commits da aba Comparar o mesmo padrao de menu de commit das outras abas (GitHub, hash, lista de arquivos e patch).
+  Aceite: clique direito em commit da comparacao abre menu funcional sem acao manual extra de copia/abertura.
+- [x] R7.4.1.7 Fluxo de conflitos em PySide6 para Importar/Comparar (2026-02-11)
+  Escopo: adicionar dialogo de conflitos com lista de arquivos, abertura no VS Code e acoes de continuar/abortar para operacoes de cherry-pick, merge, rebase e squash.
+  Aceite: ao detectar conflito em Importar ou Comparar, o app abre o dialogo de resolucao e permite continuar/abortar sem sair do PySide6.
+- [x] R7.4.1.8 Clonagem de repositório na aba Repositorios em PySide6 (2026-02-11)
+  Escopo: adicionar dialogo de clonagem com URL/SSH, pasta opcional e progresso textual, incluindo re-scan automatico e selecao do repo ao concluir.
+  Aceite: usuario consegue clonar novo repositorio direto no PySide6 e o workspace e atualizado automaticamente no fim da operacao.
+- [x] R7.4.1.9 Commit em PySide6 com status real, diff e stage/unstage por arquivo (2026-02-11)
+  Escopo: evoluir aba Commit do PySide6 para listar estado real de stage (`[x]/[~]/[ ]`), exibir preview de diff do arquivo selecionado e permitir stage/unstage direto do arquivo selecionado.
+  Aceite: usuario enxerga estado staged/unstaged por arquivo no PySide6, visualiza diff (normal/palavra) e consegue alternar stage por arquivo sem sair da aba.
+- [x] R7.4.1.10 Stage/unstage por bloco (hunk) na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar acoes de stage/unstage por bloco do diff selecionado na aba Commit, com aplicacao de patch no index via `git apply --cached`.
+  Aceite: com diff selecionado, usuario consegue aplicar ou reverter hunk no stage direto pelo PySide6 sem usar CLI.
+- [x] R7.4.1.11 Stage/unstage por linha na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar acoes de stage/unstage por linha alterada no diff selecionado da aba Commit, com aplicacao de patch unidiff-zero por linha.
+  Aceite: com uma linha de diff selecionada, usuario consegue aplicar ou reverter apenas aquela linha no stage direto pelo PySide6.
+- [x] R7.4.1.12 Stash e Undo commit na aba Commit em PySide6 (2026-02-11)
+  Escopo: adicionar na aba Commit as acoes de stash (com mensagem) e undo do ultimo commit por modo (`soft`, `mixed`, `hard`) com confirmacao para o modo destrutivo.
+  Aceite: usuario consegue criar stash e desfazer o ultimo commit pelo PySide6 com feedback de status e atualizacao das abas dependentes.
+- [x] R7.4.1.13 Historico em PySide6 com marcadores locais, exportar e reordenar (2026-02-11)
+  Escopo: portar para a aba Historico os marcadores de presenca `[L]/[L+O]`, o fluxo de exportacao de commits selecionados para outra branch e a reordenacao dos commits locais com backup automatico.
+  Aceite: lista do Historico identifica commits locais/remotos, botao Exportar aplica cherry-pick em branch destino e botao Reordenar locais permite mover commits [L] com confirmacao e rollback seguro.
+- [x] R7.4.1.14 Abrir PR no PySide6 com selecao de branches (2026-02-11)
+  Escopo: evoluir o botao "Abrir PR" da aba Commit para abrir um dialogo de escolha de branch base/head antes de montar a URL de compare no GitHub.
+  Aceite: usuario escolhe origem e destino no dialogo e abre no navegador a pagina correta de criacao de PR sem editar URL manualmente.
+- [~] R7.4.2 Rodada final de testes de regressao e usabilidade
   Escopo: executar checklist de testes manuais e automatizados da migracao para confirmar estabilidade, performance e consistencia de UX.
   Aceite: migracao aprovada em testes; somente apos essa etapa a trilha de distribuicao pode iniciar.
-- [ ] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu)
+- [x] R7.4.2.1 Validacao automatizada do shell PySide6 (2026-02-11)
+  Escopo: executar `py_compile` no shell/controllers/tabs PySide6, suite `unittest` no ambiente padrao e no `.venv`, incluindo smoke test headless do shell.
+  Aceite: sem traceback em startup headless e testes automatizados passando no `.venv` com cobertura minima de inicializacao e refresh dos fluxos principais.
+- [ ] R7.4.2.2 Checklist manual de usabilidade final
+  Escopo: validar interativamente os fluxos de Repositorios, Commit, Historico, Importar, Comparar e Configuracoes no shell PySide6, incluindo menus de contexto, conflitos, clone e fluxos de PR.
+  Aceite: sem regressao funcional percebida nos fluxos principais e sem bloqueios de UX para uso diario.
+- [~] R7.4.2.3 Fechamento progressivo de bugs da rodada em `bugs.md`
+  Escopo: tratar em lotes os bugs reportados no checklist manual, priorizando P0/P1 (crash, bloqueios de fluxo e regressao clara de usabilidade) antes dos polimentos.
+  Aceite: cada bug tratado deve ser movido para `resolvido` em `bugs.md` com validacao automatizada/local e, apos reteste manual, para `validado`.
+  Progresso atual: lote Commit `B007/B008/B010/B011` implementado (linha `(todos)`, agrupamento por pasta, simplificacao de controles, Undo limitado a `soft/mixed`, selecao sincronizada com stage/auto-stage inicial e gerenciador visual de stashes), com evolucao do stash para aba dinamica (somente quando houver stashes, com contexto de repositorio/branch); `B009` em progresso com janela avancada de diff (linha/lado-a-lado/cima-baixo, copiar/reverter linha/bloco) e novo diff principal em grade com marcador clicavel no Commit, aguardando validacao manual; `B004` resolvido com retorno da aba Repositorios para cards com scroll e card de adicionar repositorio; `B019/B021/B024` resolvidos com simplificacao da aba Importar, remocao de limite fixo nas configuracoes e timers de auto status/auto fetch no shell; `B013` resolvido com infinite scroll no Historico; `B014/B020` em ajuste com novo motor de diff em colunas padronizado para abas sem stage.
+- [x] R7.4.2.4 Inventario e plano de remocao do legado Tkinter (2026-02-16)
+  Escopo: mapear arquivos, imports e pontos de execucao ainda dependentes do frontend antigo (`main.py`, `viewer/app.py`, `viewer/ui_*` e referencias em docs), com checklist de remocao segura.
+  Aceite: existe lista fechada do que sera removido/migrado, com validacao de que o fluxo PySide6 cobre os mesmos casos de uso.
+  Entrega: `docs/R7_TKINTER_DECOMMISSION.md`.
+- [x] R7.4.2.5 Remocao do frontend Tkinter e limpeza de codigo legado (2026-02-16)
+  Escopo: excluir/modularizar artefatos do fluxo antigo que nao sao mais usados, removendo dependencia de Tkinter do caminho principal de execucao.
+  Aceite: projeto sobe sem referencias obrigatorias ao Tkinter e sem arquivos legacy nao utilizados no runtime principal.
+- [x] R7.4.2.6 Consolidacao da documentacao para PySide6-only (2026-02-16)
+  Escopo: atualizar `README.md`, `AGENTS.global.md` e demais `.md` para manter somente instrucoes e arquitetura do frontend PySide6.
+  Aceite: nao ha instrucoes ativas apontando para fluxo Tkinter ou `main_pyside6.py` como "alternativo".
+- [x] R7.4.2.7 Troca de entrypoint oficial para `main.py` (2026-02-16)
+  Escopo: renomear `main_pyside6.py` para `main.py` como entrada oficial e ajustar chamadas internas, scripts, build e testes.
+  Aceite: comando oficial volta a ser `python3 main.py`, com compatibilidade validada no ambiente de desenvolvimento.
+- [x] R7.5 Distribuicao desktop Linux (AppImage + .deb + atalho de menu) (2026-02-16)
   Escopo: empacotar versao GUI para Linux com instalacao simples, incluindo `.desktop`, icone e associacao de execucao, iniciando somente apos conclusao de R7.4.2.
   Aceite: usuario baixa e executa sem setup manual de Python, com entrada no menu de aplicativos.
-- [ ] R7.6 Pipeline de release para desktop Linux
+- [x] R7.5.1 Script de empacotamento .deb com desktop entry (2026-02-16)
+  Escopo: adicionar pipeline local para gerar pacote `.deb` com binario em `/opt`, launcher em `/usr/bin`, arquivo `.desktop` e icone do app.
+  Aceite: `python3 scripts/build_linux_packages.py --deb-only` gera pacote instalavel em `dist/`.
+- [x] R7.5.2 Script de empacotamento AppImage (2026-02-16)
+  Escopo: adicionar pipeline local para gerar AppImage com `AppDir`, `AppRun`, `.desktop`, icone e binario do app.
+  Aceite: `python3 scripts/build_linux_packages.py --appimage-only` gera AppImage em `dist/` (com download automatico de `appimagetool` quando ausente).
+- [x] R7.5.3 Validacao de instalacao e execucao Linux (2026-02-16)
+  Escopo: validar install/remove do `.deb` e execucao do AppImage no ambiente alvo, incluindo registro no menu e abertura do app via launcher.
+  Aceite: checklist de instalacao concluido sem regressao funcional.
+  Entrega: `docs/LINUX_PACKAGING_VALIDATION.md`.
+- [x] R7.6 Pipeline de release para desktop Linux (2026-02-16)
   Escopo: automatizar build e publicacao dos artefatos Linux (AppImage/.deb) na esteira de release.
   Aceite: cada release gera pacotes assinaveis/reproduziveis com checksum e notas.
-- [ ] R7.7 Manter `core` em Python como padrao do projeto
+  Entrega: workflow CI atualizado em `.github/workflows/ci.yml` com job dedicado de pacotes Linux.
+- [x] R7.7 Manter `core` em Python como padrao do projeto (2026-02-16)
   Escopo: formalizar no roadmap que somente a camada de interface muda para PySide6; dominio e automacoes permanecem em Python.
   Aceite: decisoes de arquitetura e PRs de UI seguem regra de nao reescrever o `core` em outra linguagem.
+  Entrega: `docs/ARCHITECTURE.md` + `tests/test_architecture_contracts.py`.
+- [ ] R7.8 Rework da aba Configuracoes (post-bugs)
+  Escopo: refinar a aba Configuracoes para ficar mais enxuta, mover a edicao detalhada de tema para janela dedicada com preview em tempo real e remover configuracoes redundantes dessa aba (ex.: workspace root, mantido na aba Repositorios).
+  Aceite: aba Configuracoes fica menor/mais clara, com persistencia correta das opcoes e aplicacao imediata de tema.
+  Nota: execucao planejada somente apos estabilizar bugs criticos da rodada atual; sem rodada de testes dedicada nesta etapa inicial.
+- [ ] R7.9 Diff com deteccao de "linha modificada" (post-bugs)
+  Escopo: identificar automaticamente o padrao `-` seguido de `+` no mesmo trecho/hunk como alteracao de linha (estado "modified"), mantendo os casos puros de adicao e remocao.
+  Aceite: diff da aba Commit e das abas de leitura (Historico/Comparar/Importar/Stash) passam a exibir 3 estados visuais consistentes (adicionado, removido, modificado), com destaque especifico para "modified" e sem quebrar stage/unstage por linha/bloco.
+  Nota: executar somente apos estabilizacao dos bugs atuais de selecao/stage; validar primeiro no fluxo da aba Commit e depois replicar nas demais abas de diff.
+
+## Fechamento de Versao
+
+- [x] V0.3.0 fechada (2026-02-21)
+  Escopo: consolidar a migracao para PySide6-only, fechar a rodada de distribuicao Linux e preparar documentacao de release.
+  Aceite: `CHANGELOG.md` com secao `0.3.0` publicada, comando oficial mantido em `python3 main.py` e fluxo Linux padronizado com `setup.sh` (dev) e `dist.sh` (distribuicao).
+- [ ] V0.4.0 (proximo ciclo)
+  Escopo: concluir pendencias pos-release (bugs restantes, rework da aba Configuracoes e evolucao do diff com linha modificada).
+  Aceite: backlog pos-0.3.0 priorizado e validado em nova rodada de checklist.
 
 Ordem de execucao sugerida
 - 1) R6.2
@@ -190,11 +380,22 @@ Ordem de execucao sugerida
 - 15) R7.2
 - 16) R7.3
 - 17) R7.4
-- 18) R7.4.1
-- 19) R7.4.2
-- 20) R7.5
-- 21) R7.6
-- 22) R7.7
+- 18) R7.4.3
+- 19) R7.4.3.1
+- 20) R7.4.3.2
+- 21) R7.4.3.3
+- 22) R7.4.3.4
+- 23) R7.4.1
+- 24) R7.4.2
+- 25) R7.4.2.4
+- 26) R7.4.2.5
+- 27) R7.4.2.6
+- 28) R7.4.2.7
+- 29) R7.5
+- 30) R7.6
+- 31) R7.7
+- 32) R7.8
+- 33) R7.9
 
 ## Regras de Manutencao
 

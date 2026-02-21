@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import unittest
+from unittest.mock import patch
+
+from viewer.core.commit_ops import (
+    apply_stash,
+    apply_patch_to_worktree,
+    create_stash,
+    discard_file_changes,
+    drop_stash,
+    get_last_commit_message,
+    get_stash_patch,
+    list_status_entries,
+    list_stash_files_from_patch,
+    list_stashes,
+)
+
+
+class TestCommitOps(unittest.TestCase):
+    def test_create_stash_with_paths(self) -> None:
+        with patch("viewer.core.commit_ops.run_git") as mocked_run_git:
+            create_stash(
+                "/tmp/repo",
+                message="selecionados",
+                include_untracked=True,
+                paths=["viewer/app.py", "README.md"],
+            )
+        mocked_run_git.assert_called_once_with(
+            "/tmp/repo",
+            ["stash", "push", "-u", "-m", "selecionados", "--", "viewer/app.py", "README.md"],
+        )
+
+    def test_create_stash_without_paths(self) -> None:
+        with patch("viewer.core.commit_ops.run_git") as mocked_run_git:
+            create_stash("/tmp/repo", message="full", include_untracked=False, paths=[])
+        mocked_run_git.assert_called_once_with(
+            "/tmp/repo",
+            ["stash", "push", "-m", "full"],
+        )
+
+    def test_list_stashes_parses_refs_and_descriptions(self) -> None:
+        output = "stash@{0}: WIP on main: abc\nstash@{1}: On dev: mensagem\n"
+        with patch("viewer.core.commit_ops.run_git", return_value=output):
+            entries = list_stashes("/tmp/repo")
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].ref, "stash@{0}")
+        self.assertEqual(entries[0].description, "WIP on main: abc")
+        self.assertEqual(entries[1].ref, "stash@{1}")
+        self.assertEqual(entries[1].description, "On dev: mensagem")
+
+    def test_get_stash_patch_with_word_diff_and_file(self) -> None:
+        full_patch = (
+            "diff --git a/viewer/app.py b/viewer/app.py\n"
+            "--- a/viewer/app.py\n"
+            "+++ b/viewer/app.py\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+new\n"
+            "diff --git a/README.md b/README.md\n"
+            "--- a/README.md\n"
+            "+++ b/README.md\n"
+            "@@ -1 +1 @@\n"
+            "-a\n"
+            "+b\n"
+        )
+        with patch("viewer.core.commit_ops.run_git", return_value=full_patch) as mocked_run_git:
+            patch_value = get_stash_patch(
+                "/tmp/repo",
+                "stash@{0}",
+                word_diff=True,
+                path_for_git="viewer/app.py",
+            )
+        self.assertIn("diff --git a/viewer/app.py b/viewer/app.py", patch_value)
+        self.assertNotIn("diff --git a/README.md b/README.md", patch_value)
+        mocked_run_git.assert_called_once_with(
+            "/tmp/repo",
+            ["stash", "show", "-p", "stash@{0}", "--word-diff=plain"],
+        )
+
+    def test_list_stash_files_from_patch(self) -> None:
+        patch = (
+            "diff --git a/viewer/a.py b/viewer/a.py\n"
+            "--- a/viewer/a.py\n"
+            "+++ b/viewer/a.py\n"
+            "diff --git a/README.md b/README.md\n"
+            "--- a/README.md\n"
+            "+++ b/README.md\n"
+        )
+        files = list_stash_files_from_patch(patch)
+        self.assertEqual(files, ["viewer/a.py", "README.md"])
+
+    def test_list_stash_files_from_patch_handles_quoted_and_dev_null(self) -> None:
+        patch = (
+            "diff --git \"a/path with space.txt\" \"b/path with space.txt\"\n"
+            "--- \"a/path with space.txt\"\n"
+            "+++ \"b/path with space.txt\"\n"
+            "diff --git a/legacy.txt b/dev/null\n"
+            "--- a/legacy.txt\n"
+            "+++ /dev/null\n"
+        )
+        files = list_stash_files_from_patch(patch)
+        self.assertEqual(files, ["path with space.txt", "legacy.txt"])
+
+    def test_apply_and_drop_stash_commands(self) -> None:
+        with patch("viewer.core.commit_ops.run_git") as mocked_run_git:
+            apply_stash("/tmp/repo", "stash@{0}", pop=False)
+            apply_stash("/tmp/repo", "stash@{1}", pop=True)
+            drop_stash("/tmp/repo", "stash@{2}")
+        self.assertEqual(
+            mocked_run_git.call_args_list,
+            [
+                unittest.mock.call("/tmp/repo", ["stash", "apply", "stash@{0}"]),
+                unittest.mock.call("/tmp/repo", ["stash", "pop", "stash@{1}"]),
+                unittest.mock.call("/tmp/repo", ["stash", "drop", "stash@{2}"]),
+            ],
+        )
+
+    def test_apply_patch_to_worktree_command(self) -> None:
+        with patch("viewer.core.commit_ops.subprocess.run") as mocked_run:
+            mocked_run.return_value.returncode = 0
+            mocked_run.return_value.stderr = ""
+            apply_patch_to_worktree("/tmp/repo", "@@ -1,1 +1,1 @@\n-old\n+new\n", reverse=True)
+        mocked_run.assert_called_once()
+        args, kwargs = mocked_run.call_args
+        self.assertIn("apply", args[0])
+        self.assertNotIn("--cached", args[0])
+        self.assertIn("-R", args[0])
+        self.assertTrue(kwargs["input"].strip().startswith("@@"))
+
+    def test_list_status_entries_normalizes_dev_null_rename_display(self) -> None:
+        porcelain = "R  /dev/null\0README.md\0"
+        with patch("viewer.core.commit_ops.run_git", return_value=porcelain):
+            entries = list_status_entries("/tmp/repo")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["path"], "README.md")
+        self.assertEqual(entries[0]["path_for_git"], "README.md")
+        self.assertEqual(entries[0]["status"], "R ")
+
+    def test_discard_file_changes_uses_restore_for_tracked_files(self) -> None:
+        with patch(
+            "viewer.core.commit_ops.list_status_entries",
+            return_value=[{"path_for_git": "README.md", "status": " M"}],
+        ), patch("viewer.core.commit_ops.run_git") as mocked_run_git:
+            discard_file_changes("/tmp/repo", "README.md")
+        mocked_run_git.assert_called_once_with(
+            "/tmp/repo",
+            ["restore", "--staged", "--worktree", "--", "README.md"],
+        )
+
+    def test_discard_file_changes_removes_untracked_file(self) -> None:
+        with patch(
+            "viewer.core.commit_ops.list_status_entries",
+            return_value=[{"path_for_git": "notes.txt", "status": "??"}],
+        ), patch("viewer.core.commit_ops.os.path.exists", return_value=True), patch(
+            "viewer.core.commit_ops.os.path.isdir",
+            return_value=False,
+        ), patch("viewer.core.commit_ops.os.remove") as mocked_remove, patch(
+            "viewer.core.commit_ops.run_git"
+        ) as mocked_run_git:
+            discard_file_changes("/tmp/repo", "notes.txt")
+        mocked_remove.assert_called_once()
+        mocked_run_git.assert_not_called()
+
+    def test_get_last_commit_message_parses_subject_and_body(self) -> None:
+        with patch("viewer.core.commit_ops.run_git", return_value="feat: titulo\x1flinha 1\nlinha 2\n"):
+            subject, body = get_last_commit_message("/tmp/repo")
+        self.assertEqual(subject, "feat: titulo")
+        self.assertEqual(body, "linha 1\nlinha 2")
+
+    def test_get_last_commit_message_without_separator_returns_subject_only(self) -> None:
+        with patch("viewer.core.commit_ops.run_git", return_value="fix: apenas assunto\n"):
+            subject, body = get_last_commit_message("/tmp/repo")
+        self.assertEqual(subject, "fix: apenas assunto")
+        self.assertEqual(body, "")
+
+
+if __name__ == "__main__":
+    unittest.main()

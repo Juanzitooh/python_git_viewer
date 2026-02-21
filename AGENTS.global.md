@@ -2,7 +2,7 @@
 
 ## Escopo
 
-Este diretório contém a ferramenta **Git Commits Viewer** (Tkinter).
+Este diretório contém a ferramenta **Git Commits Viewer** (PySide6).
 
 ## Regras gerais
 
@@ -11,16 +11,17 @@ Este diretório contém a ferramenta **Git Commits Viewer** (Tkinter).
 - Evitar dependências novas sem justificativa.
 - Preferir funções curtas e focadas.
 - Comentar apenas o “porquê” quando necessário.
+- Preservar o contrato de arquitetura: `viewer/core` sem dependencias de UI (`PySide6`, `tkinter`, `viewer.pyside`).
 
 ## Execução local
 
 ```bash
-python3 main.py --repo /caminho/do/repo --limit 100
+python3 main.py --repo /caminho/do/repo
 ```
 
 ## Observações
 
-- O projeto roda com Python 3.12 (Tkinter).
+- O projeto roda com Python 3.12 (PySide6).
 - Ao alterar comportamento do Git, revisar efeitos colaterais e erros.
 
 ## Roadmap e changelog

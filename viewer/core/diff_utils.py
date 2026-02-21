@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import tkinter as tk
+import re
 
 from .models import DiffData, DiffHunk, DiffLineInfo
 
@@ -38,12 +38,153 @@ def parse_hunk_header_full(header: str) -> tuple[int, int, int, int]:
     return old_start, old_count, new_start, new_count
 
 
-def parse_diff_data(diff_text: str) -> DiffData:
+def _unwrap_word_diff_plain_line(line: str) -> str:
+    # `git diff --word-diff=plain` pode encapsular linhas inteiras.
+    # Exemplos: `{+linha nova+}`, `[-linha antiga-]`, `{-linha antiga-}`
+    if line.startswith("{+") and line.endswith("+}"):
+        return line[2:-2]
+    if line.startswith("[-") and line.endswith("-]"):
+        return line[2:-2]
+    if line.startswith("{-") and line.endswith("-}"):
+        return line[2:-2]
+    return line
+
+
+def _contains_word_diff_markers(line: str) -> bool:
+    return "{+" in line or "[-" in line or "{-" in line
+
+
+def _split_word_diff_plain_line(line: str) -> tuple[str, str, bool]:
+    old_parts: list[str] = []
+    new_parts: list[str] = []
+    index = 0
+    changed = False
+    length = len(line)
+    while index < length:
+        if line.startswith("{+", index):
+            end = line.find("+}", index + 2)
+            if end < 0:
+                text = line[index:]
+                old_parts.append(text)
+                new_parts.append(text)
+                break
+            new_parts.append(line[index + 2 : end])
+            index = end + 2
+            changed = True
+            continue
+        if line.startswith("[-", index):
+            end = line.find("-]", index + 2)
+            if end < 0:
+                text = line[index:]
+                old_parts.append(text)
+                new_parts.append(text)
+                break
+            old_parts.append(line[index + 2 : end])
+            index = end + 2
+            changed = True
+            continue
+        if line.startswith("{-", index):
+            end = line.find("-}", index + 2)
+            if end < 0:
+                text = line[index:]
+                old_parts.append(text)
+                new_parts.append(text)
+                break
+            old_parts.append(line[index + 2 : end])
+            index = end + 2
+            changed = True
+            continue
+        char = line[index]
+        old_parts.append(char)
+        new_parts.append(char)
+        index += 1
+    return "".join(old_parts), "".join(new_parts), changed
+
+
+def strip_word_diff_markers(text: str) -> str:
+    """Remove marcadores de --word-diff=plain preservando apenas o conteudo."""
+    if not text:
+        return ""
+    cleaned = text
+    cleaned = cleaned.replace("{+", "")
+    cleaned = cleaned.replace("+}", "")
+    cleaned = cleaned.replace("[-", "")
+    cleaned = cleaned.replace("-]", "")
+    cleaned = cleaned.replace("{-", "")
+    cleaned = cleaned.replace("-}", "")
+    return cleaned
+
+
+_BINARY_FILES_PATTERN = re.compile(r"^Binary files (.+) and (.+) differ$")
+_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico")
+
+
+def is_binary_patch_text(diff_text: str) -> bool:
+    for raw_line in diff_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line == "GIT binary patch":
+            return True
+        if line.startswith("Binary files ") and line.endswith(" differ"):
+            return True
+    return False
+
+
+def summarize_binary_patch_text(diff_text: str) -> list[str]:
+    summary: list[str] = ["(arquivo binario: diff textual indisponivel)"]
+    image_hint_added = False
+    for raw_line in diff_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("diff --git "):
+            summary.append(line)
+            parts = line.split()
+            if len(parts) >= 4:
+                target = parts[3].strip()
+                if target.startswith("b/"):
+                    target = target[2:]
+                if target.lower().endswith(_IMAGE_EXTENSIONS):
+                    summary.append("arquivo de imagem detectado (preview visual ainda nao habilitado).")
+                    image_hint_added = True
+            continue
+        if line.startswith("new file mode ") or line.startswith("deleted file mode "):
+            summary.append(line)
+            continue
+        if line.startswith("old mode ") or line.startswith("new mode "):
+            summary.append(line)
+            continue
+        if line.startswith("index "):
+            parts = line.split()
+            if len(parts) >= 2 and ".." in parts[1]:
+                old_blob, new_blob = parts[1].split("..", 1)
+                summary.append(f"blob anterior: {old_blob} | blob atual: {new_blob}")
+            else:
+                summary.append(line)
+            continue
+        matched = _BINARY_FILES_PATTERN.match(line)
+        if matched:
+            source_path = matched.group(1).strip()
+            target_path = matched.group(2).strip()
+            summary.append(f"origem: {source_path}")
+            summary.append(f"destino: {target_path}")
+            continue
+        if line == "GIT binary patch":
+            summary.append("patch binario: git binary patch")
+            continue
+    if not image_hint_added:
+        summary.append("Dica: abra o arquivo no editor para validar o conteudo binario.")
+    return summary
+
+
+def parse_diff_data(diff_text: str, *, word_diff_plain: bool = False) -> DiffData:
     header_lines: list[str] = []
     hunks: list[DiffHunk] = []
     current: DiffHunk | None = None
     old_line = 0
     new_line = 0
+    word_diff_plain_mode = bool(word_diff_plain)
 
     for line in diff_text.splitlines():
         if line.startswith("diff --git") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
@@ -67,6 +208,112 @@ def parse_diff_data(diff_text: str) -> DiffData:
         if not current:
             continue
         if line.startswith("\\ No newline at end of file"):
+            continue
+        if word_diff_plain_mode:
+            prefix = ""
+            payload = line
+            if payload and payload[0] in {"+", "-", " "}:
+                prefix = payload[0]
+                payload = payload[1:]
+            if payload.startswith("{+") and payload.endswith("+}"):
+                content = payload[2:-2]
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                new_line += 1
+                continue
+            if (payload.startswith("[-") and payload.endswith("-]")) or (
+                payload.startswith("{-") and payload.endswith("-}")
+            ):
+                content = payload[2:-2]
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                old_line += 1
+                continue
+            old_content, new_content, changed = _split_word_diff_plain_line(payload)
+            if changed and old_content != new_content:
+                if prefix in {"+", "-"} and payload.startswith(" "):
+                    old_content = f"{prefix}{old_content}"
+                    new_content = f"{prefix}{new_content}"
+                base_old_line = old_line
+                base_new_line = new_line
+                removed = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=base_old_line,
+                    new_line=base_new_line,
+                    content=old_content,
+                    raw=f"-{old_content}",
+                )
+                current.lines.append(removed)
+                current.raw_lines.append(f"-{old_content}")
+                added = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=base_old_line,
+                    new_line=base_new_line,
+                    content=new_content,
+                    raw=f"+{new_content}",
+                )
+                current.lines.append(added)
+                current.raw_lines.append(f"+{new_content}")
+                old_line += 1
+                new_line += 1
+                continue
+            normalized_content = strip_word_diff_markers(payload)
+            if prefix == "+":
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="added",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=normalized_content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                new_line += 1
+                continue
+            if prefix == "-":
+                info = DiffLineInfo(
+                    hunk_index=len(hunks) - 1,
+                    line_type="removed",
+                    old_line=old_line,
+                    new_line=new_line,
+                    content=normalized_content,
+                    raw=line,
+                )
+                current.lines.append(info)
+                current.raw_lines.append(line)
+                old_line += 1
+                continue
+            info = DiffLineInfo(
+                hunk_index=len(hunks) - 1,
+                line_type="context",
+                old_line=old_line,
+                new_line=new_line,
+                content=normalized_content,
+                raw=line,
+            )
+            current.lines.append(info)
+            current.raw_lines.append(line)
+            old_line += 1
+            new_line += 1
             continue
         if line.startswith("-"):
             info = DiffLineInfo(
@@ -99,6 +346,33 @@ def parse_diff_data(diff_text: str) -> DiffData:
             )
             old_line += 1
             new_line += 1
+        elif line.startswith("{+") or line.startswith("{-"):
+            # `git diff --word-diff=plain` pode gerar linhas sem prefixo `+/-`,
+            # por exemplo `{+texto+}` para adicao de linha inteira.
+            content = _unwrap_word_diff_plain_line(line)
+            info = DiffLineInfo(
+                hunk_index=len(hunks) - 1,
+                line_type="added" if line.startswith("{+") else "removed",
+                old_line=old_line,
+                new_line=new_line,
+                content=content,
+                raw=line,
+            )
+            if line.startswith("{+"):
+                new_line += 1
+            else:
+                old_line += 1
+        elif line.startswith("[-"):
+            content = _unwrap_word_diff_plain_line(line)
+            info = DiffLineInfo(
+                hunk_index=len(hunks) - 1,
+                line_type="removed",
+                old_line=old_line,
+                new_line=new_line,
+                content=content,
+                raw=line,
+            )
+            old_line += 1
         else:
             continue
         current.lines.append(info)
@@ -147,73 +421,6 @@ def build_patch_for_line(diff_data: DiffData, line_info: DiffLineInfo) -> str | 
     return "\n".join(lines) + "\n"
 
 
-def line_has_word_markers(line: str) -> bool:
-    return "{+" in line or "+}" in line or "[-" in line or "-]" in line or "{-" in line or "-}" in line
-
-
-def insert_line_with_word_diff(
-    widget: tk.Text,
-    prefix: str,
-    content: str,
-    base_tag: str,
-    word_diff: bool,
-) -> None:
-    if not word_diff:
-        if base_tag:
-            widget.insert(tk.END, f"{prefix}{content}\n", base_tag)
-        else:
-            widget.insert(tk.END, f"{prefix}{content}\n")
-        return
-    if base_tag:
-        widget.insert(tk.END, prefix, base_tag)
-    else:
-        widget.insert(tk.END, prefix)
-    insert_word_diff_content(widget, content, base_tag)
-    widget.insert(tk.END, "\n")
-
-
-def insert_word_diff_content(widget: tk.Text, content: str, base_tag: str) -> None:
-    markers = [
-        ("{+", "+}", "added_word"),
-        ("[-", "-]", "removed_word"),
-        ("{-", "-}", "removed_word"),
-    ]
-    index = 0
-    while index < len(content):
-        next_marker = None
-        for opener, closer, tag in markers:
-            pos = content.find(opener, index)
-            if pos == -1:
-                continue
-            if next_marker is None or pos < next_marker[0]:
-                next_marker = (pos, opener, closer, tag)
-        if next_marker is None:
-            text = content[index:]
-            if text:
-                if base_tag:
-                    widget.insert(tk.END, text, base_tag)
-                else:
-                    widget.insert(tk.END, text)
-            break
-        pos, opener, closer, tag = next_marker
-        if pos > index:
-            if base_tag:
-                widget.insert(tk.END, content[index:pos], base_tag)
-            else:
-                widget.insert(tk.END, content[index:pos])
-        end = content.find(closer, pos + len(opener))
-        if end == -1:
-            if base_tag:
-                widget.insert(tk.END, content[pos:], base_tag)
-            else:
-                widget.insert(tk.END, content[pos:])
-            break
-        word = content[pos + len(opener) : end]
-        tags = (tag, base_tag) if base_tag else (tag,)
-        widget.insert(tk.END, word, tags)
-        index = end + len(closer)
-
-
 def build_read_mode_diff(diff_text: str, *, threshold: int, max_lines: int) -> tuple[str, bool]:
     lines = diff_text.splitlines()
     total = len(lines)
@@ -229,117 +436,3 @@ def build_read_mode_diff(diff_text: str, *, threshold: int, max_lines: int) -> t
     marker = f"... ({omitted} linhas omitidas no modo leitura) ..."
     preview = lines[:head] + [marker] + lines[-tail:]
     return "\n".join(preview) + "\n", True
-
-
-def render_patch_to_widget(
-    widget: tk.Text,
-    patch: str,
-    read_only: bool,
-    show_file_headers: bool,
-    word_diff: bool,
-    line_marker: str = "",
-    show_hunk_headers: bool = False,
-    hunk_marker: str = "",
-    hunk_markers: list[str] | None = None,
-    append: bool = False,
-) -> None:
-    widget.configure(state="normal")
-    if not append:
-        widget.delete("1.0", tk.END)
-
-    if not patch.strip():
-        widget.insert(tk.END, "(sem diff)")
-        if read_only:
-            widget.configure(state="disabled")
-        return
-
-    old_line = 0
-    new_line = 0
-    in_hunk = False
-
-    marker_prefix = f"{line_marker} " if line_marker else ""
-    marker_padding = " " * len(marker_prefix)
-    fallback_hunk_prefix = f"{hunk_marker} " if hunk_marker else marker_padding
-    hunk_index = 0
-
-    for raw_line in patch.splitlines():
-        if raw_line.startswith("diff --git"):
-            in_hunk = False
-            if show_file_headers:
-                try:
-                    parts = raw_line.split()
-                    path = parts[2][2:]
-                except IndexError:
-                    path = raw_line
-                widget.insert(tk.END, f"\n=== {path} ===\n", "meta")
-            continue
-        if raw_line.startswith("index ") or raw_line.startswith("---") or raw_line.startswith("+++"):
-            continue
-        if raw_line.startswith("@@"):
-            old_line, new_line = parse_hunk_header(raw_line)
-            in_hunk = True
-            if show_hunk_headers:
-                current_hunk_marker = hunk_marker
-                if hunk_markers is not None and hunk_index < len(hunk_markers):
-                    current_hunk_marker = hunk_markers[hunk_index]
-                if current_hunk_marker:
-                    hunk_prefix = f"{current_hunk_marker} "
-                else:
-                    hunk_prefix = fallback_hunk_prefix
-                widget.insert(tk.END, f"{hunk_prefix}\n", "meta")
-            hunk_index += 1
-            continue
-        if raw_line.startswith("\\ No newline at end of file"):
-            continue
-
-        if raw_line.startswith("-"):
-            content = raw_line[1:]
-            insert_line_with_word_diff(
-                widget,
-                f"{marker_prefix}{old_line:>6} - ",
-                content,
-                base_tag="removed",
-                word_diff=word_diff,
-            )
-            old_line += 1
-            continue
-        if raw_line.startswith("+"):
-            content = raw_line[1:]
-            insert_line_with_word_diff(
-                widget,
-                f"{marker_prefix}{new_line:>6} + ",
-                content,
-                base_tag="added",
-                word_diff=word_diff,
-            )
-            new_line += 1
-            continue
-        if raw_line.startswith(" "):
-            content = raw_line[1:]
-            insert_line_with_word_diff(
-                widget,
-                f"{marker_padding}{old_line:>6}   ",
-                content,
-                base_tag="",
-                word_diff=word_diff,
-            )
-            old_line += 1
-            new_line += 1
-            continue
-
-        if word_diff and in_hunk and line_has_word_markers(raw_line):
-            insert_line_with_word_diff(
-                widget,
-                f"{marker_padding}{old_line:>6}   ",
-                raw_line,
-                base_tag="",
-                word_diff=True,
-            )
-            old_line += 1
-            new_line += 1
-            continue
-
-        widget.insert(tk.END, raw_line + "\n")
-
-    if read_only:
-        widget.configure(state="disabled")

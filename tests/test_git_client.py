@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from viewer.core.models import CommitFilters
 from viewer.core.git_client import FIELD_SEP, RECORD_SEP, build_log_args, load_commit_summaries, parse_numstat
 
 
@@ -40,6 +41,13 @@ class TestCommitSummaries(unittest.TestCase):
         self.assertIn("%ad", pretty_values[0])
         self.assertIn("%ct", pretty_values[0])
 
+    def test_build_log_args_search_uses_case_insensitive_grep(self) -> None:
+        args = build_log_args(limit=50, skip=0, filters=CommitFilters(text="Fix UI"))
+
+        self.assertIn("--regexp-ignore-case", args)
+        self.assertIn("--fixed-strings", args)
+        self.assertIn("--grep=Fix UI", args)
+
     @patch("viewer.core.git_client.run_git")
     def test_load_commit_summaries_parses_metadata(self, run_git_mock: unittest.mock.Mock) -> None:
         run_git_mock.return_value = (
@@ -59,6 +67,44 @@ class TestCommitSummaries(unittest.TestCase):
         self.assertEqual(summaries[0].timestamp, 1739053276)
         self.assertEqual(summaries[1].author, "Maria")
         self.assertEqual(summaries[1].timestamp, 0)
+
+    @patch("viewer.core.git_client.run_git")
+    def test_load_commit_summaries_text_filter_matches_hash(self, run_git_mock: unittest.mock.Mock) -> None:
+        run_git_mock.return_value = (
+            f"abc123def{FIELD_SEP}feat: ui{FIELD_SEP}Joao{FIELD_SEP}2026-02-20{FIELD_SEP}10\n"
+            f"src/ui.py\n"
+            f"fff000111{FIELD_SEP}fix: repo{FIELD_SEP}Maria{FIELD_SEP}2026-02-19{FIELD_SEP}9\n"
+            f"README.md\n"
+        )
+
+        summaries = load_commit_summaries(
+            "/tmp/repo",
+            limit=10,
+            skip=0,
+            filters=CommitFilters(text="abc123"),
+        )
+
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].commit_hash, "abc123def")
+
+    @patch("viewer.core.git_client.run_git")
+    def test_load_commit_summaries_text_filter_matches_file_name(self, run_git_mock: unittest.mock.Mock) -> None:
+        run_git_mock.return_value = (
+            f"1111111{FIELD_SEP}feat: ui{FIELD_SEP}Joao{FIELD_SEP}2026-02-20{FIELD_SEP}10\n"
+            f"src/ui.py\n"
+            f"2222222{FIELD_SEP}fix: docs{FIELD_SEP}Maria{FIELD_SEP}2026-02-19{FIELD_SEP}9\n"
+            f"docs/arquitetura.md\n"
+        )
+
+        summaries = load_commit_summaries(
+            "/tmp/repo",
+            limit=10,
+            skip=0,
+            filters=CommitFilters(text="arquitetura"),
+        )
+
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].commit_hash, "2222222")
 
 
 if __name__ == "__main__":

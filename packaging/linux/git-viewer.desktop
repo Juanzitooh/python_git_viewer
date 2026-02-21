@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Git Viewer
+Comment=Visualizador Git em PySide6
+Exec=git-viewer
+Icon=git-viewer
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+Keywords=git;commit;diff;branch;history;
