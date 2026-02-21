@@ -7,7 +7,7 @@ GUI Git em **PySide6** para visualizar commits, diffs, status e executar fluxos 
 Clonar o projeto:
 
 ```bash
-git clone <url-do-repositorio> viewer
+git clone https://github.com/Juanzitooh/python_git_viewer viewer
 cd viewer
 ```
 
