@@ -12,7 +12,7 @@ Objetivo: transformar o projeto em um case forte de portfolio, com uso real, rel
   - [ ] Importar
   - [ ] Comparar
   - [ ] Configuracoes
-- [ ] `CHECKLIST_LINUX_V0_2_0.md` com rodada final concluida.
+- [ ] `checklists/CHECKLIST_FUNCIONAL_0.3.0.md` e `checklists/CHECKLIST_DISTRIBUICAO_0.3.0.md` com rodada final concluida.
 - [ ] Sem crash conhecido bloqueando uso (segfault, startup failure, etc).
 
 ---
@@ -50,6 +50,7 @@ Objetivo: transformar o projeto em um case forte de portfolio, com uso real, rel
   - [ ] Issue templates
 - [ ] Definir politica de versao (semver simples).
 - [ ] Definir politica de release (changelog + tag + artefatos).
+- [ ] Centralizar novos bugs em `https://github.com/Juanzitooh/python_git_viewer/issues`.
 
 ## Fase 4 - Release publica
 

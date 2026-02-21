@@ -6,7 +6,7 @@ Objetivo:
 - Priorizar o fluxo automatico (`dist.sh`) e usar o fluxo manual apenas como fallback/debug.
 
 Pre-condicao:
-- Execute este checklist somente apos aprovacao do `CHECKLIST_FUNCIONAL_DEV.md`.
+- Execute este checklist somente apos aprovacao do `checklists/CHECKLIST_FUNCIONAL_0.3.0.md`.
 - Tenha `sudo` disponivel para instalacao/reinstalacao do `.deb`.
 
 Como usar:
@@ -44,6 +44,8 @@ Fluxo rapido (recomendado):
 ```
 
 Isso faz:
+- gera checklists de release em `checklists/` (sem sobrescrever arquivos existentes)
+- executa testes unitarios
 - build `.deb`
 - build AppImage (quando possivel)
 - install/reinstall do `.deb`
