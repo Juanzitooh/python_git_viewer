@@ -165,6 +165,13 @@ def normalize_theme_name(theme: str) -> str:
     return "light"
 
 
+def normalize_theme_preference(theme: str) -> str:
+    candidate = str(theme or "").strip().lower()
+    if candidate in {"light", "dark", "system"}:
+        return candidate
+    return "system"
+
+
 def sanitize_theme_overrides(value: object) -> dict[str, dict[str, str]]:
     if not isinstance(value, dict):
         return {}

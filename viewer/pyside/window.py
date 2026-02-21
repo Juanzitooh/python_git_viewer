@@ -38,6 +38,7 @@ from ..core.settings_store import get_settings_path, load_settings, normalize_re
 from .theme import (
     build_theme_stylesheet as build_ui_theme_stylesheet,
     normalize_theme_name,
+    normalize_theme_preference,
     sanitize_theme_overrides,
 )
 from .update_profiles import UpdateProfile, resolve_update_profile
@@ -179,7 +180,7 @@ from .tabs import (
 
 try:
     from PySide6.QtCore import QObject, QPoint, Qt, QEvent, QTimer, QUrl, Signal
-    from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont
+    from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont, QPalette
     from PySide6.QtWidgets import (
         QApplication,
         QComboBox,
@@ -320,11 +321,15 @@ class QtShellWindow(QMainWindow):
         self._auto_update_bridge = _AutoUpdateBridge(self)
         self._auto_update_bridge.finished.connect(self._on_background_task_finished)
         self._auto_profile: UpdateProfile = resolve_update_profile(self.settings_data)
+        self._resolved_theme_name = "light"
+        self.current_theme = "light"
+        self.current_theme_preference = "system"
 
         self.setWindowTitle("Git Viewer (PySide6)")
         self.resize(1280, 820)
 
         self._apply_theme_from_settings()
+        self._connect_system_theme_updates()
         self._build_ui()
         self._load_repo_selector_items()
 
@@ -405,12 +410,37 @@ class QtShellWindow(QMainWindow):
         self._set_status("PySide6 shell iniciado.")
         self._set_busy_message("Pronto")
 
+    def _resolve_theme_name(self, theme: str) -> str:
+        preference = normalize_theme_preference(theme)
+        if preference in {"light", "dark"}:
+            return preference
+        app = QApplication.instance()
+        if app is None:
+            return "light"
+        style_hints = app.styleHints()
+        if hasattr(style_hints, "colorScheme") and hasattr(Qt, "ColorScheme"):
+            try:
+                color_scheme = style_hints.colorScheme()
+            except Exception:
+                color_scheme = None
+            if color_scheme == Qt.ColorScheme.Dark:
+                return "dark"
+            if color_scheme == Qt.ColorScheme.Light:
+                return "light"
+        window_color = app.palette().color(QPalette.ColorRole.Window)
+        return "dark" if int(window_color.lightness()) < 128 else "light"
+
     def _apply_theme(self, theme: str, theme_overrides: object | None = None) -> None:
         app = QApplication.instance()
         if app is None:
             return
-        resolved_theme = normalize_theme_name(theme)
+        preference = normalize_theme_preference(theme)
+        resolved_theme = normalize_theme_name(self._resolve_theme_name(preference))
         resolved_overrides = sanitize_theme_overrides(theme_overrides)
+        self.current_theme_preference = preference
+        self.current_theme = resolved_theme
+        self._resolved_theme_name = resolved_theme
+        app.setProperty("gv_theme_preference", preference)
         app.setProperty("gv_theme_name", resolved_theme)
         app.setProperty("gv_theme_overrides", resolved_overrides)
         app.setStyleSheet(self._build_theme_stylesheet(resolved_theme, resolved_overrides))
@@ -441,9 +471,36 @@ class QtShellWindow(QMainWindow):
                 widget.setFont(mono_font)
 
     def _apply_theme_from_settings(self) -> None:
-        theme = str(self.settings_data.get("theme", "light"))
+        theme = normalize_theme_preference(str(self.settings_data.get("theme", "system")))
         theme_overrides = self.settings_data.get("theme_overrides", {})
         self._apply_theme(theme, theme_overrides)
+
+    def _refresh_system_theme_if_needed(self, *, force: bool = False) -> None:
+        if self._is_closing:
+            return
+        preference = normalize_theme_preference(str(self.settings_data.get("theme", "system")))
+        if preference != "system":
+            return
+        resolved = self._resolve_theme_name(preference)
+        if not force and resolved == self._resolved_theme_name:
+            return
+        self._apply_theme(preference, self.settings_data.get("theme_overrides", {}))
+
+    def _on_system_color_scheme_changed(self, *_args) -> None:
+        self._refresh_system_theme_if_needed(force=False)
+
+    def _connect_system_theme_updates(self) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        style_hints = app.styleHints()
+        signal = getattr(style_hints, "colorSchemeChanged", None)
+        if signal is None:
+            return
+        try:
+            signal.connect(self._on_system_color_scheme_changed)
+        except Exception:
+            return
 
     def _setup_background_timers(self) -> None:
         self._auto_status_timer = QTimer(self)
@@ -1780,6 +1837,9 @@ class QtShellWindow(QMainWindow):
         if self._is_closing:
             return
         event_type = event.type()
+        if event_type in {QEvent.Type.ApplicationPaletteChange, QEvent.Type.PaletteChange}:
+            self._refresh_system_theme_if_needed(force=False)
+            return
         if event_type not in {QEvent.Type.ActivationChange, QEvent.Type.WindowStateChange}:
             return
         self._sync_dynamic_status_timer_interval()

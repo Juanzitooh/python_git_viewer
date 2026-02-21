@@ -87,6 +87,13 @@ class TestSettingsStore(unittest.TestCase):
             self.assertEqual(data["theme_overrides"]["dark"]["accent"], "#1A73E8")
             self.assertNotIn("invalid", data["theme_overrides"]["dark"])
 
+    def test_theme_system_is_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            save_settings(path, {"theme": "system"})
+            data = load_settings(path)
+            self.assertEqual(data["theme"], "system")
+
 
 if __name__ == "__main__":
     unittest.main()

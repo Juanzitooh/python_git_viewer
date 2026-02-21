@@ -58,6 +58,7 @@ def build_settings_tab(window: object) -> None:
     theme_layout.setSpacing(6)
     theme_layout.addWidget(QLabel("Tema:", theme_row))
     window.settings_theme_combo = QComboBox(theme_row)
+    window.settings_theme_combo.addItem("Sistema (auto)", "system")
     window.settings_theme_combo.addItem("Claro", "light")
     window.settings_theme_combo.addItem("Escuro", "dark")
     window.settings_theme_combo.currentIndexChanged.connect(

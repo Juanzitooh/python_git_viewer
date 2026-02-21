@@ -21,7 +21,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "recent_repos": [],
     "favorite_repos": [],
     "repo_scan_root": default_repo_scan_root(),
-    "theme": "light",
+    "theme": "system",
     "theme_overrides": {},
     "ui_font_family": "",
     "ui_font_size": 0,
@@ -251,7 +251,7 @@ def load_settings(path: Path) -> dict[str, object]:
         data["favorite_repos"] = _sanitize_repo_list(raw.get("favorite_repos"))
         data["repo_scan_root"] = _sanitize_repo_root(raw.get("repo_scan_root"))
         theme = _coerce_str(raw.get("theme"), str(DEFAULT_SETTINGS["theme"]))
-        data["theme"] = theme if theme in ("light", "dark") else str(DEFAULT_SETTINGS["theme"])
+        data["theme"] = theme if theme in ("light", "dark", "system") else str(DEFAULT_SETTINGS["theme"])
         data["theme_overrides"] = _sanitize_theme_overrides(raw.get("theme_overrides"))
         data["ui_font_family"] = _coerce_str(raw.get("ui_font_family"), "")
         data["ui_font_size"] = _coerce_int(raw.get("ui_font_size"), 0, minimum=0)
@@ -290,6 +290,8 @@ def save_settings(path: Path, settings: dict[str, object]) -> None:
     data["recent_repos"] = _sanitize_repo_list(data.get("recent_repos"))
     data["favorite_repos"] = _sanitize_repo_list(data.get("favorite_repos"))
     data["repo_scan_root"] = _sanitize_repo_root(data.get("repo_scan_root"))
+    theme = _coerce_str(data.get("theme"), str(DEFAULT_SETTINGS["theme"]))
+    data["theme"] = theme if theme in ("light", "dark", "system") else str(DEFAULT_SETTINGS["theme"])
     data["theme_overrides"] = _sanitize_theme_overrides(data.get("theme_overrides"))
     data["github_ssh_cache"] = _sanitize_github_ssh_cache(data.get("github_ssh_cache"))
     path.parent.mkdir(parents=True, exist_ok=True)

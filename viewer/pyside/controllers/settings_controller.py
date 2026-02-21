@@ -10,6 +10,7 @@ from ..theme import (
     get_theme_palette,
     normalize_hex_color,
     normalize_theme_name,
+    normalize_theme_preference,
     sanitize_theme_overrides,
 )
 from ..update_profiles import resolve_update_profile
@@ -17,8 +18,18 @@ from ..update_profiles import resolve_update_profile
 
 def _get_selected_theme(window: object) -> str:
     theme_data = window.settings_theme_combo.currentData()
-    theme = str(theme_data).strip() if theme_data is not None else "light"
-    return normalize_theme_name(theme)
+    theme = str(theme_data).strip() if theme_data is not None else "system"
+    return normalize_theme_preference(theme)
+
+
+def _get_effective_theme(window: object) -> str:
+    selected = _get_selected_theme(window)
+    if selected != "system":
+        return normalize_theme_name(selected)
+    resolver = getattr(window, "_resolve_theme_name", None)
+    if callable(resolver):
+        return normalize_theme_name(resolver("system"))
+    return "light"
 
 
 def _get_theme_overrides_draft(window: object) -> dict[str, dict[str, str]]:
@@ -34,7 +45,7 @@ def _set_color_preview(window: object, color_key: str, color_value: str) -> None
     preview = window.settings_theme_color_previews.get(color_key)
     if preview is None:
         return
-    theme = _get_selected_theme(window)
+    theme = _get_effective_theme(window)
     palette = get_theme_palette(theme, _get_theme_overrides_draft(window))
     border_color = palette["border"]
     preview.setStyleSheet(
@@ -46,7 +57,7 @@ def _set_color_preview(window: object, color_key: str, color_value: str) -> None
 def _sync_theme_color_inputs(window: object) -> None:
     if not hasattr(window, "settings_theme_color_inputs"):
         return
-    theme = _get_selected_theme(window)
+    theme = _get_effective_theme(window)
     theme_palette = get_theme_palette(theme)
     theme_overrides = _get_theme_overrides_draft(window).get(theme, {})
     for color_key, _label in THEME_COLOR_FIELDS:
@@ -91,10 +102,11 @@ def load_settings_into_tab(window: object) -> None:
     window._theme_overrides_draft = sanitize_theme_overrides(
         window.settings_data.get("theme_overrides", {})
     )
-    theme = str(window.settings_data.get("theme", "light"))
+    theme = str(window.settings_data.get("theme", "system"))
+    theme = normalize_theme_preference(theme)
     theme_index = window.settings_theme_combo.findData(theme)
     if theme_index < 0:
-        theme_index = window.settings_theme_combo.findData("light")
+        theme_index = window.settings_theme_combo.findData("system")
     if theme_index >= 0:
         window.settings_theme_combo.setCurrentIndex(theme_index)
     _sync_theme_color_inputs(window)
@@ -147,7 +159,7 @@ def on_settings_theme_color_edited(window: object, color_key: str) -> None:
         return
     typed_value = color_input.text().strip()
     normalized_color = normalize_hex_color(typed_value)
-    theme = _get_selected_theme(window)
+    theme = _get_effective_theme(window)
     theme_palette = get_theme_palette(theme)
     if normalized_color is None:
         fallback_value = _get_theme_overrides_draft(window).get(theme, {}).get(
@@ -194,7 +206,7 @@ def pick_settings_theme_color(window: object, color_key: str) -> None:
 
 
 def reset_settings_theme_colors(window: object) -> None:
-    theme = _get_selected_theme(window)
+    theme = _get_effective_theme(window)
     theme_overrides = _get_theme_overrides_draft(window)
     theme_overrides.pop(theme, None)
     window._theme_overrides_draft = sanitize_theme_overrides(theme_overrides)
