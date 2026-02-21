@@ -515,6 +515,8 @@ class QtShellWindow(QMainWindow):
         self._submit_background_task("fetch", repo_path, _run_auto_fetch)
 
     def _schedule_background_status_probe(self, *, force: bool) -> None:
+        if self._is_closing:
+            return
         if self._busy_depth > 0 and not force:
             return
         repo_path = self._get_resolved_repo_path(self.repo_path)
@@ -543,6 +545,8 @@ class QtShellWindow(QMainWindow):
         timer.setInterval(desired)
 
     def _schedule_history_head_probe(self, *, force: bool) -> None:
+        if self._is_closing:
+            return
         if self._busy_depth > 0 and not force:
             return
         repo_path = self._get_resolved_repo_path(self.repo_path)
@@ -551,12 +555,18 @@ class QtShellWindow(QMainWindow):
         self._submit_background_task("history_head", repo_path, _collect_history_head_snapshot)
 
     def _submit_background_task(self, kind: str, repo_path: str, task_func) -> None:
+        if self._is_closing:
+            return
         active = self._auto_task_state.get(kind)
         if active is not None and active[0] == repo_path:
             return
         generation = self._repo_generation
         self._auto_task_state[kind] = (repo_path, generation)
-        future = self._auto_executor.submit(task_func, repo_path)
+        try:
+            future = self._auto_executor.submit(task_func, repo_path)
+        except RuntimeError:
+            self._auto_task_state.pop(kind, None)
+            return
 
         def done_callback(done_future) -> None:
             if self._is_closing:
@@ -1265,6 +1275,34 @@ class QtShellWindow(QMainWindow):
             return False
         return True
 
+    def _open_commit_repo_readme_in_vscode(self) -> bool:
+        resolved_repo = self._get_resolved_repo_path(self.repo_path)
+        if not resolved_repo:
+            QMessageBox.warning(self, "VS Code", "Repositorio invalido para abrir no VS Code.")
+            return False
+        code_bin = shutil.which("code")
+        if not code_bin:
+            QMessageBox.warning(self, "VS Code", "Comando 'code' nao encontrado no PATH.")
+            return False
+        readme_candidates = (
+            "README.md",
+            "README.MD",
+            "Readme.md",
+            "README.rst",
+            "README.txt",
+        )
+        for candidate in readme_candidates:
+            absolute_path = os.path.join(resolved_repo, candidate)
+            if not os.path.isfile(absolute_path):
+                continue
+            try:
+                subprocess.Popen([code_bin, "--new-window", resolved_repo, absolute_path])
+            except OSError as exc:
+                QMessageBox.critical(self, "VS Code", f"Falha ao abrir VS Code:\n{exc}")
+                return False
+            return True
+        return self._open_repo_in_vscode(resolved_repo)
+
     def _open_repo_in_explorer(self, repo_path: str = "") -> bool:
         resolved_repo = self._get_resolved_repo_path(repo_path or self.repo_path)
         if not resolved_repo:
@@ -1696,6 +1734,8 @@ class QtShellWindow(QMainWindow):
         publish_repo(self)
 
     def _on_tab_changed(self, _index: int) -> None:
+        if self._is_closing:
+            return
         self._sync_dynamic_status_timer_interval()
         if self.tabs.currentWidget() is self.commit_tab:
             self._schedule_background_status_probe(force=True)
@@ -1710,6 +1750,8 @@ class QtShellWindow(QMainWindow):
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
         super().changeEvent(event)
+        if self._is_closing:
+            return
         event_type = event.type()
         if event_type not in {QEvent.Type.ActivationChange, QEvent.Type.WindowStateChange}:
             return

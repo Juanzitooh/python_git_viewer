@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -66,9 +67,18 @@ def build_commit_tab(window: object) -> None:
     root_layout.setContentsMargins(12, 12, 12, 12)
     root_layout.setSpacing(8)
 
-    splitter = QSplitter(Qt.Orientation.Horizontal, window.commit_tab)
+    window.commit_stack = QStackedWidget(window.commit_tab)
+    root_layout.addWidget(window.commit_stack, stretch=1)
+
+    window.commit_main_page = QWidget(window.commit_stack)
+    main_layout = QVBoxLayout(window.commit_main_page)
+    main_layout.setContentsMargins(0, 0, 0, 0)
+    main_layout.setSpacing(0)
+    window.commit_stack.addWidget(window.commit_main_page)
+
+    splitter = QSplitter(Qt.Orientation.Horizontal, window.commit_main_page)
     splitter.setChildrenCollapsible(False)
-    root_layout.addWidget(splitter, stretch=1)
+    main_layout.addWidget(splitter, stretch=1)
 
     left_column = QWidget(splitter)
     left_layout = QVBoxLayout(left_column)
@@ -159,5 +169,48 @@ def build_commit_tab(window: object) -> None:
     splitter.addWidget(right_column)
     splitter.setStretchFactor(0, 2)
     splitter.setStretchFactor(1, 3)
+
+    window.commit_empty_page = QWidget(window.commit_stack)
+    empty_layout = QVBoxLayout(window.commit_empty_page)
+    empty_layout.setContentsMargins(24, 24, 24, 24)
+    empty_layout.setSpacing(10)
+    empty_layout.addStretch(1)
+
+    window.commit_empty_title_label = QLabel("Worktree limpo", window.commit_empty_page)
+    window.commit_empty_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    window.commit_empty_title_label.setProperty("role", "title")
+    empty_layout.addWidget(window.commit_empty_title_label)
+
+    window.commit_empty_hint_label = QLabel(
+        "Nao ha mudancas para commitar. Abra o README no VS Code para continuar editando este repositorio.",
+        window.commit_empty_page,
+    )
+    window.commit_empty_hint_label.setWordWrap(True)
+    window.commit_empty_hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    empty_layout.addWidget(window.commit_empty_hint_label)
+
+    empty_actions_row = QWidget(window.commit_empty_page)
+    empty_actions_layout = QHBoxLayout(empty_actions_row)
+    empty_actions_layout.setContentsMargins(0, 0, 0, 0)
+    empty_actions_layout.setSpacing(8)
+    empty_actions_layout.addStretch(1)
+
+    window.commit_open_readme_button = QPushButton("Abrir README no VS Code", window.commit_empty_page)
+    window.commit_open_readme_button.clicked.connect(window._open_commit_repo_readme_in_vscode)
+    empty_actions_layout.addWidget(window.commit_open_readme_button)
+
+    window.commit_empty_undo_button = QPushButton("Undo commit", window.commit_empty_page)
+    window.commit_empty_undo_button.clicked.connect(window._undo_last_commit_from_commit_tab)
+    empty_actions_layout.addWidget(window.commit_empty_undo_button)
+
+    window.commit_empty_open_pr_button = QPushButton("Abrir PR", window.commit_empty_page)
+    window.commit_empty_open_pr_button.clicked.connect(window._open_commit_pr_in_github)
+    empty_actions_layout.addWidget(window.commit_empty_open_pr_button)
+
+    empty_actions_layout.addStretch(1)
+    empty_layout.addWidget(empty_actions_row)
+    empty_layout.addStretch(1)
+    window.commit_stack.addWidget(window.commit_empty_page)
+    window.commit_stack.setCurrentWidget(window.commit_main_page)
 
     window._refresh_commit_files()

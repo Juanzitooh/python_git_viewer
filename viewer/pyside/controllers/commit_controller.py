@@ -257,10 +257,11 @@ def _apply_commit_file_level_toggle(
 
 
 def _sync_commit_pr_button_state(window: object, file_count: int) -> None:
-    if not hasattr(window, "commit_open_pr_button"):
-        return
     can_open_pr = bool(window.repo_path and file_count == 0)
-    window.commit_open_pr_button.setEnabled(can_open_pr)
+    if hasattr(window, "commit_open_pr_button"):
+        window.commit_open_pr_button.setEnabled(can_open_pr)
+    if hasattr(window, "commit_empty_open_pr_button"):
+        window.commit_empty_open_pr_button.setEnabled(can_open_pr)
 
 
 def _entry_status_label(entry: dict[str, str | bool]) -> str:
@@ -1503,6 +1504,45 @@ def _restore_commit_selection(window: object, preferred_path: str) -> None:
         window.commit_files_list.setCurrentRow(first_file_index)
 
 
+def _sync_commit_empty_state(window: object, *, has_changes: bool) -> None:
+    stack = getattr(window, "commit_stack", None)
+    main_page = getattr(window, "commit_main_page", None)
+    empty_page = getattr(window, "commit_empty_page", None)
+    has_repo = bool(str(getattr(window, "repo_path", "")).strip())
+    show_empty = has_repo and not has_changes
+
+    if stack is not None and main_page is not None and empty_page is not None:
+        target = empty_page if show_empty else main_page
+        if stack.currentWidget() is not target:
+            stack.setCurrentWidget(target)
+
+    open_readme_button = getattr(window, "commit_open_readme_button", None)
+    if open_readme_button is not None:
+        open_readme_button.setEnabled(has_repo)
+    empty_undo_button = getattr(window, "commit_empty_undo_button", None)
+    if empty_undo_button is not None:
+        empty_undo_button.setEnabled(has_repo)
+    empty_open_pr_button = getattr(window, "commit_empty_open_pr_button", None)
+    if empty_open_pr_button is not None:
+        empty_open_pr_button.setEnabled(has_repo and not has_changes)
+
+    title_label = getattr(window, "commit_empty_title_label", None)
+    hint_label = getattr(window, "commit_empty_hint_label", None)
+    if title_label is not None:
+        if has_repo:
+            repo_name = os.path.basename(str(getattr(window, "repo_path", "")).rstrip("/")) or "repositorio"
+            title_label.setText(f"Worktree limpo: {repo_name}")
+        else:
+            title_label.setText("Selecione um repositorio")
+    if hint_label is not None:
+        if has_repo:
+            hint_label.setText(
+                "Nao ha mudancas para commitar. Abra o README no VS Code para continuar editando este repositorio."
+            )
+        else:
+            hint_label.setText("Selecione um repositorio para visualizar e commitar mudancas.")
+
+
 def refresh_commit_files(window: object) -> None:
     previous_scroll_value = window.commit_files_list.verticalScrollBar().value()
     preferred_path = str(getattr(window, "commit_selected_path", "")).strip()
@@ -1545,6 +1585,7 @@ def refresh_commit_files(window: object) -> None:
         _sync_commit_pr_button_state(window, 0)
         _sync_commit_stage_buttons(window)
         auto_stage_opt_out_paths.clear()
+        _sync_commit_empty_state(window, has_changes=False)
         update_commit_selection_label(window)
         return
     try:
@@ -1561,6 +1602,7 @@ def refresh_commit_files(window: object) -> None:
         window.commit_diff_selected_line = 0
         _sync_commit_pr_button_state(window, 0)
         _sync_commit_stage_buttons(window)
+        _sync_commit_empty_state(window, has_changes=False)
         QMessageBox.critical(window, "Commit", str(exc))
         update_commit_selection_label(window)
         return
@@ -1647,6 +1689,7 @@ def refresh_commit_files(window: object) -> None:
     scroll_bar.setValue(min(previous_scroll_value, scroll_bar.maximum()))
     refresh_commit_diff(window)
     _sync_commit_stage_buttons(window)
+    _sync_commit_empty_state(window, has_changes=bool(window.commit_file_item_by_path))
     update_commit_selection_label(window)
 
 
