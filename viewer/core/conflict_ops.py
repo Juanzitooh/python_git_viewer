@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 
 from .git_client import run_git
 
@@ -90,14 +91,14 @@ def continue_conflict_operation(repo_path: str, operation: str, squash_message: 
     if key not in VALID_CONFLICT_OPERATIONS:
         raise RuntimeError("Operacao de conflito invalida.")
     if key == "cherry-pick":
-        run_git(repo_path, ["cherry-pick", "--continue"])
+        _run_git_non_interactive(repo_path, ["cherry-pick", "--continue"])
         return
     if key == "rebase":
-        run_git(repo_path, ["rebase", "--continue"])
+        _run_git_non_interactive(repo_path, ["rebase", "--continue"])
         return
     if key == "merge":
         try:
-            run_git(repo_path, ["merge", "--continue"])
+            _run_git_non_interactive(repo_path, ["merge", "--continue"])
         except RuntimeError:
             run_git(repo_path, ["commit", "--no-edit"])
         return
@@ -127,6 +128,27 @@ def abort_conflict_operation(repo_path: str, operation: str) -> None:
     raise RuntimeError("Operacao de conflito invalida.")
 
 
+def abort_conflict_operation_and_restore(
+    repo_path: str,
+    operation: str,
+    restore_ref: str = "",
+    *,
+    delete_restore_ref: bool = False,
+) -> None:
+    abort_conflict_operation(repo_path, operation)
+    normalized_ref = restore_ref.strip()
+    if not normalized_ref:
+        return
+    run_git(repo_path, ["reset", "--hard", normalized_ref])
+    if not delete_restore_ref:
+        return
+    try:
+        run_git(repo_path, ["branch", "-D", normalized_ref])
+    except RuntimeError:
+        # Melhor esforço: não bloquear o fluxo de restauração se falhar ao remover o backup.
+        pass
+
+
 def resolve_conflict_file_using_side(repo_path: str, path_for_git: str, side: str) -> None:
     normalized_path = path_for_git.strip()
     normalized_side = side.strip().lower()
@@ -143,3 +165,27 @@ def mark_conflict_file_resolved(repo_path: str, path_for_git: str) -> None:
     if not normalized_path:
         raise RuntimeError("Arquivo de conflito inválido.")
     run_git(repo_path, ["add", "--", normalized_path])
+
+
+def _run_git_non_interactive(repo_path: str, args: list[str]) -> str:
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_EDITOR": "true",
+            "VISUAL": "true",
+            "EDITOR": "true",
+            "GIT_SEQUENCE_EDITOR": "true",
+        }
+    )
+    result = subprocess.run(
+        ["git", "-C", repo_path, *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        env=env,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or "(sem detalhes)"
+        raise RuntimeError(f"git falhou: {stderr}")
+    return result.stdout

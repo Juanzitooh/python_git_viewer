@@ -18,6 +18,8 @@ def list_branches(repo_path: str) -> list[str]:
             continue
         if ref.startswith("refs/heads/"):
             name = ref[len("refs/heads/") :].strip()
+            if name.startswith("backup/reorder-"):
+                continue
             if name and name not in local_branch_set:
                 local_branches.append(name)
                 local_branch_set.add(name)

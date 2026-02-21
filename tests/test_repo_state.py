@@ -13,6 +13,7 @@ class TestRepoState(unittest.TestCase):
             [
                 "refs/heads/main",
                 "refs/heads/feature/local",
+                "refs/heads/backup/reorder-main-20260221",
                 "refs/remotes/origin/main",
                 "refs/remotes/origin/feature/remote",
                 "refs/remotes/upstream/main",

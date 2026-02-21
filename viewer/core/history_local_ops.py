@@ -18,6 +18,15 @@ class LocalReorderApplyResult:
     backup_branch: str
     error_message: str = ""
     restore_error_message: str = ""
+    conflict_in_progress: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class ReorderDependencyIssue:
+    path: str
+    reason: str
+    first_commit: str
+    second_commit: str
 
 
 def load_local_only_commit_hashes(repo_path: str, upstream: str) -> set[str]:
@@ -106,10 +115,23 @@ def apply_local_commit_reorder(
 
     try:
         run_git(repo_path, ["reset", "--hard", upstream])
-        for summary in ordered_commits:
-            run_git(repo_path, ["cherry-pick", summary.commit_hash])
+        commit_hashes = [summary.commit_hash.strip() for summary in ordered_commits if summary.commit_hash.strip()]
+        if commit_hashes:
+            run_git(repo_path, ["cherry-pick", *commit_hashes])
         return LocalReorderApplyResult(ok=True, backup_branch=backup_branch)
     except RuntimeError as exc:
+        has_conflicts = (
+            _has_unmerged_conflicts(repo_path)
+            or _is_cherry_pick_in_progress(repo_path)
+            or _is_cherry_pick_conflict_error(str(exc))
+        )
+        if has_conflicts:
+            return LocalReorderApplyResult(
+                ok=False,
+                backup_branch=backup_branch,
+                error_message=str(exc),
+                conflict_in_progress=True,
+            )
         try:
             run_git(repo_path, ["cherry-pick", "--abort"])
         except RuntimeError:
@@ -129,3 +151,163 @@ def apply_local_commit_reorder(
             error_message=str(exc),
             restore_error_message="",
         )
+
+
+def _has_unmerged_conflicts(repo_path: str) -> bool:
+    try:
+        output = run_git(repo_path, ["diff", "--name-only", "--diff-filter=U"])
+    except RuntimeError:
+        return False
+    return bool(output.strip())
+
+
+def _is_cherry_pick_in_progress(repo_path: str) -> bool:
+    try:
+        output = run_git(repo_path, ["rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"])
+    except RuntimeError:
+        return False
+    return bool(output.strip())
+
+
+def _is_cherry_pick_conflict_error(error_message: str) -> bool:
+    lowered = error_message.casefold()
+    markers = (
+        "could not apply",
+        "after resolving the conflicts",
+        "git cherry-pick --continue",
+        "após resolver os conflitos",
+        "apos resolver os conflitos",
+        "cherry-pick --continue",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def analyze_local_reorder_dependencies(repo_path: str, ordered_commits: list[CommitSummary]) -> list[ReorderDependencyIssue]:
+    ops_by_path: dict[str, list[tuple[int, str, str]]] = {}
+    renames: list[tuple[int, str, str, str]] = []
+
+    for index, summary in enumerate(ordered_commits):
+        commit_hash = summary.commit_hash.strip()
+        if not commit_hash:
+            continue
+        for status, old_path, new_path in _load_commit_name_status(repo_path, commit_hash):
+            if status == "R":
+                if old_path and new_path:
+                    renames.append((index, old_path, new_path, commit_hash))
+                    ops_by_path.setdefault(new_path, []).append((index, "A", commit_hash))
+                    ops_by_path.setdefault(old_path, []).append((index, "D", commit_hash))
+                continue
+            path = new_path or old_path
+            if not path:
+                continue
+            ops_by_path.setdefault(path, []).append((index, status, commit_hash))
+
+    issues: list[ReorderDependencyIssue] = []
+    seen_keys: set[tuple[str, str, str, str]] = set()
+
+    for path, ops in ops_by_path.items():
+        add_indexes = [(idx, commit) for idx, status, commit in ops if status == "A"]
+        mod_indexes = [(idx, commit) for idx, status, commit in ops if status == "M"]
+        del_indexes = [(idx, commit) for idx, status, commit in ops if status == "D"]
+        if add_indexes:
+            first_add_idx, first_add_commit = min(add_indexes, key=lambda item: item[0])
+            for mod_idx, mod_commit in [*mod_indexes, *del_indexes]:
+                if mod_idx < first_add_idx:
+                    _append_reorder_issue(
+                        issues,
+                        seen_keys,
+                        path=path,
+                        reason="modify_before_add",
+                        first_commit=mod_commit,
+                        second_commit=first_add_commit,
+                    )
+        if del_indexes:
+            first_delete_idx, first_delete_commit = min(del_indexes, key=lambda item: item[0])
+            for mod_idx, mod_commit in mod_indexes:
+                if mod_idx > first_delete_idx:
+                    _append_reorder_issue(
+                        issues,
+                        seen_keys,
+                        path=path,
+                        reason="modify_after_delete",
+                        first_commit=first_delete_commit,
+                        second_commit=mod_commit,
+                    )
+
+    for rename_index, old_path, new_path, rename_commit in renames:
+        for idx, status, commit_hash in ops_by_path.get(new_path, []):
+            if status in {"M", "D"} and idx < rename_index:
+                _append_reorder_issue(
+                    issues,
+                    seen_keys,
+                    path=new_path,
+                    reason="modify_before_rename",
+                    first_commit=commit_hash,
+                    second_commit=rename_commit,
+                )
+        for idx, status, commit_hash in ops_by_path.get(old_path, []):
+            if status == "M" and idx > rename_index:
+                _append_reorder_issue(
+                    issues,
+                    seen_keys,
+                    path=old_path,
+                    reason="modify_after_rename",
+                    first_commit=rename_commit,
+                    second_commit=commit_hash,
+                )
+
+    return issues
+
+
+def _append_reorder_issue(
+    issues: list[ReorderDependencyIssue],
+    seen_keys: set[tuple[str, str, str, str]],
+    *,
+    path: str,
+    reason: str,
+    first_commit: str,
+    second_commit: str,
+) -> None:
+    key = (path, reason, first_commit, second_commit)
+    if key in seen_keys:
+        return
+    seen_keys.add(key)
+    issues.append(
+        ReorderDependencyIssue(
+            path=path,
+            reason=reason,
+            first_commit=first_commit,
+            second_commit=second_commit,
+        )
+    )
+
+
+def _load_commit_name_status(repo_path: str, commit_hash: str) -> list[tuple[str, str, str]]:
+    output = run_git(repo_path, ["show", "--name-status", "--pretty=", commit_hash])
+    entries: list[tuple[str, str, str]] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split("\t")
+        if not parts:
+            continue
+        status_raw = parts[0].strip().upper()
+        status = status_raw[:1]
+        if status == "R":
+            if len(parts) < 3:
+                continue
+            old_path = parts[1].strip()
+            new_path = parts[2].strip()
+            if old_path and new_path:
+                entries.append(("R", old_path, new_path))
+            continue
+        if status not in {"A", "M", "D"}:
+            continue
+        if len(parts) < 2:
+            continue
+        path = parts[1].strip()
+        if not path:
+            continue
+        entries.append((status, path, path))
+    return entries

@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from viewer.core.conflict_ops import (
     abort_conflict_operation,
+    abort_conflict_operation_and_restore,
+    continue_conflict_operation,
     mark_conflict_file_resolved,
     resolve_active_conflict_operation,
     resolve_conflict_file_using_side,
@@ -53,7 +55,54 @@ class TestConflictOps(unittest.TestCase):
             mark_conflict_file_resolved("/tmp/repo", "README.md")
         mocked_run_git.assert_called_once_with("/tmp/repo", ["add", "--", "README.md"])
 
+    def test_abort_conflict_operation_and_restore_runs_reset_hard(self) -> None:
+        with patch("viewer.core.conflict_ops.run_git") as mocked_run_git:
+            abort_conflict_operation_and_restore(
+                "/tmp/repo",
+                "cherry-pick",
+                restore_ref="backup/reorder-main-20260221",
+            )
+        self.assertEqual(
+            mocked_run_git.call_args_list,
+            [
+                unittest.mock.call("/tmp/repo", ["cherry-pick", "--abort"]),
+                unittest.mock.call("/tmp/repo", ["reset", "--hard", "backup/reorder-main-20260221"]),
+            ],
+        )
+
+    def test_abort_conflict_operation_and_restore_can_delete_backup_branch(self) -> None:
+        with patch("viewer.core.conflict_ops.run_git") as mocked_run_git:
+            abort_conflict_operation_and_restore(
+                "/tmp/repo",
+                "cherry-pick",
+                restore_ref="backup/reorder-main-20260221",
+                delete_restore_ref=True,
+            )
+        self.assertEqual(
+            mocked_run_git.call_args_list,
+            [
+                unittest.mock.call("/tmp/repo", ["cherry-pick", "--abort"]),
+                unittest.mock.call("/tmp/repo", ["reset", "--hard", "backup/reorder-main-20260221"]),
+                unittest.mock.call("/tmp/repo", ["branch", "-D", "backup/reorder-main-20260221"]),
+            ],
+        )
+
+    @patch("viewer.core.conflict_ops.subprocess.run")
+    def test_continue_cherry_pick_uses_non_interactive_editor_env(self, mocked_run: unittest.mock.Mock) -> None:
+        mocked_run.return_value.returncode = 0
+        mocked_run.return_value.stdout = ""
+        mocked_run.return_value.stderr = ""
+
+        continue_conflict_operation("/tmp/repo", "cherry-pick")
+
+        mocked_run.assert_called_once()
+        args, kwargs = mocked_run.call_args
+        self.assertEqual(args[0], ["git", "-C", "/tmp/repo", "cherry-pick", "--continue"])
+        env = kwargs.get("env", {})
+        self.assertEqual(env.get("GIT_EDITOR"), "true")
+        self.assertEqual(env.get("EDITOR"), "true")
+        self.assertEqual(env.get("VISUAL"), "true")
+
 
 if __name__ == "__main__":
     unittest.main()
-

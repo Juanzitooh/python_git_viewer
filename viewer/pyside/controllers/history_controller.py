@@ -29,6 +29,8 @@ from ...core.commit_content import (
 )
 from ...core.git_client import load_commit_details, load_commit_summaries
 from ...core.history_local_ops import (
+    ReorderDependencyIssue as CoreReorderDependencyIssue,
+    analyze_local_reorder_dependencies as core_analyze_local_reorder_dependencies,
     apply_local_commit_reorder as core_apply_local_commit_reorder,
     load_local_only_commit_hashes as core_load_local_only_commit_hashes,
     load_reorderable_local_commits as core_load_reorderable_local_commits,
@@ -605,6 +607,7 @@ def _restore_history_commit_selection(window: object, rows: list[int]) -> None:
 
 
 def _refresh_after_history_export(window: object) -> None:
+    window._refresh_stash_tab_visibility()
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
     window._refresh_commit_files()
@@ -856,6 +859,19 @@ def open_history_reorder_dialog(window: object) -> None:
         if new_order == original_order:
             QMessageBox.information(dialog, "Reordenar commits", "A ordem nao foi alterada.")
             return
+        issues = _build_reorder_dependency_warnings(window, commit_rows)
+        if issues:
+            QMessageBox.warning(
+                dialog,
+                "Dependencias detectadas",
+                (
+                    "A reordenacao foi bloqueada porque a nova ordem possui dependencias com alto risco de conflito.\n\n"
+                    "Exemplos detectados:\n"
+                    + "\n".join(issues[:8])
+                    + ("\n..." if len(issues) > 8 else "")
+                ),
+            )
+            return
         question = QMessageBox.question(
             dialog,
             "Confirmar reordenacao",
@@ -890,6 +906,25 @@ def open_history_reorder_dialog(window: object) -> None:
         dialog.setEnabled(True)
 
         if not result.ok:
+            if result.conflict_in_progress:
+                QMessageBox.warning(
+                    dialog,
+                    "Reordenar commits",
+                    (
+                        f"Conflitos detectados ao reordenar commits:\n{result.error_message}\n\n"
+                        f"Backup disponivel em: {result.backup_branch}\n\n"
+                        "A janela de conflitos sera aberta para continuar/abortar o cherry-pick."
+                    ),
+                )
+                window._set_status("Conflitos detectados na reordenacao de commits locais.")
+                window._show_conflicts_dialog(
+                    operation="cherry-pick",
+                    source_label="Reordenar commits",
+                    abort_restore_ref=result.backup_branch,
+                )
+                _refresh_after_history_export(window)
+                dialog.accept()
+                return
             if result.restore_error_message:
                 QMessageBox.critical(
                     dialog,
@@ -929,3 +964,27 @@ def open_history_reorder_dialog(window: object) -> None:
     close_button.clicked.connect(dialog.reject)
     render_list(0)
     dialog.exec()
+
+
+def _build_reorder_dependency_warnings(window: object, commit_rows: list[object]) -> list[str]:
+    if not window.repo_path:
+        return []
+    try:
+        issues = core_analyze_local_reorder_dependencies(window.repo_path, commit_rows)
+    except RuntimeError:
+        return []
+    return [_format_reorder_dependency_issue(issue) for issue in issues]
+
+
+def _format_reorder_dependency_issue(issue: CoreReorderDependencyIssue) -> str:
+    left = issue.first_commit[:7]
+    right = issue.second_commit[:7]
+    if issue.reason == "modify_before_add":
+        return f"- {issue.path}: commit {left} modifica/deleta antes de {right} criar o arquivo."
+    if issue.reason == "modify_after_delete":
+        return f"- {issue.path}: commit {right} modifica apos {left} deletar."
+    if issue.reason == "modify_before_rename":
+        return f"- {issue.path}: commit {left} altera destino antes do rename ({right})."
+    if issue.reason == "modify_after_rename":
+        return f"- {issue.path}: commit {right} altera origem apos rename ({left})."
+    return f"- {issue.path}: dependencia entre {left} e {right}."
