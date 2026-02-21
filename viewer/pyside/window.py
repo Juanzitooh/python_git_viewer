@@ -97,6 +97,7 @@ from .controllers import (
     push_repo,
     refresh_commit_files,
     refresh_commit_diff,
+    refresh_conflict_tab_visibility,
     refresh_import_source_repos,
     refresh_import_patch_view,
     refresh_compare_branch_options,
@@ -166,6 +167,9 @@ from .controllers import (
     refresh_stash_patch_view,
     refresh_stash_tab_visibility,
     reload_history_commits,
+    on_conflict_file_selected,
+    open_conflict_resolver_from_tab,
+    open_selected_conflict_file,
     show_conflicts_dialog,
     pop_selected_stash,
     drop_selected_stash,
@@ -173,6 +177,7 @@ from .controllers import (
 from .layout import build_status_bar, build_top_bar
 from .tabs import (
     build_commit_tab,
+    build_conflict_tab,
     build_compare_tab,
     build_history_tab,
     build_import_tab,
@@ -324,16 +329,18 @@ class QtShellWindow(QMainWindow):
         self._auto_update_bridge = _AutoUpdateBridge(self)
         self._auto_update_bridge.finished.connect(self._on_background_task_finished)
         self._auto_profile: UpdateProfile = resolve_update_profile(self.settings_data)
+        self.conflict_abort_restore_ref = ""
         self._resolved_theme_name = "light"
         self.current_theme = "light"
         self.current_theme_preference = "system"
 
-        self.setWindowTitle("Git Viewer (PySide6)")
+        self.setWindowTitle("Viewer: (sem repositorio)/(sem branch)")
         self.resize(1280, 820)
 
         self._apply_theme_from_settings()
         self._connect_system_theme_updates()
         self._build_ui()
+        self._sync_window_title()
         self._load_repo_selector_items()
 
         initial_repo = self.repo_path
@@ -356,7 +363,7 @@ class QtShellWindow(QMainWindow):
                     self.tabs.setCurrentIndex(index)
                     return
             # Se a aba Stash nao existir nesta sessao, cair em Commit mantem fluxo esperado.
-            if last_tab_name == "Stash":
+            if last_tab_name in {"Stash", "Conflict"}:
                 for index in range(self.tabs.count()):
                     if self.tabs.tabText(index) == "Commit":
                         self.tabs.setCurrentIndex(index)
@@ -385,6 +392,7 @@ class QtShellWindow(QMainWindow):
         self.repositories_tab = QWidget(self.tabs)
         self.commit_tab = QWidget(self.tabs)
         self.stash_tab = QWidget()
+        self.conflict_tab = QWidget()
         self.history_tab = QWidget(self.tabs)
         self.import_tab = QWidget(self.tabs)
         self.compare_tab = QWidget(self.tabs)
@@ -401,6 +409,8 @@ class QtShellWindow(QMainWindow):
         self._build_commit_tab()
         self._build_stash_tab()
         self.stash_tab.hide()
+        self._build_conflict_tab()
+        self.conflict_tab.hide()
         self._build_history_tab()
         self._build_import_tab()
         self._build_compare_tab()
@@ -713,6 +723,7 @@ class QtShellWindow(QMainWindow):
         if not has_repo:
             self._commit_status_signature = ""
             self._commit_refresh_pending = False
+            self._sync_window_title()
             return
 
         worktree_signature = str(snapshot.get("worktree_signature", "")).strip()
@@ -769,6 +780,7 @@ class QtShellWindow(QMainWindow):
                         f"Publicar branch local `{current_branch}` no remoto origin e configurar upstream."
                     )
             self._sync_import_target_label()
+            self._sync_window_title(current_branch)
             return
 
         if hasattr(self, "publish_button"):
@@ -790,6 +802,7 @@ class QtShellWindow(QMainWindow):
             self.ahead_button.setToolTip("Sem commits locais pendentes para push.")
         self.fetch_button.setText(f"Fetch ({behind})" if behind > 0 else "Fetch")
         self._sync_import_target_label()
+        self._sync_window_title(current_branch)
 
     def _handle_history_head_snapshot(self, snapshot: dict[str, object]) -> None:
         head_hash = str(snapshot.get("head_hash", "")).strip()
@@ -854,6 +867,9 @@ class QtShellWindow(QMainWindow):
 
     def _build_stash_tab(self) -> None:
         build_stash_tab(self)
+
+    def _build_conflict_tab(self) -> None:
+        build_conflict_tab(self)
 
     def _build_history_tab(self) -> None:
         build_history_tab(self)
@@ -1013,12 +1029,15 @@ class QtShellWindow(QMainWindow):
         *,
         source_label: str = "",
         continue_message: str = "",
+        abort_restore_ref: str = "",
     ) -> None:
+        self.conflict_abort_restore_ref = abort_restore_ref.strip()
         show_conflicts_dialog(
             self,
             operation,
             source_label=source_label,
             continue_message=continue_message,
+            abort_restore_ref=abort_restore_ref,
         )
 
     def _on_compare_file_selected(self) -> None:
@@ -1182,6 +1201,19 @@ class QtShellWindow(QMainWindow):
 
     def _refresh_stash_tab_visibility(self) -> None:
         refresh_stash_tab_visibility(self)
+        refresh_conflict_tab_visibility(self)
+
+    def _refresh_conflict_tab_visibility(self) -> None:
+        refresh_conflict_tab_visibility(self)
+
+    def _on_conflict_file_selected(self) -> None:
+        on_conflict_file_selected(self)
+
+    def _open_selected_conflict_file(self) -> None:
+        open_selected_conflict_file(self)
+
+    def _open_conflict_resolver_from_tab(self) -> None:
+        open_conflict_resolver_from_tab(self)
 
     def _on_stash_entry_selected(self) -> None:
         on_stash_entry_selected(self)
@@ -1222,12 +1254,38 @@ class QtShellWindow(QMainWindow):
     def _set_repo(self, repo_path: str, *, save: bool) -> None:
         previous_repo = normalize_repo_path(self.repo_path) if self.repo_path else ""
         set_repo(self, repo_path, save=save)
+        self._sync_window_title()
         current_repo = normalize_repo_path(self.repo_path) if self.repo_path else ""
         if current_repo == previous_repo:
             return
         self._invalidate_background_context()
         self._schedule_background_status_probe(force=True)
         self._schedule_history_head_probe(force=True)
+
+    def _get_window_title_repo_name(self) -> str:
+        resolved_repo = normalize_repo_path(self.repo_path) if self.repo_path else ""
+        if not resolved_repo:
+            return "(sem repositorio)"
+        return os.path.basename(resolved_repo.rstrip(os.sep)) or resolved_repo
+
+    def _get_window_title_branch_name(self) -> str:
+        if hasattr(self, "branch_combo"):
+            branch_data = self.branch_combo.currentData()
+            branch_name = str(branch_data).strip() if branch_data is not None else ""
+            if branch_name:
+                return branch_name
+        if not self.repo_path:
+            return "(sem branch)"
+        try:
+            current_branch = core_get_current_branch(self.repo_path).strip()
+        except RuntimeError:
+            current_branch = ""
+        return current_branch or "(sem branch)"
+
+    def _sync_window_title(self, branch_name: str = "") -> None:
+        repo_name = self._get_window_title_repo_name()
+        resolved_branch = branch_name.strip() or self._get_window_title_branch_name()
+        self.setWindowTitle(f"Viewer: {repo_name}/{resolved_branch}")
 
     def _select_repo_combo_item(self, repo_path: str) -> None:
         select_repo_combo_item(self, repo_path)

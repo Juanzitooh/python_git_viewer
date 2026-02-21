@@ -36,7 +36,13 @@ from .commit_controller import (
     unstage_selected_commit_file,
     update_commit_selection_label,
 )
-from .conflict_controller import show_conflicts_dialog
+from .conflict_controller import (
+    on_conflict_file_selected,
+    open_conflict_resolver_from_tab,
+    open_selected_conflict_file,
+    refresh_conflict_tab_visibility,
+    show_conflicts_dialog,
+)
 from .compare_controller import (
     clear_compare_view,
     get_compare_branches,
@@ -178,6 +184,10 @@ __all__ = [
     "get_selected_commit_paths",
     "create_commit_from_selection",
     "show_conflicts_dialog",
+    "refresh_conflict_tab_visibility",
+    "on_conflict_file_selected",
+    "open_selected_conflict_file",
+    "open_conflict_resolver_from_tab",
     "clear_compare_view",
     "get_compare_branches",
     "on_compare_action_changed",

@@ -700,6 +700,7 @@ def import_selected_commits(window: object) -> None:
                         f"Falha ao importar {summary.commit_hash[:7]}.\n{exc}\nImportação interrompida.",
                     )
                 window.import_status_label.setText(f"Importação interrompida após {applied} commit(s).")
+                window._refresh_stash_tab_visibility()
                 window._refresh_repo_state_ui()
                 window._refresh_workspace_tree()
                 window._reload_history_commits()
@@ -713,6 +714,7 @@ def import_selected_commits(window: object) -> None:
 
     window.import_status_label.setText(f"Importação concluída: {applied} commit(s) em {target}.")
     window._set_status(f"Importado em {target}: {applied} commit(s).")
+    window._refresh_stash_tab_visibility()
     window._refresh_repo_state_ui()
     window._refresh_workspace_tree()
     window._reload_history_commits()

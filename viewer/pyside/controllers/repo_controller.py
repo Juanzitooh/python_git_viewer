@@ -463,8 +463,50 @@ def _checkout_branch_in_repo(window: object, repo_path: str, target_branch: str)
         return False
     if current_branch == normalized_target:
         return False
+
     try:
-        core_checkout_branch(normalized_repo, normalized_target)
+        changed_files = core_list_worktree_changed_files(normalized_repo)
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Branch", str(exc))
+        refresh_workspace_tree(window)
+        return False
+    stash_before_checkout = False
+    if changed_files:
+        preview = "\n".join(f"- {path}" for path in changed_files[:3])
+        if len(changed_files) > 3:
+            preview += f"\n... +{len(changed_files) - 3} arquivo(s)"
+        confirm = QMessageBox(window)
+        confirm.setWindowTitle("Trocar branch")
+        confirm.setIcon(QMessageBox.Icon.Question)
+        confirm.setText("Ha mudancas locais em aberto.")
+        confirm.setInformativeText(
+            (
+                f"Destino: {normalized_target}\n\n"
+                "Escolha como continuar:\n"
+                "- Levar mudancas para a branch de destino (checkout direto)\n"
+                "- Stash e trocar branch\n\n"
+                f"Arquivos detectados:\n{preview}"
+            )
+        )
+        carry_button = confirm.addButton("Levar mudancas", QMessageBox.ButtonRole.AcceptRole)
+        stash_button = confirm.addButton("Stash e trocar", QMessageBox.ButtonRole.ActionRole)
+        cancel_button = confirm.addButton(QMessageBox.StandardButton.Cancel)
+        confirm.setDefaultButton(carry_button)
+        confirm.setEscapeButton(cancel_button)
+        confirm.exec()
+        clicked = confirm.clickedButton()
+        if clicked == cancel_button or clicked is None:
+            refresh_workspace_tree(window)
+            window._set_status("Checkout cancelado.")
+            return False
+        stash_before_checkout = clicked == stash_button
+    try:
+        core_checkout_branch(
+            normalized_repo,
+            normalized_target,
+            stash_before=stash_before_checkout,
+            stash_message=f"git_viewer:checkout:{normalized_target}",
+        )
     except RuntimeError as exc:
         QMessageBox.critical(window, "Branch", str(exc))
         refresh_workspace_tree(window)
@@ -479,7 +521,12 @@ def _checkout_branch_in_repo(window: object, repo_path: str, target_branch: str)
         window._refresh_import_source_repos()
         window._sync_import_target_label()
     refresh_workspace_tree(window)
-    window._set_status(f"Branch alterada em {os.path.basename(normalized_repo)}: {normalized_target}")
+    if stash_before_checkout:
+        window._set_status(
+            f"Branch alterada em {os.path.basename(normalized_repo)}: {normalized_target} (mudancas enviadas para stash)."
+        )
+    else:
+        window._set_status(f"Branch alterada em {os.path.basename(normalized_repo)}: {normalized_target}")
     window._persist_state()
     return True
 
@@ -1426,6 +1473,8 @@ def refresh_repo_state_ui(window: object) -> None:
         window.branch_combo.clear()
         sync_branch_combo_tooltip(window.branch_combo, "Trocar branch ativa")
         window._sync_import_target_label()
+        if hasattr(window, "_sync_window_title"):
+            window._sync_window_title()
         return
 
     try:
@@ -1473,6 +1522,8 @@ def refresh_repo_state_ui(window: object) -> None:
                     f"Publicar branch local `{current}` no remoto origin e configurar upstream."
                 )
         window._sync_import_target_label()
+        if hasattr(window, "_sync_window_title"):
+            window._sync_window_title(current)
         return
 
     behind, ahead = core_get_ahead_behind(window.repo_path, upstream)
@@ -1492,6 +1543,8 @@ def refresh_repo_state_ui(window: object) -> None:
         window.ahead_button.setToolTip("Sem commits locais pendentes para push.")
     window.fetch_button.setText(f"Fetch ({behind})" if behind > 0 else "Fetch")
     window._sync_import_target_label()
+    if hasattr(window, "_sync_window_title"):
+        window._sync_window_title(current)
 
 
 def add_recent_repo(window: object, repo_path: str) -> None:

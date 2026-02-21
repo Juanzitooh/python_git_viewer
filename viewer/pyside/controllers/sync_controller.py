@@ -10,6 +10,7 @@ from ...core.remote_ops import (
     push_current_branch as core_push_current_branch,
 )
 from ...core.repo_state import get_current_branch as core_get_current_branch, get_upstream as core_get_upstream
+from ...core.repo_state import list_worktree_changed_files as core_list_worktree_changed_files
 
 
 def on_branch_changed(window: object, _index: int) -> None:
@@ -28,12 +29,56 @@ def on_branch_changed(window: object, _index: int) -> None:
     if current == target:
         return
     try:
-        core_checkout_branch(window.repo_path, target)
+        changed_files = core_list_worktree_changed_files(window.repo_path)
     except RuntimeError as exc:
         QMessageBox.critical(window, "Checkout", str(exc))
         window._refresh_repo_state_ui()
         return
-    window._set_status(f"Checkout concluido: {target}")
+    stash_before_checkout = False
+    if changed_files:
+        preview = "\n".join(f"- {path}" for path in changed_files[:3])
+        if len(changed_files) > 3:
+            preview += f"\n... +{len(changed_files) - 3} arquivo(s)"
+        confirm = QMessageBox(window)
+        confirm.setWindowTitle("Trocar branch")
+        confirm.setIcon(QMessageBox.Icon.Question)
+        confirm.setText("Ha mudancas locais em aberto.")
+        confirm.setInformativeText(
+            (
+                f"Destino: {target}\n\n"
+                "Escolha como continuar:\n"
+                "- Levar mudancas para a branch de destino (checkout direto)\n"
+                "- Stash e trocar branch\n\n"
+                f"Arquivos detectados:\n{preview}"
+            )
+        )
+        carry_button = confirm.addButton("Levar mudancas", QMessageBox.ButtonRole.AcceptRole)
+        stash_button = confirm.addButton("Stash e trocar", QMessageBox.ButtonRole.ActionRole)
+        cancel_button = confirm.addButton(QMessageBox.StandardButton.Cancel)
+        confirm.setDefaultButton(carry_button)
+        confirm.setEscapeButton(cancel_button)
+        confirm.exec()
+        clicked = confirm.clickedButton()
+        if clicked == cancel_button or clicked is None:
+            window._refresh_repo_state_ui()
+            window._set_status("Checkout cancelado.")
+            return
+        stash_before_checkout = clicked == stash_button
+    try:
+        core_checkout_branch(
+            window.repo_path,
+            target,
+            stash_before=stash_before_checkout,
+            stash_message=f"git_viewer:checkout:{target}",
+        )
+    except RuntimeError as exc:
+        QMessageBox.critical(window, "Checkout", str(exc))
+        window._refresh_repo_state_ui()
+        return
+    if stash_before_checkout:
+        window._set_status(f"Checkout concluido: {target} (mudancas enviadas para stash).")
+    else:
+        window._set_status(f"Checkout concluido: {target}")
     window._refresh_repo_state_ui()
     window._refresh_stash_tab_visibility()
     window._refresh_workspace_tree()
