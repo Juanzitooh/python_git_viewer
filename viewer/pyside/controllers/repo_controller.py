@@ -1262,6 +1262,160 @@ def on_workspace_tree_context_menu(window: object, pos: QPoint) -> None:
     )
 
 
+def _get_github_ssh_cache(window: object) -> dict[str, object]:
+    cache = window.settings_data.get("github_ssh_cache", {})
+    if isinstance(cache, dict):
+        return dict(cache)
+    return {}
+
+
+def _update_github_ssh_cache(window: object, key_path: str, authenticated: bool) -> None:
+    key_file = normalize_repo_path(key_path)
+    key_mtime_ns = 0
+    if key_file and os.path.exists(key_file):
+        try:
+            key_mtime_ns = os.stat(key_file).st_mtime_ns
+        except OSError:
+            key_mtime_ns = 0
+    existing = _get_github_ssh_cache(window)
+    window.settings_data["github_ssh_cache"] = {
+        "has_key": bool(key_file and os.path.exists(key_file)),
+        "authenticated": bool(authenticated),
+        "key_path": key_file,
+        "checked_at": int(time.time()),
+        "key_mtime_ns": int(key_mtime_ns),
+        "startup_prompt_done": bool(existing.get("startup_prompt_done", False)),
+    }
+    window._persist_state()
+
+
+def _set_github_ssh_startup_prompt_done(window: object) -> None:
+    cache = _get_github_ssh_cache(window)
+    cache["startup_prompt_done"] = True
+    window.settings_data["github_ssh_cache"] = cache
+    window._persist_state()
+
+
+def open_github_ssh_setup_dialog(window: object, *, parent: QWidget | None = None) -> bool:
+    setup_parent = parent or window
+    try:
+        created, key_path, pub_key = ensure_github_ssh_key()
+    except RuntimeError as exc:
+        QMessageBox.critical(setup_parent, "SSH GitHub", str(exc))
+        return False
+
+    setup_dialog = QDialog(setup_parent)
+    setup_dialog.setWindowTitle("Configurar SSH no GitHub")
+    setup_dialog.setModal(True)
+    setup_dialog.resize(760, 520)
+
+    setup_layout = QVBoxLayout(setup_dialog)
+    setup_layout.setContentsMargins(12, 12, 12, 12)
+    setup_layout.setSpacing(8)
+
+    instructions = QLabel(
+        (
+            "1) Clique em 'Abrir pagina SSH do GitHub'.\n"
+            "2) Em Title use: git_viewer\n"
+            "3) Em Key cole a chave abaixo.\n"
+            "4) O app vai testar automaticamente ate autenticar."
+        ),
+        setup_dialog,
+    )
+    instructions.setWordWrap(True)
+    setup_layout.addWidget(instructions)
+
+    key_label = QLabel(f"Chave publica: {key_path}.pub", setup_dialog)
+    setup_layout.addWidget(key_label)
+
+    key_view = QPlainTextEdit(setup_dialog)
+    key_view.setReadOnly(True)
+    key_view.setPlainText(pub_key)
+    key_view.setMinimumHeight(160)
+    setup_layout.addWidget(key_view, stretch=1)
+
+    auth_status = QLabel("Testando autenticacao SSH com GitHub...", setup_dialog)
+    auth_status.setWordWrap(True)
+    setup_layout.addWidget(auth_status)
+
+    auth_output = QPlainTextEdit(setup_dialog)
+    auth_output.setReadOnly(True)
+    auth_output.setMinimumHeight(120)
+    setup_layout.addWidget(auth_output)
+
+    actions = QWidget(setup_dialog)
+    actions_layout = QHBoxLayout(actions)
+    actions_layout.setContentsMargins(0, 0, 0, 0)
+    actions_layout.setSpacing(6)
+    copy_button = QPushButton("Copiar chave", actions)
+    open_page_button = QPushButton("Abrir pagina SSH do GitHub", actions)
+    test_now_button = QPushButton("Testar agora", actions)
+    close_button = QPushButton("Fechar", actions)
+    actions_layout.addWidget(copy_button)
+    actions_layout.addWidget(open_page_button)
+    actions_layout.addWidget(test_now_button)
+    actions_layout.addStretch(1)
+    actions_layout.addWidget(close_button)
+    setup_layout.addWidget(actions)
+
+    timer = QTimer(setup_dialog)
+    timer.setInterval(5000)
+    auth_state = {"authenticated": False}
+
+    def _run_auth_check() -> None:
+        auth_status.setText("Testando autenticacao SSH com GitHub...")
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        try:
+            ok, output = check_github_ssh_auth(key_path, timeout_sec=5)
+        except Exception as exc:  # pragma: no cover - caminho de erro externo (ssh/rede)
+            ok, output = False, str(exc)
+        output = output.strip() or "(sem retorno do ssh)"
+        auth_output.setPlainText(output)
+        _update_github_ssh_cache(window, key_path, ok)
+        if ok:
+            auth_state["authenticated"] = True
+            auth_status.setText("Autenticado com GitHub via SSH. Clone por SSH liberado.")
+            timer.stop()
+        else:
+            auth_status.setText("Ainda nao autenticado. Cadastre a chave no GitHub e aguarde novo teste.")
+
+    def _open_ssh_page() -> None:
+        window._open_url_in_browser("https://github.com/settings/ssh/new")
+
+    def _copy_key() -> None:
+        window._copy_to_clipboard(pub_key, status="Chave SSH copiada.")
+
+    def _close_setup() -> None:
+        timer.stop()
+        setup_dialog.accept()
+
+    copy_button.clicked.connect(_copy_key)
+    open_page_button.clicked.connect(_open_ssh_page)
+    test_now_button.clicked.connect(_run_auth_check)
+    close_button.clicked.connect(_close_setup)
+    timer.timeout.connect(_run_auth_check)
+
+    if created:
+        auth_output.setPlainText("Nova chave SSH criada com sucesso.")
+    timer.start()
+    _run_auth_check()
+    setup_dialog.exec()
+    timer.stop()
+    return bool(auth_state["authenticated"])
+
+
+def maybe_open_github_ssh_setup_on_first_run(window: object, *, parent: QWidget | None = None) -> None:
+    cache = _get_github_ssh_cache(window)
+    if bool(cache.get("startup_prompt_done", False)):
+        return
+    _set_github_ssh_startup_prompt_done(window)
+    if bool(cache.get("authenticated", False)):
+        return
+    open_github_ssh_setup_dialog(window, parent=parent)
+
+
 def open_clone_dialog(
     window: object,
     *,
@@ -1334,131 +1488,6 @@ def open_clone_dialog(
 
     state = {"cloning": False, "cancelled": False}
 
-    def _update_ssh_cache(key_path: str, authenticated: bool) -> None:
-        key_file = normalize_repo_path(key_path)
-        key_mtime_ns = 0
-        if key_file and os.path.exists(key_file):
-            try:
-                key_mtime_ns = os.stat(key_file).st_mtime_ns
-            except OSError:
-                key_mtime_ns = 0
-        window.settings_data["github_ssh_cache"] = {
-            "has_key": bool(key_file and os.path.exists(key_file)),
-            "authenticated": bool(authenticated),
-            "key_path": key_file,
-            "last_check_ts": int(time.time()),
-            "key_mtime_ns": int(key_mtime_ns),
-        }
-        window._persist_state()
-
-    def _open_github_ssh_setup_dialog() -> bool:
-        try:
-            created, key_path, pub_key = ensure_github_ssh_key()
-        except RuntimeError as exc:
-            QMessageBox.critical(dialog, "SSH GitHub", str(exc))
-            return False
-
-        setup_dialog = QDialog(dialog)
-        setup_dialog.setWindowTitle("Configurar SSH no GitHub")
-        setup_dialog.setModal(True)
-        setup_dialog.resize(760, 520)
-
-        setup_layout = QVBoxLayout(setup_dialog)
-        setup_layout.setContentsMargins(12, 12, 12, 12)
-        setup_layout.setSpacing(8)
-
-        instructions = QLabel(
-            (
-                "1) Clique em 'Abrir pagina SSH do GitHub'.\n"
-                "2) Em Title use: git_viewer\n"
-                "3) Em Key cole a chave abaixo.\n"
-                "4) O app vai testar automaticamente ate autenticar."
-            ),
-            setup_dialog,
-        )
-        instructions.setWordWrap(True)
-        setup_layout.addWidget(instructions)
-
-        key_label = QLabel(f"Chave publica: {key_path}.pub", setup_dialog)
-        setup_layout.addWidget(key_label)
-
-        key_view = QPlainTextEdit(setup_dialog)
-        key_view.setReadOnly(True)
-        key_view.setPlainText(pub_key)
-        key_view.setMinimumHeight(160)
-        setup_layout.addWidget(key_view, stretch=1)
-
-        auth_status = QLabel("Testando autenticacao SSH com GitHub...", setup_dialog)
-        auth_status.setWordWrap(True)
-        setup_layout.addWidget(auth_status)
-
-        auth_output = QPlainTextEdit(setup_dialog)
-        auth_output.setReadOnly(True)
-        auth_output.setMinimumHeight(120)
-        setup_layout.addWidget(auth_output)
-
-        actions = QWidget(setup_dialog)
-        actions_layout = QHBoxLayout(actions)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(6)
-        copy_button = QPushButton("Copiar chave", actions)
-        open_page_button = QPushButton("Abrir pagina SSH do GitHub", actions)
-        test_now_button = QPushButton("Testar agora", actions)
-        close_button = QPushButton("Fechar", actions)
-        actions_layout.addWidget(copy_button)
-        actions_layout.addWidget(open_page_button)
-        actions_layout.addWidget(test_now_button)
-        actions_layout.addStretch(1)
-        actions_layout.addWidget(close_button)
-        setup_layout.addWidget(actions)
-
-        timer = QTimer(setup_dialog)
-        timer.setInterval(5000)
-        auth_state = {"authenticated": False}
-
-        def _run_auth_check() -> None:
-            auth_status.setText("Testando autenticacao SSH com GitHub...")
-            app = QApplication.instance()
-            if app is not None:
-                app.processEvents()
-            try:
-                ok, output = check_github_ssh_auth(key_path, timeout_sec=5)
-            except Exception as exc:  # pragma: no cover - caminho de erro externo (ssh/rede)
-                ok, output = False, str(exc)
-            output = output.strip() or "(sem retorno do ssh)"
-            auth_output.setPlainText(output)
-            _update_ssh_cache(key_path, ok)
-            if ok:
-                auth_state["authenticated"] = True
-                auth_status.setText("Autenticado com GitHub via SSH. Clone por SSH liberado.")
-                timer.stop()
-            else:
-                auth_status.setText("Ainda nao autenticado. Cadastre a chave no GitHub e aguarde novo teste.")
-
-        def _open_ssh_page() -> None:
-            window._open_url_in_browser("https://github.com/settings/ssh/new")
-
-        def _copy_key() -> None:
-            window._copy_to_clipboard(pub_key, status="Chave SSH copiada.")
-
-        def _close_setup() -> None:
-            timer.stop()
-            setup_dialog.accept()
-
-        copy_button.clicked.connect(_copy_key)
-        open_page_button.clicked.connect(_open_ssh_page)
-        test_now_button.clicked.connect(_run_auth_check)
-        close_button.clicked.connect(_close_setup)
-        timer.timeout.connect(_run_auth_check)
-
-        if created:
-            auth_output.setPlainText("Nova chave SSH criada com sucesso.")
-        timer.start()
-        _run_auth_check()
-        setup_dialog.exec()
-        timer.stop()
-        return bool(auth_state["authenticated"])
-
     def choose_root() -> None:
         selected = QFileDialog.getExistingDirectory(dialog, "Selecionar raiz do workspace", root_input.text().strip() or default_root)
         if selected:
@@ -1505,7 +1534,7 @@ def open_clone_dialog(
                     QMessageBox.StandardButton.Yes,
                 )
                 if answer == QMessageBox.StandardButton.Yes:
-                    authenticated = _open_github_ssh_setup_dialog()
+                    authenticated = open_github_ssh_setup_dialog(window, parent=dialog)
                     if not authenticated:
                         status_label.setText("SSH ainda nao autenticado. Voce pode tentar clone mesmo assim.")
         state["cloning"] = True
@@ -1554,7 +1583,7 @@ def open_clone_dialog(
         dialog.accept()
 
     root_pick_button.clicked.connect(choose_root)
-    ssh_button.clicked.connect(_open_github_ssh_setup_dialog)
+    ssh_button.clicked.connect(lambda: open_github_ssh_setup_dialog(window, parent=dialog))
     cancel_button.clicked.connect(cancel_action)
     clone_button.clicked.connect(run_clone)
     dialog.exec()

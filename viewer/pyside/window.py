@@ -84,6 +84,7 @@ from .controllers import (
     on_repo_combo_dropdown_context_menu,
     on_branch_combo_context_menu,
     on_branch_combo_dropdown_context_menu,
+    maybe_open_github_ssh_setup_on_first_run,
     open_clone_dialog,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
@@ -352,6 +353,7 @@ class QtShellWindow(QMainWindow):
         self._persist_state()
 
         self._setup_background_timers()
+        QTimer.singleShot(700, self._maybe_open_github_ssh_setup_on_first_run)
 
     def _restore_last_tab_from_settings(self) -> None:
         if not hasattr(self, "tabs"):
@@ -561,6 +563,11 @@ class QtShellWindow(QMainWindow):
         self._schedule_background_status_probe(force=True)
         self._schedule_history_head_probe(force=True)
         self._on_auto_workspace_timer()
+
+    def _maybe_open_github_ssh_setup_on_first_run(self) -> None:
+        if self._is_closing:
+            return
+        maybe_open_github_ssh_setup_on_first_run(self, parent=self)
 
     def _on_auto_status_timer(self) -> None:
         self._sync_dynamic_status_timer_interval()

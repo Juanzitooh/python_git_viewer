@@ -148,8 +148,9 @@ def _sanitize_github_ssh_cache(value: object) -> dict[str, object]:
     key_path = ""
     if isinstance(key_path_raw, str) and key_path_raw.strip():
         key_path = normalize_repo_path(key_path_raw)
-    checked_at_raw = value.get("checked_at", 0)
+    checked_at_raw = value.get("checked_at", value.get("last_check_ts", 0))
     key_mtime_ns_raw = value.get("key_mtime_ns", 0)
+    startup_prompt_done = bool(value.get("startup_prompt_done", False))
     try:
         checked_at = int(checked_at_raw)  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -171,6 +172,7 @@ def _sanitize_github_ssh_cache(value: object) -> dict[str, object]:
         "key_path": key_path,
         "checked_at": checked_at,
         "key_mtime_ns": key_mtime_ns,
+        "startup_prompt_done": startup_prompt_done,
     }
 
 
