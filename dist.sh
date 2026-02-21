@@ -23,7 +23,7 @@ usage() {
 Uso: ./dist.sh [opcoes]
 
 Fluxo padrao:
-1) Gera checklists da versao (sem sobrescrever arquivos existentes)
+1) Gera checklists versionados da versao (sem sobrescrever arquivos existentes)
 2) Executa testes unitarios
 3) Gera .deb e AppImage
 4) Instala (ou reinstala) o .deb
@@ -117,6 +117,63 @@ PY
 VERSION="$(resolve_version)"
 echo "Versao alvo: ${VERSION}"
 
+resolve_os_pretty_name() {
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    if [[ -n "${PRETTY_NAME:-}" ]]; then
+      printf '%s\n' "${PRETTY_NAME}"
+      return
+    fi
+  fi
+  if command -v lsb_release >/dev/null 2>&1; then
+    lsb_release -ds 2>/dev/null | tr -d '"' && return
+  fi
+  printf '%s\n' "$(uname -s)"
+}
+
+resolve_checklist_tester() {
+  if [[ -n "${GIT_VIEWER_TESTER:-}" ]]; then
+    printf '%s\n' "${GIT_VIEWER_TESTER}"
+    return
+  fi
+  local git_user
+  git_user="$(git -C "${ROOT_DIR}" config --get user.name 2>/dev/null || true)"
+  if [[ -n "${git_user}" ]]; then
+    printf '%s\n' "${git_user}"
+    return
+  fi
+  printf '%s\n' "${USER:-tester}"
+}
+
+resolve_branch_commit() {
+  local branch commit
+  branch="$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  commit="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
+  if [[ -n "${branch}" && -n "${commit}" ]]; then
+    printf '%s\n' "${branch}@${commit}"
+    return
+  fi
+  if [[ -n "${branch}" ]]; then
+    printf '%s\n' "${branch}"
+    return
+  fi
+  if [[ -n "${commit}" ]]; then
+    printf '%s\n' "${commit}"
+    return
+  fi
+  printf '%s\n' "(nao identificado)"
+}
+
+CHECKLIST_DATE="$(date +%Y-%m-%d)"
+CHECKLIST_TESTER="$(resolve_checklist_tester)"
+CHECKLIST_BRANCH_COMMIT="$(resolve_branch_commit)"
+CHECKLIST_DISTRO_NAME="$(resolve_os_pretty_name)"
+CHECKLIST_KERNEL="$(uname -r)"
+CHECKLIST_ARCH="$(uname -m)"
+CHECKLIST_OS_INFO="${CHECKLIST_DISTRO_NAME} | kernel ${CHECKLIST_KERNEL} | arch ${CHECKLIST_ARCH}"
+CHECKLIST_DISTRO_KERNEL="${CHECKLIST_DISTRO_NAME} / ${CHECKLIST_KERNEL}"
+
 ensure_checklist_templates() {
   mkdir -p "${CHECKLIST_DIR}"
 
@@ -191,18 +248,46 @@ create_checklist_from_base() {
     return
   fi
 
-  python3 - "${base_path}" "${output_path}" "${VERSION}" <<'PY'
+  python3 - "${base_path}" "${output_path}" "${VERSION}" "${CHECKLIST_DATE}" "${CHECKLIST_TESTER}" "${CHECKLIST_BRANCH_COMMIT}" "${CHECKLIST_OS_INFO}" "${CHECKLIST_DISTRO_KERNEL}" <<'PY'
 from datetime import date
 from pathlib import Path
+import re
 import sys
 
 base = Path(sys.argv[1])
 target = Path(sys.argv[2])
 version = sys.argv[3]
+checklist_date = sys.argv[4]
+tester = sys.argv[5]
+branch_commit = sys.argv[6]
+os_info = sys.argv[7]
+distro_kernel = sys.argv[8]
 
 text = base.read_text(encoding="utf-8")
-text = text.replace("{{VERSION}}", version)
-text = text.replace("{{DATE}}", date.today().isoformat())
+
+replacements = {
+    "{{VERSION}}": version,
+    "{{DATE}}": checklist_date or date.today().isoformat(),
+    "{{TESTER}}": tester,
+    "{{BRANCH_COMMIT}}": branch_commit,
+    "{{OS_INFO}}": os_info,
+    "{{DISTRO_KERNEL}}": distro_kernel,
+}
+for token, value in replacements.items():
+    text = text.replace(token, value)
+
+# Compatibilidade com templates antigos sem placeholders.
+legacy_line_fills = {
+    "Data": checklist_date,
+    "Testador": tester,
+    "Branch/commit": branch_commit,
+    "SO": os_info,
+    "Distro/kernel": distro_kernel,
+}
+for label, value in legacy_line_fills.items():
+    pattern = re.compile(rf"^(-\s*{re.escape(label)}:)\s*$", re.MULTILINE)
+    text = pattern.sub(rf"\1 {value}", text)
+
 target.write_text(text, encoding="utf-8")
 PY
   echo "Checklist criado: ${output_path}"
@@ -211,13 +296,9 @@ PY
 generate_checklists_for_version() {
   ensure_checklist_templates
 
-  local functional_latest="${CHECKLIST_DIR}/CHECKLIST_FUNCIONAL.md"
-  local distribution_latest="${CHECKLIST_DIR}/CHECKLIST_DISTRIBUICAO.md"
   local functional_versioned="${CHECKLIST_DIR}/CHECKLIST_FUNCIONAL_${VERSION}.md"
   local distribution_versioned="${CHECKLIST_DIR}/CHECKLIST_DISTRIBUICAO_${VERSION}.md"
 
-  create_checklist_from_base "${CHECKLIST_FUNC_BASE}" "${functional_latest}"
-  create_checklist_from_base "${CHECKLIST_DIST_BASE}" "${distribution_latest}"
   create_checklist_from_base "${CHECKLIST_FUNC_BASE}" "${functional_versioned}"
   create_checklist_from_base "${CHECKLIST_DIST_BASE}" "${distribution_versioned}"
 }
