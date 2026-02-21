@@ -57,6 +57,7 @@ def build_stash_tab(window: object) -> None:
     left_layout.addWidget(QLabel("Stashes:", left_panel))
     window.stash_entries_list = UnifiedListWidget(left_panel)
     window.stash_entries_list.itemSelectionChanged.connect(window._on_stash_entry_selected)
+    window.stash_entries_list.itemDoubleClicked.connect(lambda _item: window._pop_selected_stash())
     window.stash_entries_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.stash_entries_list.customContextMenuRequested.connect(window._on_stash_entry_context_menu)
     left_layout.addWidget(window.stash_entries_list, stretch=1)
