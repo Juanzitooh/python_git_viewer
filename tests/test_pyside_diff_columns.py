@@ -118,6 +118,20 @@ class TestPySideDiffColumns(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item.text(2), "(selecione um arquivo)")
 
+    def test_render_binary_patch_summary(self) -> None:
+        view = DiffColumnsView(include_marker_column=False)
+        patch = (
+            "diff --git a/blob.zip b/blob.zip\n"
+            "new file mode 100644\n"
+            "index 0000000..1234567\n"
+            "Binary files /dev/null and b/blob.zip differ\n"
+        )
+        render_diff_into_columns(view, patch, show_header_lines=False)
+        self.assertGreaterEqual(view.topLevelItemCount(), 4)
+        first_row = view.topLevelItem(0)
+        self.assertIsNotNone(first_row)
+        self.assertIn("arquivo binario", first_row.text(2))
+
     def test_render_with_marker_column_exposes_hunk_and_line_roles(self) -> None:
         view = DiffColumnsView(include_marker_column=True)
         patch = (

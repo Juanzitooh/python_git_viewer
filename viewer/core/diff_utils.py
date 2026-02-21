@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
+
 from .models import DiffData, DiffHunk, DiffLineInfo
 
 
@@ -111,6 +113,69 @@ def strip_word_diff_markers(text: str) -> str:
     cleaned = cleaned.replace("{-", "")
     cleaned = cleaned.replace("-}", "")
     return cleaned
+
+
+_BINARY_FILES_PATTERN = re.compile(r"^Binary files (.+) and (.+) differ$")
+_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico")
+
+
+def is_binary_patch_text(diff_text: str) -> bool:
+    for raw_line in diff_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line == "GIT binary patch":
+            return True
+        if line.startswith("Binary files ") and line.endswith(" differ"):
+            return True
+    return False
+
+
+def summarize_binary_patch_text(diff_text: str) -> list[str]:
+    summary: list[str] = ["(arquivo binario: diff textual indisponivel)"]
+    image_hint_added = False
+    for raw_line in diff_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("diff --git "):
+            summary.append(line)
+            parts = line.split()
+            if len(parts) >= 4:
+                target = parts[3].strip()
+                if target.startswith("b/"):
+                    target = target[2:]
+                if target.lower().endswith(_IMAGE_EXTENSIONS):
+                    summary.append("arquivo de imagem detectado (preview visual ainda nao habilitado).")
+                    image_hint_added = True
+            continue
+        if line.startswith("new file mode ") or line.startswith("deleted file mode "):
+            summary.append(line)
+            continue
+        if line.startswith("old mode ") or line.startswith("new mode "):
+            summary.append(line)
+            continue
+        if line.startswith("index "):
+            parts = line.split()
+            if len(parts) >= 2 and ".." in parts[1]:
+                old_blob, new_blob = parts[1].split("..", 1)
+                summary.append(f"blob anterior: {old_blob} | blob atual: {new_blob}")
+            else:
+                summary.append(line)
+            continue
+        matched = _BINARY_FILES_PATTERN.match(line)
+        if matched:
+            source_path = matched.group(1).strip()
+            target_path = matched.group(2).strip()
+            summary.append(f"origem: {source_path}")
+            summary.append(f"destino: {target_path}")
+            continue
+        if line == "GIT binary patch":
+            summary.append("patch binario: git binary patch")
+            continue
+    if not image_hint_added:
+        summary.append("Dica: abra o arquivo no editor para validar o conteudo binario.")
+    return summary
 
 
 def parse_diff_data(diff_text: str, *, word_diff_plain: bool = False) -> DiffData:

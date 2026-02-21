@@ -16,7 +16,12 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from ..core.diff_utils import parse_diff_data, strip_word_diff_markers
+from ..core.diff_utils import (
+    is_binary_patch_text,
+    parse_diff_data,
+    strip_word_diff_markers,
+    summarize_binary_patch_text,
+)
 from ..core.models import DiffHunk, DiffLineInfo
 from .theme import get_diff_kind_color
 
@@ -674,6 +679,16 @@ class DiffColumnsRenderer:
             if self.append:
                 return
             self._add_row(self._meta_row_values("(sem diff)"), kind="meta")
+            return
+
+        if is_binary_patch_text(clean_patch):
+            for summary_line in summarize_binary_patch_text(clean_patch):
+                self._add_row(self._meta_row_values(summary_line), kind="meta")
+            if self.scroll_to_top and self.view.topLevelItemCount() > 0:
+                self.view.scrollToTop()
+            self.view._enforce_column_layout()
+            self.view._refresh_wrapped_layout()
+            self.view._apply_selection_colors()
             return
 
         diff_data = parse_diff_data(clean_patch, word_diff_plain=self.word_diff_plain)
