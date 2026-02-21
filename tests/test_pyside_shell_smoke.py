@@ -92,13 +92,13 @@ class TestPySideShellSmoke(unittest.TestCase):
         self.assertGreaterEqual(self.window.import_commits_list.count(), 0)
         self.assertGreaterEqual(self.window.import_files_list.count(), 0)
 
-    def test_history_rows_show_local_marker_without_upstream(self) -> None:
+    def test_history_rows_show_local_prefix_without_upstream(self) -> None:
         self.window._reload_history_commits()
         self.assertGreaterEqual(self.window.history_commits_list.count(), 1)
         first_item = self.window.history_commits_list.item(0)
         self.assertIsNotNone(first_item)
         text = first_item.text() if first_item is not None else ""
-        self.assertTrue(text.startswith("[L] "))
+        self.assertTrue(text.startswith("local "))
 
     def test_stash_tab_visibility_tracks_stashes(self) -> None:
         tab_names = [self.window.tabs.tabText(index) for index in range(self.window.tabs.count())]

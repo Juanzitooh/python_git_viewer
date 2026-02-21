@@ -68,9 +68,6 @@ def build_history_tab(window: object) -> None:
     top_layout.addWidget(window.history_word_diff_check)
 
     top_layout.addStretch(1)
-    window.history_legend_label = QLabel("Legenda: [L] local | [L+O] local+online", top_row)
-    top_layout.addWidget(window.history_legend_label)
-
     layout.addWidget(top_row)
 
     body_splitter = QSplitter(Qt.Orientation.Horizontal, window.history_tab)

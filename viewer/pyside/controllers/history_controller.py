@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QCursor
+from PySide6.QtGui import QCursor, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -40,6 +40,7 @@ from ...core.repo_state import (
     list_branches as core_list_branches,
 )
 from ..diff_columns import render_diff_into_columns
+from ..theme import get_diff_kind_color
 
 
 def clear_history_view(window: object) -> None:
@@ -85,22 +86,41 @@ def on_history_search_text_changed(window: object, _text: str) -> None:
 
 def _history_commit_presence(window: object, commit_hash: str) -> str:
     if not getattr(window, "history_has_upstream", False):
-        return "L"
+        return "local"
     local_only_hashes = getattr(window, "history_local_only_hashes", set())
     if commit_hash in local_only_hashes:
-        return "L"
-    return "L+O"
+        return "local"
+    return "synced"
 
 
 def _format_history_commit_label(window: object, commit_hash: str, subject: str) -> str:
     presence = _history_commit_presence(window, commit_hash)
-    return f"[{presence}] {commit_hash[:7]} | {subject}"
+    if presence == "local":
+        return f"local {commit_hash[:7]} | {subject}"
+    return f"{commit_hash[:7]} | {subject}"
 
 
 def _build_history_commit_tooltip(window: object, commit_hash: str, date: str) -> str:
     marker = _history_commit_presence(window, commit_hash)
-    marker_text = "Local (ainda nao enviado)" if marker == "L" else "Local + online"
+    marker_text = "Local (ainda nao enviado)" if marker == "local" else "Local + online"
     return f"{commit_hash}\n{date}\n{marker_text}".strip()
+
+
+def _history_local_commit_color() -> QColor | None:
+    app = QApplication.instance()
+    if app is None:
+        return None
+    base = app.palette().color(app.palette().ColorRole.Base)
+    is_light = int(base.lightness()) >= 128
+    theme_overrides = app.property("gv_theme_overrides")
+    color_value = get_diff_kind_color(
+        "added",
+        is_light=is_light,
+        theme_overrides=theme_overrides,
+    )
+    if not color_value:
+        return None
+    return QColor(color_value)
 
 
 def _refresh_history_local_state(window: object) -> None:
@@ -203,6 +223,7 @@ def _append_history_page(window: object, summaries: list[object]) -> None:
     if not summaries:
         return
     existing_hashes = set(window.history_summary_by_hash.keys())
+    local_color = _history_local_commit_color()
     window.history_commits_list.blockSignals(True)
     try:
         for summary in summaries:
@@ -216,6 +237,8 @@ def _append_history_page(window: object, summaries: list[object]) -> None:
             item = QListWidgetItem(label, window.history_commits_list)
             item.setData(Qt.ItemDataRole.UserRole, commit_hash)
             item.setToolTip(_build_history_commit_tooltip(window, commit_hash, summary.date))
+            if local_color is not None and _history_commit_presence(window, commit_hash) == "local":
+                item.setForeground(local_color)
     finally:
         window.history_commits_list.blockSignals(False)
 
@@ -740,7 +763,7 @@ def open_history_reorder_dialog(window: object) -> None:
         QMessageBox.information(
             window,
             "Reordenar commits",
-            "E necessario ao menos 2 commits locais [L] para reordenar.",
+            "E necessario ao menos 2 commits locais para reordenar.",
         )
         return
 
@@ -819,7 +842,7 @@ def open_history_reorder_dialog(window: object) -> None:
             dialog,
             "Confirmar reordenacao",
             (
-                "Isto vai reescrever o historico local [L] da branch atual.\n"
+                "Isto vai reescrever o historico local da branch atual.\n"
                 "Pode exigir push com --force-with-lease.\n\n"
                 "Deseja continuar?"
             ),
