@@ -188,7 +188,7 @@ from .tabs import (
 
 try:
     from PySide6.QtCore import QObject, QPoint, Qt, QEvent, QTimer, QUrl, Signal
-    from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont, QPalette
+    from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont, QIcon, QPalette
     from PySide6.QtWidgets import (
         QApplication,
         QComboBox,
@@ -1941,6 +1941,18 @@ def main(argv: list[str] | None = None) -> int:
     startup_repo = _resolve_startup_repo(args.repo, settings_path)
     qt_args = [sys.argv[0]]
     app = QApplication(qt_args)
+    app.setApplicationName("Git Viewer")
+    if hasattr(app, "setDesktopFileName"):
+        app.setDesktopFileName("git-viewer")
+    icon = QIcon.fromTheme("git-viewer")
+    if icon.isNull():
+        icon_path = Path(__file__).resolve().parents[2] / "assets" / "icon.png"
+        if icon_path.exists():
+            icon = QIcon(str(icon_path))
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     window = QtShellWindow(startup_repo, settings_path)
+    if not icon.isNull():
+        window.setWindowIcon(icon)
     window.showMaximized()
     return app.exec()
