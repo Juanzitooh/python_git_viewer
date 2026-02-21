@@ -35,6 +35,27 @@ Como usar:
 
 ## 3) Build de distribuicao
 
+Fluxo rapido (recomendado):
+
+```bash
+./dist.sh --version <versao>
+```
+
+Isso faz:
+- build `.deb`
+- build AppImage (quando possivel)
+- install/reinstall do `.deb`
+- abre `git-viewer`
+
+Onde mudar versao base do projeto:
+- `assets/version_info.txt`:
+  - `filevers=(X, Y, Z, 0)`
+  - `prodvers=(X, Y, Z, 0)`
+  - `StringStruct('FileVersion', 'X.Y.Z')`
+  - `StringStruct('ProductVersion', 'X.Y.Z')`
+
+Fluxo manual:
+
 ```bash
 python3 scripts/build_linux_packages.py --build-binary --deb-only
 ls -lh dist/git-viewer_<versao>_amd64.deb

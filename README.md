@@ -53,6 +53,18 @@ Script de empacotamento Linux:
 python3 scripts/build_linux_packages.py --build-binary
 ```
 
+Atalho completo (build + install/reinstall + abrir app):
+
+```bash
+./dist.sh
+```
+
+Exemplo para gerar versão `0.3.0`:
+
+```bash
+./dist.sh --version 0.3.0
+```
+
 Somente `.deb`:
 
 ```bash
@@ -72,6 +84,7 @@ Saídas padrão:
 Observações:
 - Em sistemas sem `libfuse.so.2`, rode AppImage com `APPIMAGE_EXTRACT_AND_RUN=1`.
 - Checklist de validacao Linux: `docs/LINUX_PACKAGING_VALIDATION.md`.
+- Versao padrao do pacote vem de `assets/version_info.txt` (`ProductVersion`).
 
 ## Estrutura
 
