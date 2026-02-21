@@ -7,6 +7,8 @@ from .models import CommitFilters, CommitInfo, CommitSummary, FileStat
 
 FIELD_SEP = "\x1f"
 RECORD_SEP = "\x1e"
+TEXT_FILTER_SCAN_MIN = 800
+TEXT_FILTER_SCAN_MAX = 8000
 
 
 def run_git(repo_path: str, args: list[str]) -> str:
@@ -95,12 +97,120 @@ def build_log_args(limit: int, skip: int, filters: CommitFilters | None) -> list
     return args
 
 
+def _build_log_scan_args(scan_limit: int, filters: CommitFilters | None) -> list[str]:
+    args = [
+        "log",
+        f"--max-count={scan_limit}",
+        "--date=iso",
+        "--name-only",
+        f"--pretty=format:%H{FIELD_SEP}%s{FIELD_SEP}%an{FIELD_SEP}%ad{FIELD_SEP}%ct",
+    ]
+    if not filters:
+        return args
+    if filters.author:
+        args.append(f"--author={filters.author}")
+    if filters.since:
+        args.append(f"--since={filters.since}")
+    if filters.until:
+        args.append(f"--until={filters.until}")
+    if filters.ref:
+        args.append(filters.ref)
+    if filters.path:
+        args.extend(["--", filters.path])
+    return args
+
+
+def _is_scan_header_line(line: str) -> bool:
+    if FIELD_SEP not in line:
+        return False
+    fields = line.split(FIELD_SEP)
+    if len(fields) < 5:
+        return False
+    commit_hash = fields[0].strip()
+    if len(commit_hash) < 7:
+        return False
+    lowered = commit_hash.lower()
+    return all(char in "0123456789abcdef" for char in lowered)
+
+
+def _parse_scan_summaries(log_output: str) -> list[tuple[CommitSummary, list[str]]]:
+    parsed: list[tuple[CommitSummary, list[str]]] = []
+    current_summary: CommitSummary | None = None
+    current_files: list[str] = []
+    for raw_line in log_output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _is_scan_header_line(line):
+            if current_summary is not None:
+                parsed.append((current_summary, current_files))
+            fields = line.split(FIELD_SEP)
+            commit_hash = fields[0].strip()
+            subject = fields[1] if len(fields) > 1 else ""
+            author = fields[2] if len(fields) > 2 else ""
+            date = fields[3] if len(fields) > 3 else ""
+            timestamp_raw = fields[4] if len(fields) > 4 else ""
+            try:
+                timestamp = int(timestamp_raw)
+            except ValueError:
+                timestamp = 0
+            current_summary = CommitSummary(
+                commit_hash=commit_hash,
+                subject=subject,
+                author=author,
+                date=date,
+                timestamp=timestamp,
+            )
+            current_files = []
+            continue
+        if current_summary is None:
+            continue
+        if line not in current_files:
+            current_files.append(line)
+    if current_summary is not None:
+        parsed.append((current_summary, current_files))
+    return parsed
+
+
+def _summary_matches_text(summary: CommitSummary, files: list[str], text: str) -> bool:
+    needle = text.casefold()
+    if not needle:
+        return True
+    if needle in summary.commit_hash.casefold():
+        return True
+    if needle in summary.subject.casefold():
+        return True
+    if needle in summary.author.casefold():
+        return True
+    if needle in summary.date.casefold():
+        return True
+    for path in files:
+        if needle in path.casefold():
+            return True
+    return False
+
+
 def load_commit_summaries(
     repo_path: str,
     limit: int,
     skip: int = 0,
     filters: CommitFilters | None = None,
 ) -> list[CommitSummary]:
+    if filters and filters.text.strip():
+        target_count = max(1, skip + limit)
+        scan_limit = max(TEXT_FILTER_SCAN_MIN, target_count * 6)
+        scan_limit = min(TEXT_FILTER_SCAN_MAX, scan_limit)
+        log_output = run_git(repo_path, _build_log_scan_args(scan_limit, filters))
+        matched: list[CommitSummary] = []
+        text_value = filters.text.strip()
+        for summary, files in _parse_scan_summaries(log_output):
+            if not _summary_matches_text(summary, files, text_value):
+                continue
+            matched.append(summary)
+        if skip <= 0:
+            return matched[:limit]
+        return matched[skip : skip + limit]
+
     log_output = run_git(repo_path, build_log_args(limit, skip, filters))
     summaries: list[CommitSummary] = []
     for record in log_output.split(RECORD_SEP):

@@ -57,7 +57,7 @@ def build_history_tab(window: object) -> None:
 
     top_layout.addWidget(QLabel("Buscar:", top_row))
     window.history_search_input = QLineEdit(top_row)
-    window.history_search_input.setPlaceholderText("Filtrar por texto no commit")
+    window.history_search_input.setPlaceholderText("Filtrar por texto, hash ou arquivo")
     window.history_search_input.returnPressed.connect(window._reload_history_commits)
     window.history_search_input.textChanged.connect(window._on_history_search_text_changed)
     top_layout.addWidget(window.history_search_input, stretch=1)
