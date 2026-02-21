@@ -368,6 +368,19 @@ def on_compare_commit_selected(window: object) -> None:
     on_compare_file_selected(window)
 
 
+def on_compare_commit_double_clicked(window: object, item: QListWidgetItem | None) -> None:
+    if item is None or not window.repo_path:
+        return
+    value = item.data(Qt.ItemDataRole.UserRole)
+    commit_token = str(value).strip() if value is not None else ""
+    if not commit_token:
+        return
+    commit_hash = _resolve_compare_commit_hash(window.repo_path, commit_token)
+    if not commit_hash:
+        return
+    window._open_commit_in_github(commit_hash, window.repo_path)
+
+
 def on_compare_file_selected(window: object) -> None:
     selected_items = window.compare_files_list.selectedItems()
     if not selected_items:

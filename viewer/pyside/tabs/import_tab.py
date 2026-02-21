@@ -73,6 +73,7 @@ def build_import_tab(window: object) -> None:
     window.import_commits_list = UnifiedListWidget(body_splitter)
     window.import_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
     window.import_commits_list.itemSelectionChanged.connect(window._on_import_commit_selected)
+    window.import_commits_list.itemDoubleClicked.connect(window._on_import_commit_double_clicked)
     window.import_commits_list.itemSelectionChanged.connect(window._update_import_controls_state)
     window.import_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.import_commits_list.customContextMenuRequested.connect(window._on_import_commit_context_menu)

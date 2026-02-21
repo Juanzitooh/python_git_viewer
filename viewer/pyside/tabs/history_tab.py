@@ -77,6 +77,7 @@ def build_history_tab(window: object) -> None:
     window.history_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
     window.history_commits_list.setMouseTracking(True)
     window.history_commits_list.itemSelectionChanged.connect(window._on_history_commit_selected)
+    window.history_commits_list.itemDoubleClicked.connect(window._on_history_commit_double_clicked)
     window.history_commits_list.itemEntered.connect(window._on_history_commit_hovered)
     window.history_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.history_commits_list.customContextMenuRequested.connect(window._on_history_commit_context_menu)

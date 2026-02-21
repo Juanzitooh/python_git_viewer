@@ -71,6 +71,7 @@ from .controllers import (
     on_commit_file_selected,
     on_compare_action_changed,
     on_compare_branches_changed,
+    on_compare_commit_double_clicked,
     on_compare_commit_selected,
     on_compare_commit_context_menu,
     on_compare_file_selected,
@@ -86,6 +87,7 @@ from .controllers import (
     open_clone_dialog,
     on_import_source_branch_changed,
     on_import_source_repo_changed,
+    on_import_commit_double_clicked,
     on_import_commit_selected,
     on_import_file_context_menu,
     on_import_file_selected,
@@ -139,6 +141,7 @@ from .controllers import (
     load_more_history_commits,
     on_compare_file_context_menu,
     on_history_commit_context_menu,
+    on_history_commit_double_clicked,
     on_history_commit_hovered,
     on_history_commit_selected,
     on_history_search_text_changed,
@@ -876,6 +879,9 @@ class QtShellWindow(QMainWindow):
     def _on_history_commit_selected(self) -> None:
         on_history_commit_selected(self)
 
+    def _on_history_commit_double_clicked(self, item: QListWidgetItem | None) -> None:
+        on_history_commit_double_clicked(self, item)
+
     def _on_history_commit_hovered(self, item) -> None:
         on_history_commit_hovered(self, item)
 
@@ -935,6 +941,9 @@ class QtShellWindow(QMainWindow):
 
     def _on_import_commit_selected(self) -> None:
         on_import_commit_selected(self)
+
+    def _on_import_commit_double_clicked(self, item: QListWidgetItem | None) -> None:
+        on_import_commit_double_clicked(self, item)
 
     def _on_import_file_selected(self) -> None:
         on_import_file_selected(self)
@@ -1017,6 +1026,9 @@ class QtShellWindow(QMainWindow):
 
     def _on_compare_commit_selected(self) -> None:
         on_compare_commit_selected(self)
+
+    def _on_compare_commit_double_clicked(self, item: QListWidgetItem | None) -> None:
+        on_compare_commit_double_clicked(self, item)
 
     def _on_compare_commit_context_menu(self, pos: QPoint) -> None:
         on_compare_commit_context_menu(self, pos)

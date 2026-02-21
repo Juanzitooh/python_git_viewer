@@ -107,6 +107,7 @@ def build_compare_tab(window: object) -> None:
     window.compare_commits_list = UnifiedListWidget(body_splitter)
     window.compare_commits_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     window.compare_commits_list.itemSelectionChanged.connect(window._on_compare_commit_selected)
+    window.compare_commits_list.itemDoubleClicked.connect(window._on_compare_commit_double_clicked)
     window.compare_commits_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.compare_commits_list.customContextMenuRequested.connect(window._on_compare_commit_context_menu)
 

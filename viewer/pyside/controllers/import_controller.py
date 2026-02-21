@@ -373,6 +373,19 @@ def on_import_commit_selected(window: object) -> None:
     on_import_file_selected(window)
 
 
+def on_import_commit_double_clicked(window: object, item: QListWidgetItem | None) -> None:
+    if item is None:
+        return
+    source_repo = window.import_source_repo_path.strip()
+    if not source_repo:
+        return
+    value = item.data(Qt.ItemDataRole.UserRole)
+    commit_hash = str(value).strip() if value is not None else ""
+    if not commit_hash:
+        return
+    window._open_commit_in_github(commit_hash, source_repo)
+
+
 def on_import_file_selected(window: object) -> None:
     selected_items = window.import_files_list.selectedItems() if hasattr(window, "import_files_list") else []
     if not selected_items:

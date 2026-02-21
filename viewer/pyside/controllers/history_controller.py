@@ -316,6 +316,19 @@ def on_history_commit_selected(window: object) -> None:
     load_history_commit_content(window, commit_hash)
 
 
+def on_history_commit_double_clicked(window: object, item: QListWidgetItem | None) -> None:
+    if item is None:
+        return
+    value = item.data(Qt.ItemDataRole.UserRole)
+    commit_hash = str(value).strip() if value is not None else ""
+    if not commit_hash:
+        return
+    if _history_commit_presence(window, commit_hash) == "local":
+        window._set_status("Commit local ainda nao publicado: URL no GitHub indisponivel.")
+        return
+    window._open_commit_in_github(commit_hash)
+
+
 def on_history_commit_hovered(window: object, item: QListWidgetItem | None) -> None:
     if item is None:
         return
