@@ -192,4 +192,5 @@ Detalhes e mitigacoes:
 - Contrato de arquitetura (core Python + UI desacoplada): `docs/ARCHITECTURE.md`.
 - Decisoes tecnicas (ADRs): `docs/DECISIONS.md`.
 - Limitacoes conhecidas e observacoes operacionais: `docs/KNOWN_ISSUES.md`.
+- Case tecnico do projeto: `docs/CASE_STUDY.md`.
 - Trace detalhado de selecao/stage (UI + comandos Git + retorno): `docs/SELECTION_TRACE.md`.
