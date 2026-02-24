@@ -10,6 +10,7 @@ GUI Git em **PySide6** para visualizar commits, diffs, status e executar fluxos 
 
 - [Inicio rapido](#inicio-rapido)
 - [Downloads (release v0.3.0)](#downloads-release-v030)
+- [Screenshots](#screenshots)
 - [Suporte de plataforma](#suporte-de-plataforma)
 - [Como executar (dev)](#como-executar-dev)
 - [Build (PyInstaller)](#build-pyinstaller)
@@ -46,6 +47,12 @@ Instalar no Linux Desktop (.deb + AppImage + abrir app):
 - [Download `.deb` (Ubuntu/Debian)](https://github.com/Juanzitooh/python_git_viewer/releases/download/v0.3.0/git-viewer_0.3.0_amd64.deb)
 - [Download `AppImage` (Linux portavel)](https://github.com/Juanzitooh/python_git_viewer/releases/download/v0.3.0/git-viewer-0.3.0-x86_64.AppImage)
 - [Download `Linux PyInstaller` (binario)](https://github.com/Juanzitooh/python_git_viewer/releases/download/v0.3.0/git_viewer)
+
+## Screenshots
+
+![Screenshot 1](https://github.com/Juanzitooh/python_git_viewer/blob/main/assets/screenshot%201.png?raw=true)
+
+![Screenshot 2](https://github.com/Juanzitooh/python_git_viewer/blob/main/assets/screenshot%202.png?raw=true)
 
 ## Suporte de plataforma
 
