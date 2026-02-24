@@ -162,4 +162,6 @@ Observações:
 - O estado do Git é atualizado automaticamente em intervalo configurável.
 - As abas `Repositorios`, `Commit`, `Historico`, `Importar`, `Comparar` e `Configuracoes` rodam no frontend PySide6.
 - Contrato de arquitetura (core Python + UI desacoplada): `docs/ARCHITECTURE.md`.
+- Decisoes tecnicas (ADRs): `docs/DECISIONS.md`.
+- Limitacoes conhecidas e observacoes operacionais: `docs/KNOWN_ISSUES.md`.
 - Trace detalhado de selecao/stage (UI + comandos Git + retorno): `docs/SELECTION_TRACE.md`.
