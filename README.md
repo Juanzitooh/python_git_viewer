@@ -2,13 +2,20 @@
 
 GUI Git em **PySide6** para visualizar commits, diffs, status e executar fluxos de commit/sync/importacao/comparacao.
 
+![CI](https://img.shields.io/github/actions/workflow/status/Juanzitooh/python_git_viewer/ci.yml?branch=main&label=CI)
+![Release](https://img.shields.io/github/v/release/Juanzitooh/python_git_viewer?label=Release)
+![License](https://img.shields.io/github/license/Juanzitooh/python_git_viewer)
+
 ## Indice
 
 - [Inicio rapido](#inicio-rapido)
 - [Downloads (release v0.3.0)](#downloads-release-v030)
+- [Suporte de plataforma](#suporte-de-plataforma)
 - [Como executar (dev)](#como-executar-dev)
 - [Build (PyInstaller)](#build-pyinstaller)
 - [Pacotes Linux (.deb e AppImage)](#pacotes-linux-deb-e-appimage)
+- [Limitacoes conhecidas](#limitacoes-conhecidas)
+- [Contribuicao e seguranca](#contribuicao-e-seguranca)
 - [Estrutura](#estrutura)
 - [Notas](#notas)
 
@@ -39,6 +46,12 @@ Instalar no Linux Desktop (.deb + AppImage + abrir app):
 - [Download `.deb` (Ubuntu/Debian)](https://github.com/Juanzitooh/python_git_viewer/releases/download/v0.3.0/git-viewer_0.3.0_amd64.deb)
 - [Download `AppImage` (Linux portavel)](https://github.com/Juanzitooh/python_git_viewer/releases/download/v0.3.0/git-viewer-0.3.0-x86_64.AppImage)
 - [Download `Linux PyInstaller` (binario)](https://github.com/Juanzitooh/python_git_viewer/releases/download/v0.3.0/git_viewer)
+
+## Suporte de plataforma
+
+- Linux (Ubuntu 24.04+): suporte principal de runtime e empacotamento (`.deb`/AppImage).
+- Windows: build de binario via PyInstaller no CI.
+- macOS: sem pacote oficial no momento.
 
 ## Como executar (dev)
 
@@ -140,6 +153,21 @@ Observações:
 - Em sistemas sem `libfuse.so.2`, rode AppImage com `APPIMAGE_EXTRACT_AND_RUN=1`.
 - Checklist de validacao Linux: `docs/LINUX_PACKAGING_VALIDATION.md`.
 - Versao padrao do pacote vem de `assets/version_info.txt` (`ProductVersion`).
+
+## Limitacoes conhecidas
+
+- Dependencias de runtime Qt/PySide6 podem variar por distro em ambiente headless.
+- AppImage pode exigir `APPIMAGE_EXTRACT_AND_RUN=1` em sistemas sem `libfuse.so.2`.
+- Integracao GitHub por SSH depende de chave cadastrada em `https://github.com/settings/ssh/new`.
+
+Detalhes e mitigacoes:
+- `docs/KNOWN_ISSUES.md`
+
+## Contribuicao e seguranca
+
+- Guia de contribuicao: `CONTRIBUTING.md`
+- Politica de seguranca: `SECURITY.md`
+- Issue tracker: `https://github.com/Juanzitooh/python_git_viewer/issues`
 
 ## Estrutura
 
