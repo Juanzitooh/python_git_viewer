@@ -1,0 +1,37 @@
+name: Feature request
+description: Sugira uma nova funcionalidade ou melhoria
+title: "[FEAT] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema/necessidade
+      description: Qual problema esta sendo resolvido?
+      placeholder: Hoje e dificil fazer...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solucao proposta
+      description: Como essa feature deve funcionar?
+      placeholder: Sugestao de fluxo/UX/API...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: Quais alternativas voce ja avaliou?
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impacto esperado
+      description: Beneficio tecnico/produto para quem usa
+      placeholder: Reduz tempo de...
+

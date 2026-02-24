@@ -1,0 +1,58 @@
+name: Bug report
+description: Reporte um problema de funcionamento
+title: "[BUG] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Resumo
+      description: Descreva o problema de forma objetiva
+      placeholder: O que aconteceu?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      description: Liste passos claros para reproduzir o problema
+      placeholder: |
+        1. Abra...
+        2. Clique em...
+        3. Erro...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+      placeholder: O que deveria acontecer?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs e traceback
+      description: Cole logs/traceback completos quando houver
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Versao/commit
+      placeholder: ex. v0.3.0 ou hash commit
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Ambiente
+      placeholder: ex. Ubuntu 24.04, Python 3.12
+    validations:
+      required: true
+
