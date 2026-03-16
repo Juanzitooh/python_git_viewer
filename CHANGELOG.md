@@ -4,7 +4,10 @@ Todas as mudancas relevantes deste projeto serao documentadas aqui.
 
 ## [Unreleased]
 
-- Nenhuma mudanca registrada ainda.
+- Bootstrap canônico de planejamento criado em `docs/roadmap/` com os arquivos: `agents.md`, `vision.md`, `roadmap.md`, `milestones.md`, `tasks.md`, `status.md`, `decisions.md` e `architecture.md`.
+- Backlog ativo foi migrado de `ROADMAP.md` para `docs/roadmap/tasks.md` e histórico de concluídas para `docs/roadmap/tasks.done.md`.
+- Criado `roadmap.md` na raiz como ponte operacional para o sistema de gerenciamento de tarefas.
+- Adicionado `agents.global.md` (minúsculo) como arquivo canônico para integração com automações e daemon, mantendo `AGENTS.global.md` como ponte de compatibilidade.
 
 ## [0.3.0] - 2026-02-21
 

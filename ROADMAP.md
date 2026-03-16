@@ -1,5 +1,8 @@
 # Roadmap
 
+> Historico consolidado do projeto.
+> Planejamento operacional ativo: `roadmap.md` -> `docs/roadmap/agents.md`.
+
 Legenda
 - [ ] planejado
 - [~] em andamento
